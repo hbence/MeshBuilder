@@ -33,12 +33,18 @@ namespace MeshBuilder
         private bool normalizeUvs;
         private float3 positionOffset;
 
+        private Texture2D heightmap;
+        private float maxHeight;
+        private byte colorLevelOffset;
+
         private Mesh mesh;
         private NativeArray<int> meshArrayLengths;
 
         private NativeList<GridCell> gridCells;
         private GridMeshData meshData;
         private NativeArray<int> borderIndices;
+
+        private NativeArray<Color32> heightMapColors;
 
         private JobHandle lastHandle;
 
@@ -77,7 +83,19 @@ namespace MeshBuilder
                 meshArrayLengths = new NativeArray<int>(ArrayLengthsCount, Allocator.Persistent);
             }
 
+            this.heightmap = null;
+            this.maxHeight = 0;
+
             inited = true;
+        }
+
+        public void Init(DataVolume data, float cellSize, int resolution, Texture2D heightmap, float maxHeight, byte colorLevelOffset = 0, float3 posOffset = default(float3))
+        {
+            Init(data, cellSize, resolution, true, posOffset);
+
+            this.heightmap = heightmap;
+            this.maxHeight = maxHeight;
+            this.colorLevelOffset = colorLevelOffset;
         }
 
         public void Dispose()
@@ -93,8 +111,18 @@ namespace MeshBuilder
 
         private void DisposeTemp()
         {
-            if (gridCells.IsCreated) gridCells.Dispose();
-            if (borderIndices.IsCreated) borderIndices.Dispose();
+            if (gridCells.IsCreated)
+            {
+                gridCells.Dispose();
+            }
+            if (borderIndices.IsCreated)
+            {
+                borderIndices.Dispose();
+            }
+            if (heightMapColors.IsCreated)
+            {
+                heightMapColors.Dispose();
+            }
             if (meshData != null)
             {
                 meshData.Dispose();
@@ -174,6 +202,29 @@ namespace MeshBuilder
                 };
 
                 lastHandle = offsetJob.Schedule(meshData.Vertices.Length, 128, lastHandle);
+            }
+
+            if (heightmap)
+            {
+                if (heightMapColors.IsCreated)
+                {
+                    heightMapColors.Dispose();
+                }
+
+                heightMapColors = new NativeArray<Color32>(heightmap.GetPixels32(), Allocator.Temp);
+
+                var applyHeightmapJob = new ApplyHeightMapJob
+                {
+                    heightmapWidth = heightmap.width,
+                    heightmapHeight = heightmap.height,
+                    colors = heightMapColors,
+                    heightStep = maxHeight / 255f,
+                    heightOffset = -(maxHeight / 255f) * colorLevelOffset,
+                    uvs = meshData.UVs,
+                    vertices = meshData.Vertices
+                };
+
+                lastHandle = applyHeightmapJob.Schedule(meshData.Vertices.Length, 128, lastHandle);
             }
 
             JobHandle.ScheduleBatchedJobs();
@@ -460,6 +511,28 @@ namespace MeshBuilder
                 meshTriangles[index + 3] = c3;
                 meshTriangles[index + 4] = c2;
                 meshTriangles[index + 5] = c1;
+            }
+        }
+
+        [BurstCompile]
+        public struct ApplyHeightMapJob : IJobParallelFor
+        {
+            public int heightmapWidth;
+            public int heightmapHeight;
+            public float heightStep;
+            public float heightOffset;
+            [ReadOnly] public NativeArray<Color32> colors;
+            [ReadOnly] public NativeArray<float2> uvs;
+            public NativeArray<float3> vertices;
+
+            public void Execute(int index)
+            {
+                int x = (int)(heightmapWidth * uvs[index].x) % heightmapWidth;
+                int y = (int)(heightmapHeight * uvs[index].y) % heightmapHeight;
+
+                int colorIndex = y * heightmapWidth + x;
+                Color32 color = colors[colorIndex];
+                vertices[index] += new float3(0, (heightStep * color.r) + heightOffset, 0);
             }
         }
 

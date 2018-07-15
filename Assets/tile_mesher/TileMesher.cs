@@ -25,7 +25,7 @@ namespace MeshBuilder
 
         private Extents dataExtents;
         private Extents tileExtents;
-
+        
         private bool inited = false;
         private bool isGenerating = false;
 
@@ -269,6 +269,13 @@ namespace MeshBuilder
             }
         }
 
+        // go through the tile volume data and collect non null elems
+        // transform the elems depending on the above / below elems from the tile volume
+        // these collected tiles will be used to generate the mesh
+        // NOTE: I could add a counter to the GenerateTileDataJob to have a number for the useful pieces, then instead of collecting them in a list
+        // I could put them in an array in parallel, but I would have to use a raw pointer and mark this class unsafe
+        // (like this: https://github.com/keijiro/Voxelman/blob/master/Assets/ECS/ScannerSystem.cs)
+        // does it worth it? does this need to be faster?
         internal struct GenerateTileDataInfoList : IJob
         {
             private static TileData NullTile = new TileData { elem = TileElem.Null, visibility = 0 };

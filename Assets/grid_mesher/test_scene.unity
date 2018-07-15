@@ -261,29 +261,13 @@ GameObject:
   - component: {fileID: 365720310}
   - component: {fileID: 365720309}
   - component: {fileID: 365720308}
-  - component: {fileID: 365720307}
   m_Layer: 0
-  m_Name: mesher
+  m_Name: tile
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
   m_IsActive: 1
---- !u!114 &365720307
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_PrefabParentObject: {fileID: 0}
-  m_PrefabInternal: {fileID: 0}
-  m_GameObject: {fileID: 365720306}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: adc9887e4e74e074aaa01975934fcccd, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  theme: {fileID: 2105216778}
-  meshFilter: {fileID: 0}
-  mesh: {fileID: 0}
-  generating: 0
 --- !u!33 &365720308
 MeshFilter:
   m_ObjectHideFlags: 0
@@ -336,8 +320,8 @@ Transform:
   m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
-  m_Father: {fileID: 0}
-  m_RootOrder: 4
+  m_Father: {fileID: 575163533}
+  m_RootOrder: 1
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &575163531
 GameObject:
@@ -367,6 +351,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   groundMeshFilter: {fileID: 1653117000}
+  theme: {fileID: 2105216778}
+  tileMeshFilter: {fileID: 365720308}
+  heightmap: {fileID: 2800000, guid: d478f2987ea0afc4885865527c11e410, type: 3}
 --- !u!4 &575163533
 Transform:
   m_ObjectHideFlags: 0
@@ -378,8 +365,9 @@ Transform:
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children:
   - {fileID: 1653117002}
+  - {fileID: 365720310}
   m_Father: {fileID: 0}
-  m_RootOrder: 5
+  m_RootOrder: 4
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1653116999
 GameObject:

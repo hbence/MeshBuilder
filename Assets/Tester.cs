@@ -18,12 +18,15 @@ public class Tester : MonoBehaviour
     public MeshFilter tileMeshFilter;
     private TileMesher tileMesher;
 
+    public Texture2D heightmap;
+
 	private void Awake ()
     {
         data = CreateTestData();
 
         groundMesher = new GridMesher();
-        groundMesher.Init(data, 1f, 1);
+        //        groundMesher.Init(data, 1f, 1);
+        groundMesher.Init(data, 1f, 3, heightmap, 1f, 128);
 
         groundMeshFilter.sharedMesh = groundMesher.Mesh;
 
