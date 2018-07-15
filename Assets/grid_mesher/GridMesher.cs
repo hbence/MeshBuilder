@@ -7,7 +7,6 @@ using Unity.Mathematics;
 using DataVolume = Volume<byte>;
 using PieceVolume = Volume<GridMesher.PieceData>;
 using PieceElem = VolumeTheme.Elem;
-using IndexVolume = Volume<int>;
 
 // NOTE:
 // the piece data volume has to have twice as large layers (x, z axis), pieces are half the size of cells
@@ -20,15 +19,14 @@ public class GridMesher : MonoBehaviour
     private const byte Empty = 0;
     private const byte Filled = 1;
 
+    private const int GroundResolution = 3;
+
     // DATA
     public VolumeTheme theme;
     private DataVolume volume;
 
     private Extents volumeExtents;
     private Extents pieceExtents;
-
-    private NativeList<float3> groundVertices;
-    private IndexVolume groundIndices;
 
     // lookup arrays
     private NativeArray<PieceData> pieceConfigurationArray;
@@ -37,6 +35,7 @@ public class GridMesher : MonoBehaviour
     // GENERATION JOBS
     private PieceVolume pieces;
     private JobHandle lastHandle;
+    private JobHandle groundHandle;
 
     // MESH BUILDING
     private MeshFilter meshFilter;
@@ -44,6 +43,11 @@ public class GridMesher : MonoBehaviour
 
     public MeshFilter groundMeshFilter;
     private Mesh groundMesh;
+
+    private GridMeshData groundMeshData;
+    private NativeList<GridCell> groundGridCells;
+    private NativeArray<int> groundMeshArrayLengths;
+    private NativeArray<int> groundBorderIndices;
 
     void Awake()
     {
@@ -72,6 +76,9 @@ public class GridMesher : MonoBehaviour
             groundMesh.MarkDynamic();
 
             groundMeshFilter.mesh = groundMesh;
+
+            groundMeshData = new GridMeshData();
+            groundGridCells = new NativeList<GridCell>();
         }
 
         // SIDE MESH
@@ -94,6 +101,7 @@ public class GridMesher : MonoBehaviour
         pieces.Dispose();
         pieceConfigurationArray.Dispose();
         forwardArray.Dispose();
+
     }
 
     private void OnDestroy()
@@ -106,12 +114,52 @@ public class GridMesher : MonoBehaviour
 
     private void FillTestVolumeData()
     {
+        /*
+        volume.SetAt(1, 5, 1, Filled);
+       
+        volume.SetAt(1, 5, 5, Filled);
+        volume.SetAt(2, 5, 5, Filled);
+        volume.SetAt(2, 5, 6, Filled);
+        volume.SetAt(3, 5, 5, Filled);
+        volume.SetAt(2, 5, 4, Filled);
+        
+        volume.SetAt(1, 8, 5, Filled);
+        volume.SetAt(1, 8, 6, Filled);
+        volume.SetAt(1, 8, 7, Filled);
+
+        volume.SetAt(1, 11, 10, Filled);
+        volume.SetAt(1, 11, 11, Filled);
+        volume.SetAt(1, 11, 12, Filled);
+        volume.SetAt(1, 11, 13, Filled);
+        */
+        /*
+        volume.SetAt(5, 5, 8, Filled);
+        volume.SetAt(5, 5, 9, Filled);
+        volume.SetAt(6, 5, 7, Filled);
+        volume.SetAt(6, 5, 8, Filled);
+
+        volume.SetAt(10, 5, 8, Filled);
+        volume.SetAt(11, 5, 8, Filled);
+        volume.SetAt(11, 5, 9, Filled);
+        volume.SetAt(12, 5, 9, Filled);
+
+        volume.SetAt(5, 5, 10, Filled);
+        volume.SetAt(5, 5, 11, Filled);
+        volume.SetAt(5, 5, 12, Filled);
+        volume.SetAt(4, 5, 11, Filled);
+        volume.SetAt(6, 5, 11, Filled);
+
+        */
+        //  volume.SetAt(7, 5, 5, Filled);
+
+
+        
         int x = 0;
         int z = 0;
 
-        for (x = 0; x < 10; ++x)
+        for (x = 0; x < 16; ++x)
         {
-            for (z = 0; z < 10; ++z)
+            for (z = 0; z < 16; ++z)
             {
                 volume.SetAt(x, 0, z, Filled);
                 volume.SetAt(x, 1, z, Filled);
@@ -190,6 +238,10 @@ public class GridMesher : MonoBehaviour
     {
         if (tempPieceList.IsCreated) tempPieceList.Dispose();
         if (tempCombineArray.IsCreated) tempCombineArray.Dispose();
+
+        if (groundGridCells.IsCreated) groundGridCells.Dispose();
+        if (groundMeshArrayLengths.IsCreated) groundMeshArrayLengths.Dispose();
+        if (groundBorderIndices.IsCreated) groundBorderIndices.Dispose();
     }
 
     void StartGeneration()
@@ -230,6 +282,38 @@ public class GridMesher : MonoBehaviour
         };
         lastHandle = combineList.Schedule(tempPieceList.Length, 16, lastHandle);
 
+        // ground generation
+        groundGridCells = new NativeList<GridCell>(Allocator.Temp);
+        groundMeshArrayLengths = new NativeArray<int>(GenerateMeshGridCells.BufferLengthCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+        var generateGroundGridCells = new GenerateMeshGridCells
+        {
+            resolution = GroundResolution,
+            volumeExtent = volumeExtents,
+            data = volume.Data,
+            cells = groundGridCells,
+            bufferLengths = groundMeshArrayLengths
+        };
+
+        groundHandle = generateGroundGridCells.Schedule();
+
+        groundHandle.Complete();
+
+        groundMeshData.CreateMeshBuffers(groundMeshArrayLengths[GenerateMeshGridCells.VertexCountIndex], groundMeshArrayLengths[GenerateMeshGridCells.TriangleCountIndex], true);
+        groundBorderIndices = new NativeArray<int>(groundMeshArrayLengths[GenerateMeshGridCells.BorderIndexCountIndex], Allocator.Temp);
+
+        var generateMeshData = new GenerateMeshData
+        {
+            cellResolution = GroundResolution,
+            volumeExtent = volumeExtents,
+            cells = groundGridCells,
+            borderIndices = groundBorderIndices,
+            meshVertices = groundMeshData.Vertices,
+            meshUVs = groundMeshData.UVs,
+            meshTriangles = groundMeshData.Tris
+        };
+
+        groundHandle = generateMeshData.Schedule(groundHandle);
+
         JobHandle.ScheduleBatchedJobs();
     }
 
@@ -250,6 +334,14 @@ public class GridMesher : MonoBehaviour
         mesh.CombineMeshes(array, true, true);
         meshFilter.mesh = mesh;
 
+        groundHandle.Complete();
+
+        groundMeshData.UpdateMesh(groundMesh);
+
+        groundGridCells.Dispose();
+        groundBorderIndices.Dispose();
+        groundMeshData.Dispose();
+
         DisposeTemp();
     }
 
@@ -266,6 +358,9 @@ public class GridMesher : MonoBehaviour
     private const byte DirZPlus = 4;
     private const byte DirZMinus = 8;
     private const byte DirAll = DirXPlus | DirXMinus | DirZPlus | DirZMinus;
+
+    private const byte FilledPiece = 0;
+    private const byte EmptyPiece = 0;
     
     internal struct Extents
     {
@@ -413,36 +508,335 @@ public class GridMesher : MonoBehaviour
         }
     }
 
+    internal struct GenerateMeshGridCells : IJob
+    {
+        public const int VertexCountIndex = 0;
+        public const int TriangleCountIndex = 1;
+        public const int BorderIndexCountIndex = 2;
+        public const int BufferLengthCount = 3;
+
+        public int resolution;
+        public Extents volumeExtent;
+        [ReadOnly] public NativeArray<byte> data;
+
+        [WriteOnly] public NativeList<GridCell> cells;
+        [WriteOnly] public NativeArray<int> bufferLengths;
+
+        public void Execute()
+        {
+            int vertexCount = 0;
+
+            int cellCount = 0;
+
+            int[] bottom = new int[volumeExtent.x];
+            
+            int dataIndex = 0;
+            for (int y = 0; y < volumeExtent.y; ++y)
+            {
+                for (int i = 0; i < bottom.Length; ++i)
+                {
+                    bottom[i] = -1;
+                }
+
+                for (int z = 0; z < volumeExtent.z; ++z)
+                {
+                    int left = -1;
+                    for (int x = 0; x < volumeExtent.x; ++x)
+                    {
+                        if (data[dataIndex] == Filled && (y == volumeExtent.y - 1 || data[dataIndex + volumeExtent.xz] != Filled))
+                        {
+                            var cell = new GridCell { coord = new int3 { x = x, y = y, z = z }, leftCell = left, bottomCell = bottom[x] };
+                            cells.Add(cell);
+
+                            vertexCount += CalcCellVertexCount(left, bottom[x]);
+
+                            left = cellCount;
+                            bottom[x] = cellCount;
+
+                            ++cellCount;
+                        }
+                        else
+                        {
+                            left = -1;
+                            bottom[x] = -1;
+                        }
+
+                        ++dataIndex;
+                    }
+                }
+            }
+
+            int triangleCount = cellCount * (resolution * resolution * 2) * 3;
+            int borderIndexCount = cellCount * (resolution + 1) * 2;
+
+            bufferLengths[VertexCountIndex] = vertexCount;
+            bufferLengths[TriangleCountIndex] = triangleCount;
+            bufferLengths[BorderIndexCountIndex] = borderIndexCount;
+        }
+
+        private int CalcCellVertexCount(int leftIndex, int bottomIndex)
+        {
+            int vertexCount = (resolution + 1) * (resolution + 1);
+
+            if (leftIndex >= 0 && bottomIndex >= 0)
+            {
+                vertexCount -= (resolution + 1) * 2 - 1;
+            }
+            else if (leftIndex >= 0 || bottomIndex >= 0)
+            {
+                vertexCount -= resolution + 1;
+            }
+
+            return vertexCount;
+        }
+    }
+
+    internal struct GenerateMeshData : IJob
+    {
+        static private readonly Range NullRange = new Range { start = 0, end = 0 };
+
+        public int cellResolution;
+
+        public Extents volumeExtent;
+        public NativeArray<GridCell> cells;
+
+        public NativeArray<int> borderIndices;
+
+        [WriteOnly] public NativeArray<float3> meshVertices;
+        [WriteOnly] public NativeArray<int> meshTriangles;
+        [WriteOnly] public NativeArray<float2> meshUVs;
+
+        private float stepX;
+        private float stepZ;
+
+        public void Execute()
+        {
+            stepX = CellSize / cellResolution;
+            stepZ = CellSize / cellResolution;
+
+            int boundaryIndex = 0;
+            int sideVertexCount = cellResolution + 1;
+
+            int vertexIndex = 0;
+            int triangleIndex = 0;
+            for (int i = 0; i < cells.Length; ++i)
+            {
+                var cell = cells[i];
+
+                float x = cell.coord.x * CellSize;
+                float y = (cell.coord.y + 0.5f) * CellSize;
+                float z = cell.coord.z * CellSize;
+
+                Range left = cell.leftCell >= 0 ? cells[cell.leftCell].rightBorderIndices : NullRange;
+                Range bottom = cell.bottomCell >= 0 ? cells[cell.bottomCell].topBorderIndices : NullRange;
+
+                var right = new Range { start = boundaryIndex, end = boundaryIndex + sideVertexCount - 1 };
+                boundaryIndex += sideVertexCount;
+                var top = new Range { start = boundaryIndex, end = boundaryIndex + sideVertexCount - 1 };
+                boundaryIndex += sideVertexCount;
+
+                GenerateGrid(x, y, z, left, bottom, right, top, ref vertexIndex, ref triangleIndex);
+
+                cell.rightBorderIndices = right;
+                cell.topBorderIndices = top;
+                cells[i] = cell;
+            }
+        }
+
+        private void GenerateGrid(float startX, float startY, float startZ, Range left, Range bottom, Range right, Range top, ref int vertexIndex, ref int triangleIndex)
+        {
+            float3 v = new float3 { x = startX, y = startY, z = startZ };
+            float2 uv = new float2 { x = 0, y = 0 };
+            int c0, c1, c2, c3;
+            int width = cellResolution + 1;
+            int rowOffset = left.IsValid ? width - 1 : width;
+            int colOffset = left.IsValid ? -1 : 0;
+            for (int y = 0; y < cellResolution; ++y)
+            {
+                v.x = startX;
+                uv.x = 0;
+
+                for (int x = 0; x < cellResolution; ++x)
+                {
+                    // corner
+                    c0 = vertexIndex;
+                    // above
+                    c1 = c0 + rowOffset;
+                    // right
+                    c2 = c0 + 1;
+                    // diagonal corner
+                    c3 = c0 + rowOffset + 1;
+
+                    if (x == 0 && y == 0 && bottom.IsValid && left.IsValid)
+                    {
+                        c0 = bottom.At(0, borderIndices);
+                        c1 = left.At(1, borderIndices);
+                        c2 = bottom.At(1, borderIndices);
+                        c3 = vertexIndex;
+                    }
+                    else
+                    if (y == 0 && bottom.IsValid)
+                    {
+                        c0 = bottom.At(x, borderIndices);
+                        c1 = vertexIndex + x + colOffset;
+                        c2 = bottom.At(x + 1, borderIndices);
+                        c3 = vertexIndex + x + 1 + colOffset;
+                    }
+                    else if (x == 0 && left.IsValid)
+                    {
+                        c0 = left.At(y, borderIndices);
+                        c1 = left.At(y + 1, borderIndices);
+                        c2 = vertexIndex;
+                        c3 = vertexIndex + cellResolution;
+                    }
+                    else
+                    {
+                        Add(v, uv, vertexIndex);
+                        ++vertexIndex;
+                    }
+
+                    AddTris(c0, c1, c2, c3, triangleIndex);
+                    triangleIndex += 6;
+
+                    v.x += stepX;
+                    uv.x += stepX;
+                }
+
+                // right side vertex
+                if (y == 0 && bottom.IsValid)
+                {
+                    borderIndices[right.start] = borderIndices[bottom.end];
+                }
+                else
+                {
+                    borderIndices[right.start + y] = vertexIndex;
+                    Add(v, uv, vertexIndex);
+                    ++vertexIndex;
+                }
+
+                v.z += stepZ;
+                uv.y += stepZ;
+            }
+
+            // top row vertices
+            v.x = startX;
+            uv.x = 0;
+
+            for (int i = 0; i < width; ++i)
+            {
+                if (i == 0 && left.IsValid)
+                {
+                    borderIndices[top.start] = borderIndices[left.end];
+                }
+                else
+                {
+                    if (i == width - 1)
+                    {
+                        borderIndices[right.end] = vertexIndex;
+                    }
+
+                    borderIndices[top.start + i] = vertexIndex;
+
+                    Add(v, uv, vertexIndex);
+                    ++vertexIndex;
+                }
+                v.x += stepX;
+                uv.x += stepX;
+            }
+        }
+
+        private void Add(float3 vertex, float2 uv, int index)
+        {
+            meshVertices[index] = vertex;
+            meshUVs[index] = uv;
+        }
+
+        private void AddTris(int c0, int c1, int c2, int c3, int index)
+        {
+            meshTriangles[index] = c0;
+            meshTriangles[index + 1] = c1;
+            meshTriangles[index + 2] = c2;
+
+            meshTriangles[index + 3] = c3;
+            meshTriangles[index + 4] = c2;
+            meshTriangles[index + 5] = c1;
+        }
+    }
+
     internal struct MeshPieceWrapper
     {
         public PieceElem elem;
         public int variation;
         public CombineInstance combine;
     }
-    /*
-    static readonly PieceData[] PieceConfigurations = new PieceData[]
+
+    internal struct Range
     {
-            new PieceData { piece = PieceElem.Null },                                                                   // 0 - nothing, this is invalid configuration 
-            new PieceData { piece = PieceElem.CornerConvex, rot = Rotation.CW180, visibility = DirXMinus | DirZMinus }, // 1 - bottom left is filled
-            new PieceData { piece = PieceElem.CornerConvex, rot = Rotation.CW270, visibility = DirXMinus | DirZPlus  }, // 2 - top left
-            new PieceData { piece = PieceElem.Side, rot = Rotation.CW270, visibility = DirXMinus },                     // 3 - left
-            new PieceData { piece = PieceElem.CornerConvex, rot = Rotation.CW90, visibility = DirXPlus | DirZMinus },   // 4 - bottom right
-            new PieceData { piece = PieceElem.Side, rot = Rotation.CW180, visibility = DirZMinus },                     // 5 - bottom
-            new PieceData { piece = PieceElem.DoubleConcave, visibility = DirAll },                                     // 6 - diagonal
-            new PieceData { piece = PieceElem.CornerConcave, rot = Rotation.CW180, visibility = DirXMinus | DirZMinus },// 7 - no top right
-            new PieceData { piece = PieceElem.CornerConvex, visibility = DirXPlus | DirZPlus },                         // 8 - top right
-            new PieceData { piece = PieceElem.DoubleConcave, rot = Rotation.CW90, visibility = DirAll },                // 9 - diagonal
-            new PieceData { piece = PieceElem.Side, visibility = DirZPlus },                                            // 10 - top
-            new PieceData { piece = PieceElem.CornerConcave, rot = Rotation.CW270, visibility = DirXMinus | DirZPlus }, // 11 - no bottom right
-            new PieceData { piece = PieceElem.Side, rot = Rotation.CW90, visibility = DirXPlus },                       // 12 - right
-            new PieceData { piece = PieceElem.CornerConcave, rot = Rotation.CW90, visibility = DirXMinus | DirZMinus }, // 13 - no top left
-            new PieceData { piece = PieceElem.CornerConcave, visibility = DirXPlus | DirZPlus },                        // 14 - no bottom left
-            new PieceData { piece = PieceElem.Null },                                                                   // 15 - all, this is invalid configuration 
-    };*/
+        public int start;
+        public int end;
+
+        public bool IsValid { get { return start != end; } }
+        public int At(int index, NativeArray<int> indices) { return indices[start + index]; }
+    }
+    
+    /// <summary>
+    /// this gets generated for every cell which requires vertex grid generation
+    /// leftCell and bottomCell are the two neighbours which are connected to the same vertex mesh (-1 means no connection)
+    /// topBorderIndices and rightBorderIndices are two ranges pointing to and index array, these are the bordering vertex indices 
+    /// </summary>
+    internal struct GridCell
+    {
+        public int3 coord;
+
+        public int leftCell;
+        public int bottomCell;
+
+        public Range topBorderIndices;
+        public Range rightBorderIndices;
+
+        public bool HasLeftCell { get { return leftCell > -1; } }
+        public bool HasBottomCell { get { return bottomCell > -1; } }
+    }
+
+    internal class GridMeshData
+    {
+        // mesh data
+        public NativeArray<float3> Vertices { get; private set; }
+        public NativeArray<int> Tris { get; private set; }
+        public NativeArray<float2> UVs { get; private set; }
+
+        public GridMeshData()
+        {
+
+        }
+
+        public void CreateMeshBuffers(int vertexCount, int triangleCount, bool temporary)
+        {
+            Dispose();
+
+            var allocation = temporary ? Allocator.Temp : Allocator.Persistent;
+
+            Vertices = new NativeArray<float3>(vertexCount, allocation, NativeArrayOptions.UninitializedMemory);
+            UVs = new NativeArray<float2>(vertexCount, allocation, NativeArrayOptions.UninitializedMemory);
+            Tris = new NativeArray<int>(triangleCount, allocation, NativeArrayOptions.UninitializedMemory);
+        }
+
+        public void Dispose()
+        {
+            if (Vertices.IsCreated) Vertices.Dispose();
+            if (Tris.IsCreated) Tris.Dispose();
+            if (UVs.IsCreated) UVs.Dispose();
+        }
+
+        public void UpdateMesh(Mesh mesh)
+        {
+            MeshData.UpdateMesh(mesh, Vertices, Tris, UVs);
+        }
+    }
 
     static readonly PieceData[] PieceConfigurations = new PieceData[]
     {
-            new PieceData { piece = PieceElem.Null, visibility = DirAll },                                                                   // 0 - nothing, no mesh
+            new PieceData { piece = PieceElem.Null, visibility = EmptyPiece },                                                                   // 0 - nothing, no mesh
             new PieceData { piece = PieceElem.CornerConvex, rot = Rotation.CW270, visibility = DirXMinus | DirZMinus }, // 1 - bottom left is filled
             new PieceData { piece = PieceElem.CornerConvex, rot = Rotation.CW0, visibility = DirXMinus | DirZPlus  },   // 2 - top left
             new PieceData { piece = PieceElem.Side, rot = Rotation.CW270, visibility = DirXMinus },                     // 3 - left
@@ -457,7 +851,7 @@ public class GridMesher : MonoBehaviour
             new PieceData { piece = PieceElem.Side, rot = Rotation.CW90, visibility = DirXPlus },                       // 12 - right
             new PieceData { piece = PieceElem.CornerConcave, rot = Rotation.CW180, visibility = DirXMinus | DirZMinus },// 13 - no top left
             new PieceData { piece = PieceElem.CornerConcave, rot = Rotation.CW90, visibility = DirXPlus | DirZPlus },   // 14 - no bottom left
-            new PieceData { piece = PieceElem.Null, visibility = 0 },                                                   // 15 - all, no mesh
+            new PieceData { piece = PieceElem.Null, visibility = FilledPiece },                                                   // 15 - all, no mesh
     };
 
     private static readonly float3[] Directions = new float3[]
