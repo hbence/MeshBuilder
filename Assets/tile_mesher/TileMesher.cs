@@ -7,8 +7,8 @@ using Unity.Mathematics;
 using static MeshBuilder.Extents;
 
 using DataVolume = MeshBuilder.Volume<byte>;
-using PieceVolume = MeshBuilder.Volume<MeshBuilder.TileMesher.PieceData>;
-using PieceElem = MeshBuilder.VolumeTheme.Elem;
+using TileVolume = MeshBuilder.Volume<MeshBuilder.TileMesher.TileData>;
+using TileElem = MeshBuilder.VolumeTheme.Elem;
 
 namespace MeshBuilder
 {
@@ -21,23 +21,24 @@ namespace MeshBuilder
         private VolumeTheme theme;
         private DataVolume data;
         private float cellSize = 1f;
+        private float3 positionOffset;
 
         private Extents dataExtents;
-        private Extents pieceExtents;
+        private Extents tileExtents;
 
         private bool inited = false;
         private bool isGenerating = false;
 
         // temps
-        private NativeList<PieceDataInfo> pieceList;
-        private NativeArray<MeshPieceWrapper> combineArray;
+        private NativeList<TileDataInfo> tileList;
+        private NativeArray<MeshTileWrapper> combineArray;
 
         // lookup arrays
-        private NativeArray<PieceData> pieceConfigurationArray;
-        private NativeArray<float3> forwardArray;
+        private NativeArray<TileData> tileConfigurationArray;
+        private NativeArray<float3> directionArray;
 
         // GENERATION JOBS
-        private PieceVolume pieces;
+        private TileVolume tiles;
         private JobHandle lastHandle;
 
         // MESH BUILDING
@@ -45,45 +46,45 @@ namespace MeshBuilder
 
         public TileMesher()
         {
-            // SIDE MESH
             mesh = new Mesh();
         }
 
-        public void Init(DataVolume data, VolumeTheme theme, float cellSize)
+        public void Init(DataVolume data, VolumeTheme theme, float cellSize = 1f, float3 posOffset = default(float3))
         {
             inited = true;
 
             this.data = data;
             this.theme = theme;
             this.cellSize = cellSize;
+            this.positionOffset = posOffset;
 
             int x = data.XLength;
             int y = data.YLength;
             int z = data.ZLength;
             dataExtents = new Extents(x, y, z);
-            pieceExtents = new Extents(x + 1, y, z + 1);
+            tileExtents = new Extents(x + 1, y, z + 1);
 
-            if (pieces != null)
+            if (tiles != null)
             {
-                pieces.Dispose();
+                tiles.Dispose();
             }
 
-            pieces = new PieceVolume(x + 1, y, z + 1); // vertices points for the same grid size as the data volume
+            tiles = new TileVolume(x + 1, y, z + 1); // vertices points for the same grid size as the data volume
             CreateLookupArrays();
         }
 
         private void CreateLookupArrays()
         {
-            if (!pieceConfigurationArray.IsCreated)
+            if (!tileConfigurationArray.IsCreated)
             {
-                pieceConfigurationArray = new NativeArray<PieceData>(PieceConfigurations.Length, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-                pieceConfigurationArray.CopyFrom(PieceConfigurations);
+                tileConfigurationArray = new NativeArray<TileData>(TileConfigurations.Length, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+                tileConfigurationArray.CopyFrom(TileConfigurations);
             }
 
-            if (!forwardArray.IsCreated)
+            if (!directionArray.IsCreated)
             {
-                forwardArray = new NativeArray<float3>(Directions.Length, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-                forwardArray.CopyFrom(Directions);
+                directionArray = new NativeArray<float3>(Directions.Length, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+                directionArray.CopyFrom(Directions);
             }
         }
 
@@ -92,19 +93,19 @@ namespace MeshBuilder
             lastHandle.Complete();
             DisposeTemp();
 
-            if (pieces != null)
+            if (tiles != null)
             {
-                pieces.Dispose();
-                pieces = null;
+                tiles.Dispose();
+                tiles = null;
             }
 
-            if (pieceConfigurationArray.IsCreated) pieceConfigurationArray.Dispose();
-            if (forwardArray.IsCreated) forwardArray.Dispose();
+            if (tileConfigurationArray.IsCreated) tileConfigurationArray.Dispose();
+            if (directionArray.IsCreated) directionArray.Dispose();
         }
 
         private void DisposeTemp()
         {
-            if (pieceList.IsCreated) pieceList.Dispose();
+            if (tileList.IsCreated) tileList.Dispose();
             if (combineArray.IsCreated) combineArray.Dispose();
         }
 
@@ -127,39 +128,39 @@ namespace MeshBuilder
             DisposeTemp();
             lastHandle.Complete();
 
-            // calculate the pieces in a volume
-            var pieceGenerationJob = new GeneratePieceDataJob
+            // calculate the tiles in a volume
+            var tileGenerationJob = new GenerateTileDataJob
             {
-                volumeExtents = dataExtents,
-                pieceExtents = pieceExtents,
+                dataExtents = dataExtents,
+                tileExtents = tileExtents,
                 volumeData = data.Data,
-                pieceConfigurations = pieceConfigurationArray,
-                pieces = pieces.Data
+                tileConfigurations = tileConfigurationArray,
+                tiles = tiles.Data
             };
-            lastHandle = pieceGenerationJob.Schedule(pieces.Data.Length, 256, lastHandle);
+            lastHandle = tileGenerationJob.Schedule(tiles.Data.Length, 256, lastHandle);
 
-            // collect the pieces which needs to be processed
-            pieceList = new NativeList<PieceDataInfo>((int)(pieces.Data.Length * 0.2f), Allocator.Temp);
-            var pieceListGeneration = new GeneratePieceDataInfoList
+            // collect the tiles which needs to be processed
+            tileList = new NativeList<TileDataInfo>((int)(tiles.Data.Length * 0.2f), Allocator.Temp);
+            var tileListGeneration = new GenerateTileDataInfoList
             {
-                pieceExtents = pieceExtents,
-                pieces = pieces.Data,
-                result = pieceList
+                tileExtents = tileExtents,
+                tiles = tiles.Data,
+                result = tileList
             };
-            lastHandle = pieceListGeneration.Schedule(lastHandle);
+            lastHandle = tileListGeneration.Schedule(lastHandle);
 
             lastHandle.Complete();
 
-            // generate the CombineInstance structs based on the list of pieces
-            combineArray = new NativeArray<MeshPieceWrapper>(pieceList.Length, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+            // generate the CombineInstance structs based on the list of tiles
+            combineArray = new NativeArray<MeshTileWrapper>(tileList.Length, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
             var combineList = new GenerateCombineInstances
             {
                 cellSize = cellSize,
-                forwards = forwardArray,
-                pieces = pieceList.ToDeferredJobArray(),
+                directions = directionArray,
+                tiles = tileList.ToDeferredJobArray(),
                 result = combineArray
             };
-            lastHandle = combineList.Schedule(pieceList.Length, 16, lastHandle);
+            lastHandle = combineList.Schedule(tileList.Length, 16, lastHandle);
 
             JobHandle.ScheduleBatchedJobs();
         }
@@ -205,64 +206,61 @@ namespace MeshBuilder
         private const byte DirZMinus = 8;
         private const byte DirAll = DirXPlus | DirXMinus | DirZPlus | DirZMinus;
 
-        private const byte FilledPiece = 0;
-        private const byte EmptyPiece = 0;
-
-        internal struct PieceData
+        internal struct TileData
         {
-            public PieceElem piece;
+            public TileElem elem;
             public Rotation rot;
             public byte visibility;
             public byte variation;
         }
 
-        internal struct PieceDataInfo
+        internal struct TileDataInfo
         {
             public int3 coord;
-            public PieceData data;
+            public TileData data;
         }
 
         [BurstCompile]
-        internal struct GeneratePieceDataJob : IJobParallelFor
+        internal struct GenerateTileDataJob : IJobParallelFor
         {
-            // pieces are generated on the vertices points of the grid
+            // tile are generated on the vertices points of the grid
             // on a single layer, at every vertex 4 cells join
             // the flags mean which cells are filled from the point of view of the vertex
-            // the piece will be chosen based on the configuration of the filled cells
+            // the tile will be chosen based on the configuration of the filled cells
             // top Z+ / right X+
             private const byte HasBL = 1;
             private const byte HasTL = 2;
             private const byte HasBR = 4;
             private const byte HasTR = 8;
 
-            public Extents pieceExtents;
-            public Extents volumeExtents;
+            public Extents tileExtents;
+            public Extents dataExtents;
 
-            [ReadOnly] public NativeArray<PieceData> pieceConfigurations;
+            [ReadOnly] public NativeArray<TileData> tileConfigurations;
             [ReadOnly] public NativeArray<byte> volumeData;
-            [WriteOnly] public NativeArray<PieceData> pieces;
+            [WriteOnly] public NativeArray<TileData> tiles;
 
             public void Execute(int index)
             {
                 byte configuration = 0;
 
-                int3 c = CoordFromIndex(index, pieceExtents);
-                int volumeIndex = IndexFromCoord(c, volumeExtents);
+                int3 c = CoordFromIndex(index, tileExtents);
+                int dataIndex = IndexFromCoord(c, dataExtents);
 
-                if (c.z < volumeExtents.Z)
+                if (c.z < dataExtents.Z)
                 {
-                    if (c.x < volumeExtents.X && IsFilled(volumeIndex)) { configuration |= HasTR; }
-                    if (c.x > 0 && IsFilled(volumeIndex - 1)) { configuration |= HasTL; }
+                    if (c.x < dataExtents.X && IsFilled(dataIndex)) { configuration |= HasTR; }
+                    if (c.x > 0 && IsFilled(dataIndex - 1)) { configuration |= HasTL; }
                 }
                 if (c.z > 0)
                 {
                     // the bottom checks are from the previous row
-                    volumeIndex -= volumeExtents.X;
-                    if (c.x < volumeExtents.X && IsFilled(volumeIndex)) { configuration |= HasBR; }
-                    if (c.x > 0 && IsFilled(volumeIndex - 1)) { configuration |= HasBL; }
+                    dataIndex -= dataExtents.X;
+                    if (c.x < dataExtents.X && IsFilled(dataIndex)) { configuration |= HasBR; }
+                    if (c.x > 0 && IsFilled(dataIndex - 1)) { configuration |= HasBL; }
                 }
 
-                pieces[index] = pieceConfigurations[configuration];
+                tiles[index] = tileConfigurations[configuration];
             }
 
             private bool IsFilled(int index)
@@ -271,47 +269,47 @@ namespace MeshBuilder
             }
         }
 
-        internal struct GeneratePieceDataInfoList : IJob
+        internal struct GenerateTileDataInfoList : IJob
         {
-            private static PieceData NullPiece = new PieceData { piece = PieceElem.Null, visibility = 0 };
+            private static TileData NullTile = new TileData { elem = TileElem.Null, visibility = 0 };
 
-            public Extents pieceExtents;
-            [ReadOnly] public NativeArray<PieceData> pieces;
-            [WriteOnly] public NativeList<PieceDataInfo> result;
+            public Extents tileExtents;
+            [ReadOnly] public NativeArray<TileData> tiles;
+            [WriteOnly] public NativeList<TileDataInfo> result;
 
             public void Execute()
             {
-                for (int i = 0; i < pieces.Length; ++i)
+                for (int i = 0; i < tiles.Length; ++i)
                 {
-                    if (pieces[i].piece != PieceElem.Null)
+                    if (tiles[i].elem != TileElem.Null)
                     {
-                        var c = CoordFromIndex(i, pieceExtents);
-                        var info = new PieceDataInfo { coord = c, data = pieces[i] };
+                        var c = CoordFromIndex(i, tileExtents);
+                        var info = new TileDataInfo { coord = c, data = tiles[i] };
 
-                        var piece = pieces[i].piece;
-                        var rot = pieces[i].rot;
+                        var elem = tiles[i].elem;
+                        var rot = tiles[i].rot;
 
-                        PieceData under = c.y > 0 ? pieces[i - pieceExtents.XZ] : NullPiece;
-                        PieceData above = c.y < pieceExtents.Y - 1 ? pieces[i + pieceExtents.XZ] : NullPiece;
+                        TileData under = c.y > 0 ? tiles[i - tileExtents.XZ] : NullTile;
+                        TileData above = c.y < tileExtents.Y - 1 ? tiles[i + tileExtents.XZ] : NullTile;
 
-                        if (above.piece == PieceElem.Null) { info.data.piece = TopVersion(info.data); }
-                        else if (piece == PieceElem.Side && above.piece == PieceElem.CornerConvex) { info.data.piece = PieceElem.TopSide; }
-                        else if (piece != PieceElem.Side && (above.piece != PieceElem.Side && (piece != above.piece || rot != above.rot))) { info.data.piece = TopVersion(info.data); }
-                        else if (piece != PieceElem.Side && ((piece != under.piece || rot != under.rot))) { info.data.piece = BottomVersion(info.data); }
-                        else if (under.piece == PieceElem.Null) { info.data.piece = BottomVersion(info.data); }
+                        if (above.elem == TileElem.Null) { info.data.elem = TopVersion(info.data); }
+                        else if (elem == TileElem.Side && above.elem == TileElem.CornerConvex) { info.data.elem = TileElem.TopSide; }
+                        else if (elem != TileElem.Side && (above.elem != TileElem.Side && (elem != above.elem || rot != above.rot))) { info.data.elem = TopVersion(info.data); }
+                        else if (elem != TileElem.Side && ((elem != under.elem || rot != under.rot))) { info.data.elem = BottomVersion(info.data); }
+                        else if (under.elem == TileElem.Null) { info.data.elem = BottomVersion(info.data); }
 
                         result.Add(info);
                     }
                 }
             }
 
-            static private PieceElem TopVersion(PieceData data)
+            static private TileElem TopVersion(TileData data)
             {
-                return (PieceElem)((byte)data.piece - 4);
+                return (TileElem)((byte)data.elem - 4);
             }
-            static private PieceElem BottomVersion(PieceData data)
+            static private TileElem BottomVersion(TileData data)
             {
-                return (PieceElem)((byte)data.piece + 4);
+                return (TileElem)((byte)data.elem + 4);
             }
         }
 
@@ -321,22 +319,25 @@ namespace MeshBuilder
             private static readonly float3 Up = new float3 { x = 0, y = 1, z = 0 };
 
             public float cellSize;
-            [ReadOnly] public NativeArray<float3> forwards;
+            public float3 offset;
+            [ReadOnly] public NativeArray<float3> directions;
 
-            [ReadOnly] public NativeArray<PieceDataInfo> pieces;
-            [WriteOnly] public NativeArray<MeshPieceWrapper> result;
+            [ReadOnly] public NativeArray<TileDataInfo> tiles;
+            [WriteOnly] public NativeArray<MeshTileWrapper> result;
 
             public void Execute(int index)
             {
-                PieceData piece = pieces[index].data;
-                int3 c = pieces[index].coord;
+                TileData tile = tiles[index].data;
+                int3 c = tiles[index].coord;
 
-                float3 p = new float3 { x = c.x * cellSize, y = c.y * cellSize, z = c.z * cellSize };
-                float4x4 m = float4x4.lookAt(p, forwards[(byte)piece.rot], Up);
+                float3 p = c;
+                p *= cellSize;
+                p += offset;
+                float4x4 m = float4x4.lookAt(p, directions[(byte)tile.rot], Up);
 
-                result[index] = new MeshPieceWrapper
+                result[index] = new MeshTileWrapper
                 {
-                    elem = piece.piece,
+                    elem = tile.elem,
                     combine = new CombineInstance { subMeshIndex = 0, transform = ToMatrix4x4(m) }
                 };
             }
@@ -347,31 +348,31 @@ namespace MeshBuilder
             }
         }
 
-        internal struct MeshPieceWrapper
+        internal struct MeshTileWrapper
         {
-            public PieceElem elem;
+            public TileElem elem;
             public int variation;
             public CombineInstance combine;
         }
 
-        static readonly PieceData[] PieceConfigurations = new PieceData[]
+        static readonly TileData[] TileConfigurations = new TileData[]
         {
-            new PieceData { piece = PieceElem.Null, visibility = EmptyPiece },                                                                   // 0 - nothing, no mesh
-            new PieceData { piece = PieceElem.CornerConvex, rot = Rotation.CW270, visibility = DirXMinus | DirZMinus }, // 1 - bottom left is filled
-            new PieceData { piece = PieceElem.CornerConvex, rot = Rotation.CW0, visibility = DirXMinus | DirZPlus  },   // 2 - top left
-            new PieceData { piece = PieceElem.Side, rot = Rotation.CW270, visibility = DirXMinus },                     // 3 - left
-            new PieceData { piece = PieceElem.CornerConvex, rot = Rotation.CW180, visibility = DirXPlus | DirZMinus },  // 4 - bottom right
-            new PieceData { piece = PieceElem.Side, rot = Rotation.CW180, visibility = DirZMinus },                     // 5 - bottom
-            new PieceData { piece = PieceElem.DoubleConcave, rot = Rotation.CW90, visibility = DirAll },                 // 6 - diagonal
-            new PieceData { piece = PieceElem.CornerConcave, rot = Rotation.CW270, visibility = DirXMinus | DirZMinus },// 7 - no top right
-            new PieceData { piece = PieceElem.CornerConvex, rot = Rotation.CW90, visibility = DirXPlus | DirZPlus },    // 8 - top right
-            new PieceData { piece = PieceElem.DoubleConcave, rot = Rotation.CW0, visibility = DirAll },                 // 9 - diagonal
-            new PieceData { piece = PieceElem.Side, visibility = DirZPlus },                                            // 10 - top
-            new PieceData { piece = PieceElem.CornerConcave, rot = Rotation.CW0, visibility = DirXMinus | DirZPlus },   // 11 - no bottom right
-            new PieceData { piece = PieceElem.Side, rot = Rotation.CW90, visibility = DirXPlus },                       // 12 - right
-            new PieceData { piece = PieceElem.CornerConcave, rot = Rotation.CW180, visibility = DirXMinus | DirZMinus },// 13 - no top left
-            new PieceData { piece = PieceElem.CornerConcave, rot = Rotation.CW90, visibility = DirXPlus | DirZPlus },   // 14 - no bottom left
-            new PieceData { piece = PieceElem.Null, visibility = FilledPiece },                                                   // 15 - all, no mesh
+            new TileData { elem = TileElem.Null, visibility = 0 },                                                   // 0 - nothing, no mesh
+            new TileData { elem = TileElem.CornerConvex, rot = Rotation.CW270, visibility = DirXMinus | DirZMinus }, // 1 - bottom left is filled
+            new TileData { elem = TileElem.CornerConvex, rot = Rotation.CW0, visibility = DirXMinus | DirZPlus  },   // 2 - top left
+            new TileData { elem = TileElem.Side, rot = Rotation.CW270, visibility = DirXMinus },                     // 3 - left
+            new TileData { elem = TileElem.CornerConvex, rot = Rotation.CW180, visibility = DirXPlus | DirZMinus },  // 4 - bottom right
+            new TileData { elem = TileElem.Side, rot = Rotation.CW180, visibility = DirZMinus },                     // 5 - bottom
+            new TileData { elem = TileElem.DoubleConcave, rot = Rotation.CW90, visibility = DirAll },                 // 6 - diagonal
+            new TileData { elem = TileElem.CornerConcave, rot = Rotation.CW270, visibility = DirXMinus | DirZMinus },// 7 - no top right
+            new TileData { elem = TileElem.CornerConvex, rot = Rotation.CW90, visibility = DirXPlus | DirZPlus },    // 8 - top right
+            new TileData { elem = TileElem.DoubleConcave, rot = Rotation.CW0, visibility = DirAll },                 // 9 - diagonal
+            new TileData { elem = TileElem.Side, visibility = DirZPlus },                                            // 10 - top
+            new TileData { elem = TileElem.CornerConcave, rot = Rotation.CW0, visibility = DirXMinus | DirZPlus },   // 11 - no bottom right
+            new TileData { elem = TileElem.Side, rot = Rotation.CW90, visibility = DirXPlus },                       // 12 - right
+            new TileData { elem = TileElem.CornerConcave, rot = Rotation.CW180, visibility = DirXMinus | DirZMinus },// 13 - no top left
+            new TileData { elem = TileElem.CornerConcave, rot = Rotation.CW90, visibility = DirXPlus | DirZPlus },   // 14 - no bottom left
+            new TileData { elem = TileElem.Null, visibility = 0 },                                                   // 15 - all, no mesh
         };
 
         private static readonly float3[] Directions = new float3[]

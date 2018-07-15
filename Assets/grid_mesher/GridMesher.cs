@@ -10,6 +10,9 @@ namespace MeshBuilder
 {
     public class GridMesher : IMeshBuilder
     {
+        public const bool NoScaling = false;
+        public const bool NormalizeUVs = true;
+
         private const int Filled = 1;
 
         private const int VertexLengthIndex = 0;
@@ -27,6 +30,8 @@ namespace MeshBuilder
         private Extents dataExtents;
         private int resolution;
         private float cellSize;
+        private bool normalizeUvs;
+        private float3 positionOffset;
 
         private Mesh mesh;
         private NativeArray<int> meshArrayLengths;
@@ -42,7 +47,7 @@ namespace MeshBuilder
             mesh = new Mesh();
         }
 
-        public void Init(DataVolume data, float cellSize, int cellResolution)
+        public void Init(DataVolume data, float cellSize, int cellResolution, bool normalizeUvs = NoScaling, float3 posOffset = default(float3))
         {
             this.data = data;
             dataExtents = new Extents(data.XLength, data.YLength, data.ZLength);
@@ -59,6 +64,9 @@ namespace MeshBuilder
                 this.cellSize = 0.1f;
                 Debug.LogWarning("Cell size must be greater than zero!");
             }
+
+            this.normalizeUvs = normalizeUvs;
+            this.positionOffset = posOffset;
 
             if (meshArrayLengths.IsCreated)
             {
@@ -145,6 +153,28 @@ namespace MeshBuilder
             };
 
             lastHandle = generateMeshData.Schedule(lastHandle);
+
+            if (normalizeUvs)
+            {
+                var scaleJob = new UVScaleJob
+                {
+                    scale = new float2((float)(1f / data.XLength), (float)(1f / data.ZLength)),
+                    uvs = meshData.UVs
+                };
+
+                lastHandle = scaleJob.Schedule(meshData.UVs.Length, 128, lastHandle);
+            }
+
+            if (positionOffset.x != 0 || positionOffset.y != 0 || positionOffset.z != 0)
+            {
+                var offsetJob = new VertexOffsetJob
+                {
+                    offset = positionOffset,
+                    vertices = meshData.Vertices
+                };
+
+                lastHandle = offsetJob.Schedule(meshData.Vertices.Length, 128, lastHandle);
+            }
 
             JobHandle.ScheduleBatchedJobs();
         }
