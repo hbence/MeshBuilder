@@ -8,17 +8,36 @@ using DataVolume = MeshBuilder.Volume<byte>;
 
 namespace MeshBuilder
 {
+    /// <summary>
+    /// GridMesher
+    /// Generates a grid mesh based on 3d volume data (top part for now)
+    /// 
+    /// TODO:
+    /// - it only generates a top part it should be able to handle any direction
+    /// - it should be able to handle multiple materials
+    /// - it would be nice if it could generate heightmap lerp values 
+    /// so the sides would be always at 0 and scale towards the heightmap value
+    /// 
+    /// NOTES:
+    /// - normalize uv and offset position is an additional step for now, it's modular but it would be probably fater
+    /// to do it in the mesh generation phase
+    /// - the mesh generation generates every vertex in each cell, it would be perhaps faster to generate 
+    /// one cell (for every scenario: no adjacent, bottom adjacent, left adjacent, both adjacent), then just copy that
+    /// with offsets and update the border indices
+    /// </summary>
     public class GridMesher : IMeshBuilder
     {
         public const bool NoScaling = false;
         public const bool NormalizeUVs = true;
 
+        public const bool Temporary = true;
+        public const bool Persistent = false;
+
         private const int Filled = 1;
 
         private const int VertexLengthIndex = 0;
         private const int TriangleLengthIndex = 1;
-        private const int BorderLengthIndex = 2;
-        private const int ArrayLengthsCount = 3;
+        private const int ArrayLengthsCount = 2;
 
         private const int MinResolution = 1;
         private const int MaxResolution = 10;
@@ -42,8 +61,9 @@ namespace MeshBuilder
 
         private NativeList<GridCell> gridCells;
         private GridMeshData meshData;
-        private NativeArray<int> borderIndices;
+        private NativeList<int> borderIndices;
 
+        private NativeArray<int> tempRowBuffer;
         private NativeArray<Color32> heightMapColors;
 
         private JobHandle lastHandle;
@@ -89,9 +109,9 @@ namespace MeshBuilder
             inited = true;
         }
 
-        public void Init(DataVolume data, float cellSize, int resolution, Texture2D heightmap, float maxHeight, byte colorLevelOffset = 0, float3 posOffset = default(float3))
+        public void Init(DataVolume data, float cellSize, int resolution, Texture2D heightmap, float maxHeight, byte colorLevelOffset = 0, bool normalizeUV = true, float3 posOffset = default(float3))
         {
-            Init(data, cellSize, resolution, true, posOffset);
+            Init(data, cellSize, resolution, normalizeUV, posOffset);
 
             this.heightmap = heightmap;
             this.maxHeight = maxHeight;
@@ -123,6 +143,10 @@ namespace MeshBuilder
             {
                 heightMapColors.Dispose();
             }
+            if (tempRowBuffer.IsCreated)
+            {
+                tempRowBuffer.Dispose();
+            }
             if (meshData != null)
             {
                 meshData.Dispose();
@@ -150,7 +174,9 @@ namespace MeshBuilder
             lastHandle.Complete();
 
             gridCells = new NativeList<GridCell>(Allocator.Temp);
+            borderIndices = new NativeList<int>(2*resolution*dataExtents.XZ, Allocator.Temp);
             meshData = new GridMeshData();
+            tempRowBuffer = new NativeArray<int>(dataExtents.X, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
 
             var generateGroundGridCells = new GenerateMeshGridCells
             {
@@ -158,6 +184,8 @@ namespace MeshBuilder
                 volumeExtent = dataExtents,
                 data = data.Data,
                 cells = gridCells,
+                bottomRowBuffer = tempRowBuffer,
+                borderIndices = borderIndices,
                 bufferLengths = meshArrayLengths
             };
 
@@ -165,28 +193,37 @@ namespace MeshBuilder
 
             lastHandle.Complete();
 
-            meshData.CreateMeshBuffers(meshArrayLengths[VertexLengthIndex], meshArrayLengths[TriangleLengthIndex], true);
-            borderIndices = new NativeArray<int>(meshArrayLengths[BorderLengthIndex], Allocator.Temp);
+            meshData.CreateMeshBuffers(meshArrayLengths[VertexLengthIndex], meshArrayLengths[TriangleLengthIndex], Temporary);
 
             var generateMeshData = new GenerateMeshData
             {
+                // cell properties
                 cellResolution = resolution,
                 cellSize = cellSize,
+                stepX = cellSize / resolution,
+                stepZ = cellSize / resolution,
+                stepU = 1f / resolution,
+                stepV = 1f / resolution,
+                stepTriangle = resolution * resolution * 2 *3,
+
+                // input data
                 volumeExtent = dataExtents,
                 cells = gridCells,
                 borderIndices = borderIndices,
+
+                // output data
                 meshVertices = meshData.Vertices,
                 meshUVs = meshData.UVs,
                 meshTriangles = meshData.Tris
             };
 
-            lastHandle = generateMeshData.Schedule(lastHandle);
+            lastHandle = generateMeshData.Schedule(gridCells.Length, 32, lastHandle);
 
             if (normalizeUvs)
             {
                 var scaleJob = new UVScaleJob
                 {
-                    scale = new float2((float)(1f / data.XLength), (float)(1f / data.ZLength)),
+                    scale = new float2(1f / data.XLength, 1f / data.ZLength),
                     uvs = meshData.UVs
                 };
 
@@ -200,6 +237,7 @@ namespace MeshBuilder
                     offset = positionOffset,
                     vertices = meshData.Vertices
                 };
+
 
                 lastHandle = offsetJob.Schedule(meshData.Vertices.Length, 128, lastHandle);
             }
@@ -220,6 +258,8 @@ namespace MeshBuilder
                     colors = heightMapColors,
                     heightStep = maxHeight / 255f,
                     heightOffset = -(maxHeight / 255f) * colorLevelOffset,
+                    uScale = normalizeUvs ? 1f : 1f / data.XLength,
+                    vScale = normalizeUvs ? 1f : 1f / data.ZLength,
                     uvs = meshData.UVs,
                     vertices = meshData.Vertices
                 };
@@ -253,30 +293,49 @@ namespace MeshBuilder
                 meshArrayLengths[i] = 0;
             }
         }
-
+        
+        // first step of the mesh generation
+        // loop through the data volume and make a GridCell for every cell which will be generated
+        // store every information which will be needed for parallel generation in the next step
+        // set the left and bottom neighbours for the cell
+        // set the start vertex for the cell
+        // set the border vertex indices
+        [BurstCompile]
         internal struct GenerateMeshGridCells : IJob
         {
+            // input
             public int resolution;
             public Extents volumeExtent;
             [ReadOnly] public NativeArray<byte> data;
 
-            [WriteOnly] public NativeList<GridCell> cells;
+            // temp buffer
+            public NativeArray<int> bottomRowBuffer;
+
+            // output
+            public NativeList<GridCell> cells;
+            public NativeList<int> borderIndices;
             [WriteOnly] public NativeArray<int> bufferLengths;
+
+            // cell vertex
+            private int cellVertexCount;
+            private int cellVertexCount1Adjacent;
+            private int cellVertexCount2Adjacent;
 
             public void Execute()
             {
+                cellVertexCount = (resolution + 1) * (resolution + 1);
+                cellVertexCount1Adjacent = cellVertexCount - (resolution + 1);
+                cellVertexCount2Adjacent = cellVertexCount - (resolution + 1) * 2 + 1;
+
                 int vertexCount = 0;
 
-                int cellCount = 0;
-
-                int[] bottom = new int[volumeExtent.X];
-
+                int boundaryIndex = 0;
                 int dataIndex = 0;
                 for (int y = 0; y < volumeExtent.Y; ++y)
                 {
-                    for (int i = 0; i < bottom.Length; ++i)
+                    for (int i = 0; i < bottomRowBuffer.Length; ++i)
                     {
-                        bottom[i] = -1;
+                        bottomRowBuffer[i] = -1;
                     }
 
                     for (int z = 0; z < volumeExtent.Z; ++z)
@@ -286,20 +345,53 @@ namespace MeshBuilder
                         {
                             if (data[dataIndex] == Filled && (y == volumeExtent.Y - 1 || data[dataIndex + volumeExtent.XZ] != Filled))
                             {
-                                var cell = new GridCell { coord = new int3 { x = x, y = y, z = z }, leftCell = left, bottomCell = bottom[x] };
+                                var right = new Range { start = boundaryIndex, end = boundaryIndex + resolution };
+                                boundaryIndex += resolution + 1;
+                                var top = new Range { start = boundaryIndex, end = boundaryIndex + resolution };
+                                boundaryIndex += resolution + 1;
+                                borderIndices.ResizeUninitialized(boundaryIndex);
+                                
+                                if (bottomRowBuffer[x] >= 0)
+                                {
+                                    if (left >= 0)
+                                    {
+                                        AddBorderIndicesBothAdj(vertexCount, right.start, top.start, bottomRowBuffer[x], left);
+                                    }
+                                    else
+                                    {
+                                        AddBorderIndicesBottomAdj(vertexCount, right.start, top.start, bottomRowBuffer[x]);
+                                    }
+                                }
+                                else if (left >= 0)
+                                {
+                                    AddBorderIndicesLeftAdj(vertexCount, right.start, top.start, left);
+                                }
+                                else
+                                {
+                                    AddBorderIndicesNoAdj(vertexCount, right.start, top.start);
+                                }
+
+                                var cell = new GridCell
+                                {
+                                    coord = new int3 { x = x, y = y, z = z },
+                                    leftCell = left,
+                                    bottomCell = bottomRowBuffer[x],
+                                    rightBorderIndices = right,
+                                    topBorderIndices = top,
+                                    startVertex = vertexCount
+                                };
+
                                 cells.Add(cell);
 
-                                vertexCount += CalcCellVertexCount(left, bottom[x]);
+                                vertexCount += CalcCellVertexCount(left, bottomRowBuffer[x]);
 
-                                left = cellCount;
-                                bottom[x] = cellCount;
-
-                                ++cellCount;
+                                left = cells.Length - 1;
+                                bottomRowBuffer[x] = cells.Length - 1;
                             }
                             else
                             {
                                 left = -1;
-                                bottom[x] = -1;
+                                bottomRowBuffer[x] = -1;
                             }
 
                             ++dataIndex;
@@ -307,87 +399,134 @@ namespace MeshBuilder
                     }
                 }
 
-                int triangleCount = cellCount * (resolution * resolution * 2) * 3;
-                int borderIndexCount = cellCount * (resolution + 1) * 2;
+                int triangleCount = cells.Length * (resolution * resolution * 2) * 3;
+                int borderIndexCount = cells.Length * (resolution + 1) * 2;
 
                 bufferLengths[VertexLengthIndex] = vertexCount;
                 bufferLengths[TriangleLengthIndex] = triangleCount;
-                bufferLengths[BorderLengthIndex] = borderIndexCount;
             }
 
             private int CalcCellVertexCount(int leftIndex, int bottomIndex)
             {
-                int vertexCount = (resolution + 1) * (resolution + 1);
-
-                if (leftIndex >= 0 && bottomIndex >= 0)
+                if (leftIndex >= 0)
                 {
-                    vertexCount -= (resolution + 1) * 2 - 1;
+                    if (bottomIndex >= 0)
+                    {
+                        return cellVertexCount2Adjacent;
+                    }
+                    else
+                    {
+                        return cellVertexCount1Adjacent;
+                    }
                 }
-                else if (leftIndex >= 0 || bottomIndex >= 0)
+                else if (bottomIndex >= 0)
                 {
-                    vertexCount -= resolution + 1;
+                    return cellVertexCount1Adjacent;
                 }
 
-                return vertexCount;
+                return cellVertexCount;
             }
+
+            private void AddBorderIndicesNoAdj(int startVertex, int rightBorderStart, int topBorderStart)
+            {
+                int lastVertex = startVertex + (resolution + 1) * (resolution + 1) - 1;
+
+                for (int i = 0; i <= resolution; ++i)
+                {
+                    borderIndices[rightBorderStart + i] = startVertex + resolution;
+                    startVertex += resolution + 1;
+                    borderIndices[topBorderStart + i] = lastVertex - resolution + i;
+                }
+            }
+
+            private void AddBorderIndicesLeftAdj(int startVertex, int rightBorderStart, int topBorderStart, int leftCell)
+            {
+                int lastVertex = startVertex + (resolution + 1) * resolution - 1;
+
+                for (int i = 0; i <= resolution; ++i)
+                {
+                    borderIndices[rightBorderStart + i] = startVertex + resolution - 1;
+                    startVertex += resolution;
+                    borderIndices[topBorderStart + i] = lastVertex - resolution + i;
+                }
+
+                borderIndices[topBorderStart] = GetBorderRightIndex(leftCell, resolution);
+            }
+
+            private void AddBorderIndicesBottomAdj(int startVertex, int rightBorderStart, int topBorderStart, int bottomCell)
+            {
+                int lastVertex = startVertex + (resolution + 1) * resolution - 1;
+                
+                for (int i = 1; i <= resolution; ++i)
+                {
+                    borderIndices[rightBorderStart + i] = startVertex + resolution;
+                    startVertex += resolution + 1;
+                    borderIndices[topBorderStart + i] = lastVertex - resolution + i;
+                }
+
+                borderIndices[rightBorderStart] = GetBorderTopIndex(bottomCell, resolution);
+                borderIndices[topBorderStart] = lastVertex - resolution;
+            }
+
+            private void AddBorderIndicesBothAdj(int startVertex, int rightBorderStart, int topBorderStart, int bottomCell, int leftCell)
+            {
+                int lastVertex = startVertex + resolution * resolution - 1;
+
+                for (int i = 1; i <= resolution; ++i)
+                {
+                    borderIndices[rightBorderStart + i] = startVertex + resolution - 1;
+                    startVertex += resolution;
+                    borderIndices[topBorderStart + i] = lastVertex - resolution + i;
+                }
+
+                borderIndices[rightBorderStart] = GetBorderTopIndex(bottomCell, resolution);
+                borderIndices[topBorderStart] = GetBorderRightIndex(leftCell, resolution);
+            }
+
+            private int GetBorderRightIndex(int cellIndex, int borderIndex) { return cells[cellIndex].rightBorderIndices.At(borderIndex, borderIndices); }
+            private int GetBorderTopIndex(int cellIndex, int borderIndex) { return cells[cellIndex].topBorderIndices.At(borderIndex, borderIndices); }
         }
 
-        internal struct GenerateMeshData : IJob
+        // second step of the mesh generation
+        // every cell contains the required information
+        // so this just steps through in parallel and generates the mesh data for every cell
+        [BurstCompile]
+        internal struct GenerateMeshData : IJobParallelFor
         {
             static private readonly Range NullRange = new Range { start = 0, end = 0 };
 
+            // cell properties
             public int cellResolution;
             public float cellSize;
+            public float stepX;
+            public float stepZ;
+            public float stepU;
+            public float stepV;
+            public int stepTriangle;
 
+            // input data
             public Extents volumeExtent;
-            public NativeArray<GridCell> cells;
+            [ReadOnly] public NativeArray<GridCell> cells;
+            [ReadOnly] public NativeArray<int> borderIndices;
 
-            public NativeArray<int> borderIndices;
+            // output data
+            [NativeDisableParallelForRestriction] [WriteOnly] public NativeArray<float3> meshVertices;
+            [NativeDisableParallelForRestriction] [WriteOnly] public NativeArray<int> meshTriangles;
+            [NativeDisableParallelForRestriction] [WriteOnly] public NativeArray<float2> meshUVs;
 
-            [WriteOnly] public NativeArray<float3> meshVertices;
-            [WriteOnly] public NativeArray<int> meshTriangles;
-            [WriteOnly] public NativeArray<float2> meshUVs;
-
-            private float stepX;
-            private float stepZ;
-
-            private float stepU;
-            private float stepV;
-
-            public void Execute()
+            public void Execute(int index)
             {
-                stepX = cellSize / cellResolution;
-                stepZ = cellSize / cellResolution;
+                int triangleIndex = index * stepTriangle;
 
-                stepU = 1.0f / cellResolution;
-                stepV = 1.0f / cellResolution;
+                var cell = cells[index];
 
-                int boundaryIndex = 0;
-                int sideVertexCount = cellResolution + 1;
-
-                int vertexIndex = 0;
-                int triangleIndex = 0;
-                for (int i = 0; i < cells.Length; ++i)
-                {
-                    var cell = cells[i];
-
-                    Range left = cell.leftCell >= 0 ? cells[cell.leftCell].rightBorderIndices : NullRange;
-                    Range bottom = cell.bottomCell >= 0 ? cells[cell.bottomCell].topBorderIndices : NullRange;
-
-                    var right = new Range { start = boundaryIndex, end = boundaryIndex + sideVertexCount - 1 };
-                    boundaryIndex += sideVertexCount;
-                    var top = new Range { start = boundaryIndex, end = boundaryIndex + sideVertexCount - 1 };
-                    boundaryIndex += sideVertexCount;
-
-                    GenerateGrid(cell.coord, left, bottom, right, top, ref vertexIndex, ref triangleIndex);
-
-                    cell.rightBorderIndices = right;
-                    cell.topBorderIndices = top;
-                    cells[i] = cell;
-                }
+                Range left = cell.leftCell >= 0 ? cells[cell.leftCell].rightBorderIndices : NullRange;
+                Range bottom = cell.bottomCell >= 0 ? cells[cell.bottomCell].topBorderIndices : NullRange;
+                    
+                GenerateGrid(cell.coord, left, bottom, cell.rightBorderIndices, cell.topBorderIndices, cell.startVertex, triangleIndex);
             }
 
-            private void GenerateGrid(int3 coord, Range left, Range bottom, Range right, Range top, ref int vertexIndex, ref int triangleIndex)
+            private void GenerateGrid(int3 coord, Range left, Range bottom, Range right, Range top, int vertexIndex, int triangleIndex)
             {
                 float startX = coord.x * cellSize;
                 float startY = (coord.y + 0.5f) * cellSize;
@@ -454,13 +593,8 @@ namespace MeshBuilder
                     }
 
                     // right side vertex
-                    if (y == 0 && bottom.IsValid)
+                    if (y > 0 || !bottom.IsValid)
                     {
-                        borderIndices[right.start] = borderIndices[bottom.end];
-                    }
-                    else
-                    {
-                        borderIndices[right.start + y] = vertexIndex;
                         Add(v, uv, vertexIndex);
                         ++vertexIndex;
                     }
@@ -475,19 +609,8 @@ namespace MeshBuilder
 
                 for (int i = 0; i < width; ++i)
                 {
-                    if (i == 0 && left.IsValid)
+                    if (i > 0 || !left.IsValid)
                     {
-                        borderIndices[top.start] = borderIndices[left.end];
-                    }
-                    else
-                    {
-                        if (i == width - 1)
-                        {
-                            borderIndices[right.end] = vertexIndex;
-                        }
-
-                        borderIndices[top.start + i] = vertexIndex;
-
                         Add(v, uv, vertexIndex);
                         ++vertexIndex;
                     }
@@ -521,14 +644,17 @@ namespace MeshBuilder
             public int heightmapHeight;
             public float heightStep;
             public float heightOffset;
+            public float uScale;
+            public float vScale;
+
             [ReadOnly] public NativeArray<Color32> colors;
             [ReadOnly] public NativeArray<float2> uvs;
             public NativeArray<float3> vertices;
 
             public void Execute(int index)
             {
-                int x = (int)(heightmapWidth * uvs[index].x) % heightmapWidth;
-                int y = (int)(heightmapHeight * uvs[index].y) % heightmapHeight;
+                int x = (int)(heightmapWidth * uvs[index].x * uScale) % heightmapWidth;
+                int y = (int)(heightmapHeight * uvs[index].y * vScale) % heightmapHeight;
 
                 int colorIndex = y * heightmapWidth + x;
                 Color32 color = colors[colorIndex];
@@ -577,12 +703,15 @@ namespace MeshBuilder
 
         /// <summary>
         /// this gets generated for every cell which requires vertex grid generation
-        /// leftCell and bottomCell are the two neighbours which are connected to the same vertex mesh (-1 means no connection)
-        /// topBorderIndices and rightBorderIndices are two ranges pointing to and index array, these are the bordering vertex indices 
+        /// startVertex - first index for vertex generation
+        /// leftCell and bottomCell - are the two neighbours which are connected to the same vertex mesh (-1 means no connection)
+        /// topBorderIndices and rightBorderIndices - are two ranges pointing to and index array, these are the bordering vertex indices 
         /// </summary>
         internal struct GridCell
         {
             public int3 coord;
+
+            public int startVertex;
 
             public int leftCell;
             public int bottomCell;

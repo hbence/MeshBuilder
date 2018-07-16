@@ -19,6 +19,9 @@ public class Tester : MonoBehaviour
     private TileMesher tileMesher;
 
     public Texture2D heightmap;
+    [Range(1, 4)]
+    public int resolution = 3;
+    public bool normalizeUV = true;
 
 	private void Awake ()
     {
@@ -26,7 +29,7 @@ public class Tester : MonoBehaviour
 
         groundMesher = new GridMesher();
         //        groundMesher.Init(data, 1f, 1);
-        groundMesher.Init(data, 1f, 3, heightmap, 1f, 128);
+        groundMesher.Init(data, 1f, resolution, heightmap, 1f, 128, normalizeUV);
 
         groundMeshFilter.sharedMesh = groundMesher.Mesh;
 
@@ -76,8 +79,8 @@ public class Tester : MonoBehaviour
 
     private void FillTestData(DataVolume volume)
     {
-        int x = 0;
-        int z = 0;
+        int x = 5;
+        int z = 5;
 
         for (x = 0; x < 16; ++x)
         {
