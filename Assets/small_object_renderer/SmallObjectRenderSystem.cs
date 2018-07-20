@@ -10,42 +10,11 @@ using Unity.Burst;
 
 namespace MeshBuilder.SmallObject
 {
-    public class SmallObjectAddRemoveRendererBarrier : BarrierSystem { }
-
-    [UpdateBefore(typeof(SmallObjectAddRemoveRendererBarrier))]
-    public class SmallObjectChangeRendererBarrier : BarrierSystem { }
-
-    public class SmallObjectRenderSystem : JobComponentSystem
+    public class SOUpdateLODLevelSystem : JobComponentSystem
     {
-        struct NotShownGroup
-        {
-            public readonly int Length;
-            [ReadOnly] public EntityArray entity;
-            [ReadOnly] public SharedComponentDataArray<SmallObject> smallObject;
-            [ReadOnly] public ComponentDataArray<CurrentLODLevel> curLod;
-            [ReadOnly] public ComponentDataArray<MaxLODLevel> maxLod;
-            [ReadOnly] public ComponentDataArray<Position> position;
+        [Inject] SOUpdateLODBarrier barrier;
 
-            SubtractiveComponent<MeshInstanceRenderer> renderer;
-        }
-
-        struct ShownGroup
-        {
-            public readonly int Length;
-            public EntityArray entity;
-            [ReadOnly] public SharedComponentDataArray<SmallObject> smallObject;
-            [ReadOnly] public ComponentDataArray<CurrentLODLevel> curLod;
-            [ReadOnly] public ComponentDataArray<MaxLODLevel> maxLod;
-            [ReadOnly] public ComponentDataArray<Position> position;
-            [ReadOnly] public SharedComponentDataArray<MeshInstanceRenderer> renderer;
-        }
-
-        [Inject] private SmallObjectAddRemoveRendererBarrier addRemoveBarrier;
-        [Inject] private SmallObjectChangeRendererBarrier changeBarrier;
-        [Inject] private NotShownGroup notShownGroup;
-        [Inject] private ShownGroup shownGroup;
-
-        private ComponentGroup all;
+        private ComponentGroup group;
         private List<SmallObject> uniqueSmallObjects;
 
         private JobHandle lastHandle;
@@ -54,215 +23,61 @@ namespace MeshBuilder.SmallObject
         {
             uniqueSmallObjects = new List<SmallObject>();
 
-            all = GetComponentGroup(typeof(SmallObjectParent),
+            group = GetComponentGroup(typeof(SmallObjectParent),
                                             typeof(SmallObject),
                                             typeof(Position),
                                             typeof(CurrentLODLevel),
                                             typeof(MaxLODLevel));
         }
 
-        protected override void OnDestroyManager()
-        {
-        }
-
         protected override JobHandle OnUpdate(JobHandle inputDeps)
         {
             var cam = Camera.main.transform;
             float3 lodCenter = cam.position;
 
-            var addRemoveBuffer = addRemoveBarrier.CreateCommandBuffer();
-            var changeBuffer = changeBarrier.CreateCommandBuffer();
+            var commandBuffer = barrier.CreateCommandBuffer();
 
             EntityManager.GetAllUniqueSharedComponentDatas(uniqueSmallObjects);
 
-            for (int objIndex = 0; objIndex < uniqueSmallObjects.Count; ++objIndex)
-            {
-                var smallObj = uniqueSmallObjects[objIndex];
-                all.SetFilter(smallObj);
-
-                var updateJob = new UpdateLODLevel
-                {
-                    camPosition = lodCenter,
-                    lod0 = LODRange.Create(smallObj, 0),
-                    lod1 = LODRange.Create(smallObj, 1),
-                    lod2 = LODRange.Create(smallObj, 2),
-
-                    positionArray = all.GetComponentDataArray<Position>(),
-                    curLodArray = all.GetComponentDataArray<CurrentLODLevel>(),
-                    entityArray = all.GetEntityArray(),
-                    commandBuffer = changeBuffer
-                };
-
-                int length = all.CalculateLength();
-                updateJob.Run(length);
-                //    lastHandle = initJob.Schedule(length, 128, lastHandle);
-                //    lastHandle.Complete();
-            }
-
-            UpdateRenderers(shownGroup.Length,
-                shownGroup.entity,
-                shownGroup.smallObject,
-                shownGroup.renderer,
-                shownGroup.curLod,
-                shownGroup.maxLod,
-                changeBuffer,
-                addRemoveBuffer);
-
-            AddRenderers(notShownGroup.Length,
-                notShownGroup.entity,
-                notShownGroup.smallObject,
-                notShownGroup.curLod,
-                notShownGroup.maxLod,
-                addRemoveBuffer);
-
-            return inputDeps;
-        }
-
-        /*
-        protected override JobHandle OnUpdate(JobHandle inputDeps)
-        {
-            var cam = Camera.main.transform;
-            float3 lodCenter = cam.position;
-
-            lastHandle.Complete();
             lastHandle = inputDeps;
 
-            EntityManager.GetAllUniqueSharedComponentDatas(uniqueSmallObjects);
-
             for (int objIndex = 0; objIndex < uniqueSmallObjects.Count; ++objIndex)
             {
                 var smallObj = uniqueSmallObjects[objIndex];
-                all.SetFilter(smallObj);
+                group.SetFilter(smallObj);
 
-                var initJob = new UpdateLODLevel
+                int length = group.CalculateLength();
+
+                if (length > 0)
                 {
-                    camPosition = lodCenter,
-                    lod0 = LODRange.Create(smallObj, 0),
-                    lod1 = LODRange.Create(smallObj, 1),
-                    lod2 = LODRange.Create(smallObj, 2),
+                    var updateJob = new UpdateLODLevelJob2
+                    {
+                        camPosition = lodCenter,
+                        lod0 = LODRange.Create(smallObj, 0),
+                        lod1 = LODRange.Create(smallObj, 1),
+                        lod2 = LODRange.Create(smallObj, 2),
 
-                    positionArray = all.GetComponentDataArray<Position>(),
-                    curLodArray = all.GetComponentDataArray<CurrentLODLevel>(),
-                    entityArray = all.GetEntityArray(),
-                    commandBuffer = changeBarrier.CreateCommandBuffer()
-                };
+                        positionArray = group.GetComponentDataArray<Position>(),
+                        curLodArray = group.GetComponentDataArray<CurrentLODLevel>(),
+                        entityArray = group.GetEntityArray(),
+                        mgr = EntityManager
+                    };
 
-                int length = all.CalculateLength();
-                initJob.Run(length);
-            //    lastHandle = initJob.Schedule(length, 128, lastHandle);
-            //    lastHandle.Complete();
+                    updateJob.Execute();
+                  //  var handle = updateJob.Schedule(inputDeps);
+                  //  var handle = updateJob.Schedule(length, 128, inputDeps);
+                 //   lastHandle = JobHandle.CombineDependencies(lastHandle, handle);
+                    //lastHandle.Complete();
+                }
             }
 
-            var addRemoveBuffer = addRemoveBarrier.CreateCommandBuffer();
-            var changeBuffer = changeBarrier.CreateCommandBuffer();
-
-            UpdateRenderers(shownGroup.Length,
-                shownGroup.entity,
-                shownGroup.smallObject,
-                shownGroup.renderer,
-                shownGroup.curLod,
-                shownGroup.maxLod,
-                changeBuffer,
-                addRemoveBuffer);
-
-            AddRenderers(notShownGroup.Length, 
-                notShownGroup.entity, 
-                notShownGroup.smallObject, 
-                notShownGroup.curLod, 
-                notShownGroup.maxLod, 
-                addRemoveBuffer);
-
-            JobHandle.ScheduleBatchedJobs();
+            uniqueSmallObjects.Clear();
 
             return lastHandle;
         }
-        */
-
-        private void UpdateRenderers(int length, EntityArray entity, SharedComponentDataArray<SmallObject> obj, SharedComponentDataArray<MeshInstanceRenderer> renderers, ComponentDataArray<CurrentLODLevel> currentLod, ComponentDataArray<MaxLODLevel> maxLod, EntityCommandBuffer changeBuffer, EntityCommandBuffer addRemoveBuffer)
-        {
-            for (int i = 0; i < length; ++i)
-            {
-                if (!currentLod[i].HasChanged)
-                {
-                    continue;
-                }
-
-                int curLod = currentLod[i].Value;
-                SmallObject smallObj = obj[i];
-                if (curLod <= maxLod[i].Value)
-                {
-                    switch (curLod)
-                    {
-                        case 0: UpdateRenderer(entity[i], renderers[i], smallObj.lod0.renderer, changeBuffer, addRemoveBuffer); break;
-                        case 1: UpdateRenderer(entity[i], renderers[i], smallObj.lod1.renderer, changeBuffer, addRemoveBuffer); break;
-                        case 2: UpdateRenderer(entity[i], renderers[i], smallObj.lod2.renderer, changeBuffer, addRemoveBuffer); break;
-                        default:
-                            {
-                                Debug.Log("invalid lod level");
-                                break;
-                            }
-                    }
-                }
-                else
-                {
-                 //   addRemoveBuffer.RemoveComponent<MeshInstanceRenderer>(entity[i]);
-                }
-            }
-        }
-
-        private void UpdateRenderer(Entity entity, MeshInstanceRenderer prev, MeshInstanceRenderer next, EntityCommandBuffer changeBuffer, EntityCommandBuffer addRemoveBuffer)
-        {
-            if (next.mesh != null)
-            {
-                changeBuffer.SetSharedComponent(next);
-            }
-            else
-            {
-          //      addRemoveBuffer.RemoveComponent<MeshInstanceRenderer>(entity);
-            }
-        }
-
-        private void AddRenderers(int length, [ReadOnly] EntityArray entity, [ReadOnly] SharedComponentDataArray<SmallObject> obj, ComponentDataArray<CurrentLODLevel> currentLod, ComponentDataArray<MaxLODLevel> maxLod, EntityCommandBuffer commandBuffer)
-        {
-            for (int i = 0; i < length; ++i)
-            {
-                if (!currentLod[i].HasChanged)
-                {
-                    continue;
-                }
-
-                byte curLod = currentLod[i].Value;
-                SmallObject smallObj = obj[i];
-                if (curLod <= maxLod[i].Value)
-                {
-                    switch (curLod)
-                    {
-                        case 0: AddRenderer(entity[i], smallObj.lod0.renderer, commandBuffer); break;
-                        case 1: AddRenderer(entity[i], smallObj.lod1.renderer, commandBuffer); break;
-                        case 2: AddRenderer(entity[i], smallObj.lod2.renderer, commandBuffer); break;
-                        default:
-                        {
-                            // this shouldn't happen, ever, but just in case
-                            Debug.Log("invalid lod level");
-                            break;
-                        }
-                    }
-                }
-
-                commandBuffer.SetComponent(entity[i], new CurrentLODLevel { Value = curLod, Changed = 0 } );
-            }
-        }
-
-        private void AddRenderer(Entity entity, MeshInstanceRenderer next, EntityCommandBuffer commandBuffer)
-        {
-            if (next.mesh != null)
-            {
-                commandBuffer.AddSharedComponent(entity, next);
-            }
-        }
 
         [BurstCompile]
-        struct UpdateLODLevel : IJobParallelFor
+        struct UpdateLODLevelJob : IJobParallelFor
         {
             public float3 camPosition;
             public LODRange lod0;
@@ -270,7 +85,7 @@ namespace MeshBuilder.SmallObject
             public LODRange lod2;
 
             [ReadOnly] public ComponentDataArray<Position> positionArray;
-            public ComponentDataArray<CurrentLODLevel> curLodArray;
+            [ReadOnly] public ComponentDataArray<CurrentLODLevel> curLodArray;
             [ReadOnly] public EntityArray entityArray;
 
             public EntityCommandBuffer.Concurrent commandBuffer;
@@ -296,13 +111,55 @@ namespace MeshBuilder.SmallObject
 
                 if (curLod != selectedLod)
                 {
-                   // curLodArray[index] = new CurrentLODLevel { Value = selectedLod, Changed = 1 };
                     commandBuffer.SetComponent(entityArray[index],
                         new CurrentLODLevel
                         {
                             Value = selectedLod,
                             Changed = 1
                         });
+                }
+            }
+        }
+
+        [BurstCompile]
+        struct UpdateLODLevelJob2 : IJob
+        {
+            public float3 camPosition;
+            public LODRange lod0;
+            public LODRange lod1;
+            public LODRange lod2;
+
+            [ReadOnly] public ComponentDataArray<Position> positionArray;
+            [ReadOnly] public ComponentDataArray<CurrentLODLevel> curLodArray;
+            [ReadOnly] public EntityArray entityArray;
+
+            public EntityManager mgr;
+
+            public void Execute()
+            {
+                for (int index = 0; index < entityArray.Length; ++index)
+                {
+                    int curLod = curLodArray[index].Value;
+                    float distSq = math.lengthSquared(camPosition - positionArray[index].Value);
+
+                    byte selectedLod = 3;
+                    if (lod0.IsInRange(distSq))
+                    {
+                        selectedLod = 0;
+                    }
+                    else if (lod1.IsInRange(distSq))
+                    {
+                        selectedLod = 1;
+                    }
+                    else if (lod2.IsInRange(distSq))
+                    {
+                        selectedLod = 2;
+                    }
+
+                    if (curLod != selectedLod)
+                    {
+                        mgr.SetComponentData(entityArray[index], new CurrentLODLevel { Value = selectedLod, Changed = 1 });
+                    }
                 }
             }
         }
@@ -349,4 +206,142 @@ namespace MeshBuilder.SmallObject
             }
         }
     }
+
+    [UpdateAfter(typeof(SOUpdateLODLevelSystem))]
+    public class SOUpdateLODBarrier : BarrierSystem { }
+
+    [UpdateAfter(typeof(SOUpdateLODBarrier))]
+    public class SOUpdateNotRenderedSystem : ComponentSystem
+    {
+        private struct Group
+        {
+            public readonly int Length;
+            [ReadOnly] public EntityArray entity;
+            [ReadOnly] public SharedComponentDataArray<SmallObject> smallObject;
+            [ReadOnly] public ComponentDataArray<CurrentLODLevel> curLod;
+            [ReadOnly] public ComponentDataArray<MaxLODLevel> maxLod;
+            [ReadOnly] public ComponentDataArray<Position> position;
+
+            public SubtractiveComponent<MeshInstanceRenderer> renderer;
+        }
+
+        [Inject] Group group;
+        [Inject] private SOPostRendererBarrier postBarrier;
+
+        protected override void OnUpdate()
+        {
+            var changeBuffer = postBarrier.CreateCommandBuffer();
+            
+            for (int i = 0; i < group.Length; ++i)
+            {
+                if (!group.curLod[i].HasChanged)
+                {
+                    continue;
+                }
+
+                byte curLod = group.curLod[i].Value;
+                SmallObject smallObj = group.smallObject[i];
+                Entity entity = group.entity[i];
+
+                if (curLod <= group.maxLod[i].Value)
+                {
+                    switch (curLod)
+                    {
+                        case 0: AddRenderer(entity, smallObj.lod0.renderer, changeBuffer); break;
+                        case 1: AddRenderer(entity, smallObj.lod1.renderer, changeBuffer); break;
+                        case 2: AddRenderer(entity, smallObj.lod2.renderer, changeBuffer); break;
+                        default:
+                            {
+                                // this shouldn't happen, ever, but just in case
+                                Debug.Log("invalid lod level");
+                                break;
+                            }
+                    }
+                }
+
+                PostUpdateCommands.SetComponent(entity, new CurrentLODLevel { Value = curLod, Changed = 0 });
+            }
+        }
+
+        private void AddRenderer(Entity entity, MeshInstanceRenderer next, EntityCommandBuffer commandBuffer)
+        {
+            if (next.mesh != null)
+            {
+               PostUpdateCommands.AddSharedComponent(entity, next);
+            }
+        }
+    }
+
+    [UpdateAfter(typeof(SOUpdateNotRenderedSystem))]
+    public class SOUpdateRenderedSystem : JobComponentSystem
+    {
+        struct Group
+        {
+            public readonly int Length;
+            public EntityArray entity;
+            [ReadOnly] public SharedComponentDataArray<SmallObject> smallObject;
+            [ReadOnly] public ComponentDataArray<CurrentLODLevel> curLod;
+            [ReadOnly] public ComponentDataArray<MaxLODLevel> maxLod;
+            [ReadOnly] public ComponentDataArray<Position> position;
+            [ReadOnly] public SharedComponentDataArray<MeshInstanceRenderer> renderer;
+        }
+
+        [Inject] Group group;
+        [Inject] private SOPostRendererBarrier postBarrier;
+
+        protected override JobHandle OnUpdate(JobHandle inputDeps)
+        {
+            var postBuffer = postBarrier.CreateCommandBuffer();
+            
+            for (int i = 0; i < group.Length; ++i)
+            {
+                if (!group.curLod[i].HasChanged)
+                {
+                    continue;
+                }
+
+                byte curLod = group.curLod[i].Value;
+                SmallObject smallObj = group.smallObject[i];
+                Entity entity = group.entity[i];
+
+                if (curLod <= group.maxLod[i].Value)
+                {
+                    switch (curLod)
+                    {
+                        case 0: UpdateRenderer(entity, smallObj.lod0.renderer, postBuffer, postBuffer); break;
+                        case 1: UpdateRenderer(entity, smallObj.lod1.renderer, postBuffer, postBuffer); break;
+                        case 2: UpdateRenderer(entity, smallObj.lod2.renderer, postBuffer, postBuffer); break;
+                        default:
+                            {
+                                Debug.Log("invalid lod level");
+                                break;
+                            }
+                    }
+                }
+                else
+                {
+                    postBuffer.RemoveComponent<MeshInstanceRenderer>(entity);
+                }
+
+                postBuffer.SetComponent(entity, new CurrentLODLevel { Value = curLod, Changed = 0 });
+            }
+
+            return inputDeps;
+        }
+
+        private void UpdateRenderer(Entity entity, MeshInstanceRenderer next, EntityCommandBuffer postBuffer, EntityCommandBuffer addRemoveBuffer)
+        {
+            if (next.mesh != null)
+            {
+                postBuffer.SetSharedComponent(entity, next);
+            }
+            else
+            {
+                postBuffer.RemoveComponent<MeshInstanceRenderer>(entity);
+            }
+        }
+    }
+
+    [UpdateAfter(typeof(SOUpdateRenderedSystem))]
+    public class SOPostRendererBarrier: BarrierSystem { }
 }
