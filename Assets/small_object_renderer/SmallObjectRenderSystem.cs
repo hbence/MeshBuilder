@@ -10,6 +10,7 @@ using Unity.Burst;
 
 namespace MeshBuilder.SmallObject
 {
+    [UpdateBefore(typeof(SOUpdateLODBarrier))]
     public class SOUpdateLODLevelSystem : JobComponentSystem
     {
         [Inject] SOUpdateLODBarrier barrier;
@@ -27,7 +28,8 @@ namespace MeshBuilder.SmallObject
                                             typeof(SmallObject),
                                             typeof(Position),
                                             typeof(CurrentLODLevel),
-                                            typeof(MaxLODLevel));
+                                            typeof(MaxLODLevel),
+                                            ComponentType.Subtractive<LODLevelChanged>());
         }
 
         protected override JobHandle OnUpdate(JobHandle inputDeps)
@@ -39,6 +41,7 @@ namespace MeshBuilder.SmallObject
 
             EntityManager.GetAllUniqueSharedComponentDatas(uniqueSmallObjects);
 
+            lastHandle.Complete();
             lastHandle = inputDeps;
 
             for (int objIndex = 0; objIndex < uniqueSmallObjects.Count; ++objIndex)
@@ -50,7 +53,7 @@ namespace MeshBuilder.SmallObject
 
                 if (length > 0)
                 {
-                    var updateJob = new UpdateLODLevelJob2
+                    var updateJob = new UpdateLODLevelJobParallel
                     {
                         camPosition = lodCenter,
                         lod0 = LODRange.Create(smallObj, 0),
@@ -60,14 +63,11 @@ namespace MeshBuilder.SmallObject
                         positionArray = group.GetComponentDataArray<Position>(),
                         curLodArray = group.GetComponentDataArray<CurrentLODLevel>(),
                         entityArray = group.GetEntityArray(),
-                        mgr = EntityManager
+                        cmdBuffer = commandBuffer
                     };
 
-                    updateJob.Execute();
-                  //  var handle = updateJob.Schedule(inputDeps);
-                  //  var handle = updateJob.Schedule(length, 128, inputDeps);
-                 //   lastHandle = JobHandle.CombineDependencies(lastHandle, handle);
-                    //lastHandle.Complete();
+                    var handle = updateJob.Schedule(length, 128, inputDeps);
+                    lastHandle = JobHandle.CombineDependencies(handle, lastHandle);
                 }
             }
 
@@ -76,8 +76,7 @@ namespace MeshBuilder.SmallObject
             return lastHandle;
         }
 
-        [BurstCompile]
-        struct UpdateLODLevelJob : IJobParallelFor
+        struct UpdateLODLevelJobParallel : IJobParallelFor
         {
             public float3 camPosition;
             public LODRange lod0;
@@ -88,7 +87,7 @@ namespace MeshBuilder.SmallObject
             [ReadOnly] public ComponentDataArray<CurrentLODLevel> curLodArray;
             [ReadOnly] public EntityArray entityArray;
 
-            public EntityCommandBuffer.Concurrent commandBuffer;
+            public EntityCommandBuffer.Concurrent cmdBuffer;
 
             public void Execute(int index)
             {
@@ -111,55 +110,8 @@ namespace MeshBuilder.SmallObject
 
                 if (curLod != selectedLod)
                 {
-                    commandBuffer.SetComponent(entityArray[index],
-                        new CurrentLODLevel
-                        {
-                            Value = selectedLod,
-                            Changed = 1
-                        });
-                }
-            }
-        }
-
-        [BurstCompile]
-        struct UpdateLODLevelJob2 : IJob
-        {
-            public float3 camPosition;
-            public LODRange lod0;
-            public LODRange lod1;
-            public LODRange lod2;
-
-            [ReadOnly] public ComponentDataArray<Position> positionArray;
-            [ReadOnly] public ComponentDataArray<CurrentLODLevel> curLodArray;
-            [ReadOnly] public EntityArray entityArray;
-
-            public EntityManager mgr;
-
-            public void Execute()
-            {
-                for (int index = 0; index < entityArray.Length; ++index)
-                {
-                    int curLod = curLodArray[index].Value;
-                    float distSq = math.lengthSquared(camPosition - positionArray[index].Value);
-
-                    byte selectedLod = 3;
-                    if (lod0.IsInRange(distSq))
-                    {
-                        selectedLod = 0;
-                    }
-                    else if (lod1.IsInRange(distSq))
-                    {
-                        selectedLod = 1;
-                    }
-                    else if (lod2.IsInRange(distSq))
-                    {
-                        selectedLod = 2;
-                    }
-
-                    if (curLod != selectedLod)
-                    {
-                        mgr.SetComponentData(entityArray[index], new CurrentLODLevel { Value = selectedLod, Changed = 1 });
-                    }
+                    cmdBuffer.SetComponent(entityArray[index], new CurrentLODLevel { Value = selectedLod });
+                    cmdBuffer.AddComponent(entityArray[index], new LODLevelChanged { });
                 }
             }
         }
@@ -221,6 +173,7 @@ namespace MeshBuilder.SmallObject
             [ReadOnly] public ComponentDataArray<CurrentLODLevel> curLod;
             [ReadOnly] public ComponentDataArray<MaxLODLevel> maxLod;
             [ReadOnly] public ComponentDataArray<Position> position;
+            [ReadOnly] public ComponentDataArray<LODLevelChanged> changed;
 
             public SubtractiveComponent<MeshInstanceRenderer> renderer;
         }
@@ -230,15 +183,10 @@ namespace MeshBuilder.SmallObject
 
         protected override void OnUpdate()
         {
-            var changeBuffer = postBarrier.CreateCommandBuffer();
+            var postBuffer = postBarrier.CreateCommandBuffer();
             
             for (int i = 0; i < group.Length; ++i)
             {
-                if (!group.curLod[i].HasChanged)
-                {
-                    continue;
-                }
-
                 byte curLod = group.curLod[i].Value;
                 SmallObject smallObj = group.smallObject[i];
                 Entity entity = group.entity[i];
@@ -247,33 +195,33 @@ namespace MeshBuilder.SmallObject
                 {
                     switch (curLod)
                     {
-                        case 0: AddRenderer(entity, smallObj.lod0.renderer, changeBuffer); break;
-                        case 1: AddRenderer(entity, smallObj.lod1.renderer, changeBuffer); break;
-                        case 2: AddRenderer(entity, smallObj.lod2.renderer, changeBuffer); break;
+                        case 0: AddRenderer(entity, smallObj.lod0.renderer, postBuffer); break;
+                        case 1: AddRenderer(entity, smallObj.lod1.renderer, postBuffer); break;
+                        case 2: AddRenderer(entity, smallObj.lod2.renderer, postBuffer); break;
                         default:
-                            {
-                                // this shouldn't happen, ever, but just in case
-                                Debug.Log("invalid lod level");
-                                break;
-                            }
+                        {
+                            // this shouldn't happen, ever, but just in case
+                            Debug.Log("invalid lod level");
+                            break;
+                        }
                     }
                 }
 
-                PostUpdateCommands.SetComponent(entity, new CurrentLODLevel { Value = curLod, Changed = 0 });
+                postBuffer.RemoveComponent<LODLevelChanged>(entity);
             }
         }
 
-        private void AddRenderer(Entity entity, MeshInstanceRenderer next, EntityCommandBuffer commandBuffer)
+        private void AddRenderer(Entity entity, MeshInstanceRenderer next, EntityCommandBuffer postBuffer)
         {
             if (next.mesh != null)
             {
-               PostUpdateCommands.AddSharedComponent(entity, next);
+                postBuffer.AddSharedComponent(entity, next);
             }
         }
     }
 
     [UpdateAfter(typeof(SOUpdateNotRenderedSystem))]
-    public class SOUpdateRenderedSystem : JobComponentSystem
+    public class SOUpdateRenderedSystem : ComponentSystem
     {
         struct Group
         {
@@ -283,23 +231,19 @@ namespace MeshBuilder.SmallObject
             [ReadOnly] public ComponentDataArray<CurrentLODLevel> curLod;
             [ReadOnly] public ComponentDataArray<MaxLODLevel> maxLod;
             [ReadOnly] public ComponentDataArray<Position> position;
+            [ReadOnly] public ComponentDataArray<LODLevelChanged> changed;
             [ReadOnly] public SharedComponentDataArray<MeshInstanceRenderer> renderer;
         }
 
         [Inject] Group group;
         [Inject] private SOPostRendererBarrier postBarrier;
 
-        protected override JobHandle OnUpdate(JobHandle inputDeps)
+        protected override void OnUpdate()
         {
             var postBuffer = postBarrier.CreateCommandBuffer();
             
             for (int i = 0; i < group.Length; ++i)
             {
-                if (!group.curLod[i].HasChanged)
-                {
-                    continue;
-                }
-
                 byte curLod = group.curLod[i].Value;
                 SmallObject smallObj = group.smallObject[i];
                 Entity entity = group.entity[i];
@@ -308,9 +252,9 @@ namespace MeshBuilder.SmallObject
                 {
                     switch (curLod)
                     {
-                        case 0: UpdateRenderer(entity, smallObj.lod0.renderer, postBuffer, postBuffer); break;
-                        case 1: UpdateRenderer(entity, smallObj.lod1.renderer, postBuffer, postBuffer); break;
-                        case 2: UpdateRenderer(entity, smallObj.lod2.renderer, postBuffer, postBuffer); break;
+                        case 0: UpdateRenderer(entity, smallObj.lod0.renderer, postBuffer); break;
+                        case 1: UpdateRenderer(entity, smallObj.lod1.renderer, postBuffer); break;
+                        case 2: UpdateRenderer(entity, smallObj.lod2.renderer, postBuffer); break;
                         default:
                             {
                                 Debug.Log("invalid lod level");
@@ -323,13 +267,11 @@ namespace MeshBuilder.SmallObject
                     postBuffer.RemoveComponent<MeshInstanceRenderer>(entity);
                 }
 
-                postBuffer.SetComponent(entity, new CurrentLODLevel { Value = curLod, Changed = 0 });
+                postBuffer.RemoveComponent<LODLevelChanged>(entity);
             }
-
-            return inputDeps;
         }
 
-        private void UpdateRenderer(Entity entity, MeshInstanceRenderer next, EntityCommandBuffer postBuffer, EntityCommandBuffer addRemoveBuffer)
+        private void UpdateRenderer(Entity entity, MeshInstanceRenderer next, EntityCommandBuffer postBuffer)
         {
             if (next.mesh != null)
             {

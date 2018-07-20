@@ -24,11 +24,10 @@ namespace MeshBuilder.SmallObject
 
     public struct CurrentLODLevel : IComponentData
     {
-        public byte Changed;
         public byte Value;
-
-        public bool HasChanged { get { return Changed != 0; } }
     }
+
+    public struct LODLevelChanged : IComponentData { }
 
     public class RootSpawnBarrier : BarrierSystem { }
 
@@ -83,6 +82,7 @@ namespace MeshBuilder.SmallObject
             smallObjectRootArcheType = EntityManager.CreateArchetype(
                 typeof(MaxLODLevel),
                 typeof(CurrentLODLevel),
+                typeof(LODLevelChanged),
                 typeof(TransformMatrix),
                 typeof(Position),
                 typeof(Rotation)
@@ -234,7 +234,7 @@ namespace MeshBuilder.SmallObject
             commandBuffer.CreateEntity(smallObjectRootArcheType);
             commandBuffer.SetComponent(new Position { Value = pos });
             commandBuffer.SetComponent(new MaxLODLevel { Value = 2 });
-            commandBuffer.SetComponent(new CurrentLODLevel { Value = 0, Changed = 1 });
+            commandBuffer.SetComponent(new CurrentLODLevel { Value = 0 });
             commandBuffer.AddSharedComponent(parent);
             commandBuffer.AddSharedComponent(smallObject);
         }
