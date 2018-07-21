@@ -16,7 +16,7 @@ namespace MeshBuilder.SmallObject
     public struct TargetObject : ISharedComponentData
     {
         public Mesh mesh;
-        public bool dynamic;
+        public bool localObjects;
         public ISmallObjectPlacementFilter[] filters;
         public SmallObject[] smallObjects;
     }

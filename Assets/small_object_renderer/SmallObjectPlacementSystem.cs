@@ -9,6 +9,7 @@ using Unity.Transforms;
 using Unity.Burst;
 
 using Random = UnityEngine.Random;
+using Unity.Rendering;
 
 namespace MeshBuilder.SmallObject
 {
@@ -39,8 +40,9 @@ namespace MeshBuilder.SmallObject
         {
             public readonly int Length;
             public EntityArray entity;
-            [ReadOnly] public SharedComponentDataArray<TargetObject> data;
-            [ReadOnly] public ComponentDataArray<TransformMatrix> transform;
+            [ReadOnly] public SharedComponentDataArray<TargetObject> target;
+            [ReadOnly] public ComponentDataArray<Position> pos;
+            [ReadOnly] public ComponentDataArray<Rotation> rot;
 
             public SubtractiveComponent<TargetObjectCompletelyProcessed> completelyProcessed;
             public SubtractiveComponent<TargetObjectPartiallyProcessed> partiallyProcessed;
@@ -50,8 +52,8 @@ namespace MeshBuilder.SmallObject
         struct PartiallyProcessedTargetData
         {
             public readonly int Length;
-            public ComponentDataArray<TargetObjectPartiallyProcessed> processed;
-            public EntityArray entity;
+            [ReadOnly]public EntityArray entity;
+            [ReadOnly] public ComponentDataArray<TargetObjectPartiallyProcessed> processed;
             [ReadOnly] public SharedComponentDataArray<TargetObject> data;
             [ReadOnly] public ComponentDataArray<TransformMatrix> transform;
 
@@ -63,7 +65,8 @@ namespace MeshBuilder.SmallObject
 
         private JobHandle lastHandle;
         private List<IDisposable> tempArrays;
-        private EntityArchetype smallObjectRootArcheType;
+        private EntityArchetype smallObjRootArcheTypeLocal;
+        private EntityArchetype smallObjRootArcheTypeGlobal;
 
         private NativeArray<float> randomArray;
 
@@ -79,7 +82,19 @@ namespace MeshBuilder.SmallObject
 
             tempArrays = new List<IDisposable>();
 
-            smallObjectRootArcheType = EntityManager.CreateArchetype(
+            smallObjRootArcheTypeLocal = EntityManager.CreateArchetype(
+                typeof(MaxLODLevel),
+                typeof(CurrentLODLevel),
+                typeof(LODLevelChanged),
+                typeof(TransformMatrix),
+                typeof(TransformParent),
+                typeof(LocalPosition),
+                typeof(LocalRotation),
+                typeof(Position),
+                typeof(Rotation)
+            );
+
+            smallObjRootArcheTypeGlobal = EntityManager.CreateArchetype(
                 typeof(MaxLODLevel),
                 typeof(CurrentLODLevel),
                 typeof(LODLevelChanged),
@@ -100,34 +115,29 @@ namespace MeshBuilder.SmallObject
 
         protected override JobHandle OnUpdate(JobHandle inputDeps)
         {
-            bool addedJobs = false;
+            lastHandle = inputDeps;
             if (unprocessedTargets.Length > 0)
             {
-                JobHandle unprocessedHandle = new JobHandle { };
                 for (int i = 0; i < unprocessedTargets.Length; ++i)
                 {
-                    if (unprocessedTargets.data[i].mesh != null && unprocessedTargets.data[i].mesh.vertexCount > 0)
+                    if (unprocessedTargets.target[i].mesh != null && unprocessedTargets.target[i].mesh.vertexCount > 0)
                     {
-                        addedJobs = true;
+                        Entity entity = unprocessedTargets.entity[i];
+                        TargetObject target = unprocessedTargets.target[i];
 
-                        var handle = ProcessTargetObject(unprocessedTargets.data[i], inputDeps);
-                        unprocessedHandle = JobHandle.CombineDependencies(handle, unprocessedHandle);
+                        float3 pos = unprocessedTargets.pos[i].Value;
+                        quaternion rot = unprocessedTargets.rot[i].Value;
+                        float4x4 transform = new float4x4(rot, pos);
+
+                        var handle = ProcessTargetObject(entity, target, transform, inputDeps);
+                        lastHandle = JobHandle.CombineDependencies(handle, lastHandle);
 
                         EntityManager.AddComponent(unprocessedTargets.entity[i], typeof(TargetObjectCompletelyProcessed));
                     }
                 }
-                lastHandle = unprocessedHandle;
             }
 
-            if (!addedJobs)
-            {
-                lastHandle = inputDeps;
-            }
-            else
-            {
-                lastHandle.Complete();
-                DisposeTempArrays();
-            }
+            DisposeTempArrays();
 
             return lastHandle;
         }
@@ -144,13 +154,13 @@ namespace MeshBuilder.SmallObject
             }
         }
 
-        private JobHandle ProcessTargetObject(TargetObject target, JobHandle inputDeps)
+        private JobHandle ProcessTargetObject(Entity parentEntity, TargetObject target, float4x4 transform, JobHandle inputDeps)
         {
             if (target.smallObjects == null || target.smallObjects.Length == 0)
             {
                 return inputDeps;
             }
-            
+
             SmallObject smallObj = target.smallObjects[0];
             int objCount = smallObj.lod0.numberPerCell;
 
@@ -168,7 +178,7 @@ namespace MeshBuilder.SmallObject
                 results = rayPositions
             };
             
-            inputDeps = generateRayPositionsJob.Schedule(rayPositions.Length, 128, inputDeps);
+            var posHandle = generateRayPositionsJob.Schedule(rayPositions.Length, 128, inputDeps);
             
             NativeArray<byte> lodClasses = new NativeArray<byte>(objCount, Allocator.Temp, NativeArrayOptions.ClearMemory);
             tempArrays.Add(lodClasses);
@@ -192,7 +202,9 @@ namespace MeshBuilder.SmallObject
                 triangleBounds = triangleBounds
             };
 
-            inputDeps = generateTriBound.Schedule(triangleBounds.Length, 64, inputDeps);
+            var boundHandle = generateTriBound.Schedule(triangleBounds.Length, 64, inputDeps);
+
+            inputDeps = JobHandle.CombineDependencies(posHandle, boundHandle);
 
             inputDeps.Complete();
 
@@ -213,32 +225,68 @@ namespace MeshBuilder.SmallObject
 
             inputDeps = topdownIntersections.Schedule(resultPoints.Length, 32, inputDeps);
             
+            if (!target.localObjects)
+            {
+                var toGlobal = new TransformToGlobal
+                {
+                    rootTransform = transform,
+                    positions = resultPoints
+                };
+                inputDeps = toGlobal.Schedule(resultPoints.Length, 64, inputDeps);
+            }
+
             inputDeps.Complete();
 
             var parent = new SmallObjectParent { parent = target };
             var commandBuffer = spawnBarrier.CreateCommandBuffer();
-            for (int index = 0; index < resultPoints.Length; ++index)
+
+            if (target.localObjects)
             {
-                var pos = resultPoints[index];
-                if (!Equals(pos, Zero))
+                for (int index = 0; index < resultPoints.Length; ++index)
                 {
-                    SpawnEntity(commandBuffer, pos, parent, smallObj);
+                    var pos = resultPoints[index];
+                    if (!Equals(pos, Zero))
+                    {
+                        SpawnLocalEntity(commandBuffer, pos, parent, smallObj, parentEntity);
+                    }
+                }
+            }
+            else
+            {
+                for (int index = 0; index < resultPoints.Length; ++index)
+                {
+                    var pos = resultPoints[index];
+                    if (!Equals(pos, Zero))
+                    {
+                        SpawnGlobalEntity(commandBuffer, pos, parent, smallObj, parentEntity);
+                    }
                 }
             }
 
             return inputDeps;
         }
 
-        private void SpawnEntity(EntityCommandBuffer commandBuffer, float3 pos, SmallObjectParent parent, SmallObject smallObject)
+        private void SpawnLocalEntity(EntityCommandBuffer commandBuffer, float3 pos, SmallObjectParent target, SmallObject smallObject, Entity parentEntity)
         {
-            commandBuffer.CreateEntity(smallObjectRootArcheType);
+            commandBuffer.CreateEntity(smallObjRootArcheTypeLocal);
+            commandBuffer.SetComponent(new LocalPosition { Value = pos });
+            commandBuffer.SetComponent(new MaxLODLevel { Value = 2 });
+            commandBuffer.SetComponent(new CurrentLODLevel { Value = 0 });
+            commandBuffer.SetComponent(new TransformParent { Value = parentEntity });
+            commandBuffer.AddSharedComponent(target);
+            commandBuffer.AddSharedComponent(smallObject);
+        }
+
+        private void SpawnGlobalEntity(EntityCommandBuffer commandBuffer, float3 pos, SmallObjectParent target, SmallObject smallObject, Entity parentEntity)
+        {
+            commandBuffer.CreateEntity(smallObjRootArcheTypeGlobal);
             commandBuffer.SetComponent(new Position { Value = pos });
             commandBuffer.SetComponent(new MaxLODLevel { Value = 2 });
             commandBuffer.SetComponent(new CurrentLODLevel { Value = 0 });
-            commandBuffer.AddSharedComponent(parent);
+            commandBuffer.AddSharedComponent(target);
             commandBuffer.AddSharedComponent(smallObject);
         }
-        
+
         [BurstCompile]
         private struct GenerateRandomPositionsXZ : IJobParallelFor
         {
@@ -359,29 +407,46 @@ namespace MeshBuilder.SmallObject
             }
         }
 
+        public struct TransformToGlobal : IJobParallelFor
+        {
+            public float4x4 rootTransform;
+            public NativeArray<float3> positions;
+
+            public void Execute(int index)
+            {
+                float4 p = new float4(positions[index], 1);
+                p = math.mul(rootTransform, p);
+                positions[index] = new float3 { x = p.x, y = p.y, z = p.z };
+            }
+        }
+
         /*
-        [BurstCompile]
         public struct SpawnSmallObjectRoots : IJobParallelFor
         {
-            [ReadOnly] public SmallObjectRoot rootComponent;
+            public SmallObjectParent objParent;
+            public Entity parentEntity;
+            public SmallObject smallObject;
             [ReadOnly] public EntityArchetype rootArchetype;
+
             [ReadOnly] public NativeArray<float3> rootPositions;
-         //   [ReadOnly] public NativeArray<byte> rootLODLevels;
 
             public EntityCommandBuffer.Concurrent commandBuffer;
 
             public void Execute(int index)
             {
-                if (!Equals(rootPositions[index], Zero))
+                float3 pos = rootPositions[index];
+                if (!Equals(pos, Zero))
                 {
                     commandBuffer.CreateEntity(rootArchetype);
-                    commandBuffer.SetComponent(new Position { Value = rootPositions[index] });
-                    commandBuffer.SetComponent(new MaxLODLevel { level = 0 });
-                    commandBuffer.AddSharedComponent(rootComponent);
+                    commandBuffer.SetComponent(new Position { Value = pos });
+                    commandBuffer.SetComponent(new MaxLODLevel { Value = 2 });
+                    commandBuffer.SetComponent(new CurrentLODLevel { Value = 0 });
+                    commandBuffer.SetComponent(new TransformParent { Value = parentEntity });
+                    commandBuffer.AddSharedComponent(objParent);
+                    commandBuffer.AddSharedComponent(smallObject);
                 }
             }
-        }
-        */
+        }*/
 
         static private bool Equals(float3 a, float3 b) { return a.x == b.x && a.y == b.y && a.z == b.z; }
 

@@ -474,7 +474,7 @@ MonoBehaviour:
         castShadows: 0
         receiveShadows: 0
       appearDistance: 0
-      disappearDistance: 30
+      disappearDistance: 20
       numberPerCell: 100
     lod1:
       renderer:
@@ -483,9 +483,9 @@ MonoBehaviour:
         subMesh: 0
         castShadows: 0
         receiveShadows: 0
-      appearDistance: 30
-      disappearDistance: 60
-      numberPerCell: 100
+      appearDistance: 15
+      disappearDistance: 30
+      numberPerCell: 60
     lod2:
       renderer:
         mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
@@ -493,9 +493,9 @@ MonoBehaviour:
         subMesh: 0
         castShadows: 0
         receiveShadows: 0
-      appearDistance: 60
-      disappearDistance: 100
-      numberPerCell: 100
+      appearDistance: 25
+      disappearDistance: 40
+      numberPerCell: 30
 --- !u!114 &1653117004
 MonoBehaviour:
   m_ObjectHideFlags: 0

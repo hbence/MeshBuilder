@@ -95,17 +95,64 @@ namespace MeshBuilder.SmallObject
                 float distSq = math.lengthSquared(camPosition - positionArray[index].Value);
 
                 byte selectedLod = 3;
-                if (lod0.IsInRange(distSq))
+                /*
+                if (lod0.IsInRange(distSq)) { selectedLod = 0 }
+                else if (lod1.IsInRange(distSq)) { selectedLod = 1 }
+                else if (lod2.IsInRange(distSq)) { selectedLod = 2 }
+                */
+                if (curLod == 0)
                 {
-                    selectedLod = 0;
+                    if (lod0.IsInRange(distSq))
+                    {
+                        selectedLod = 0;
+                    }
+                    else
+                    {
+                        if (lod1.IsInRange(distSq))
+                        {
+                            selectedLod = 1;
+                        }
+                        else if (lod2.IsInRange(distSq))
+                        {
+                            selectedLod = 2;
+                        }
+                    }
                 }
-                else if (lod1.IsInRange(distSq))
+                else if (curLod == 1)
                 {
-                    selectedLod = 1;
+                    if (lod1.IsInRange(distSq))
+                    {
+                        selectedLod = 1;
+                    }
+                    else
+                    {
+                        if (lod0.IsInRange(distSq))
+                        {
+                            selectedLod = 0;
+                        }
+                        else if (lod2.IsInRange(distSq))
+                        {
+                            selectedLod = 2;
+                        }
+                    }
                 }
-                else if (lod2.IsInRange(distSq))
+                else if (curLod == 2)
                 {
-                    selectedLod = 2;
+                    if (lod2.IsInRange(distSq))
+                    {
+                        selectedLod = 2;
+                    }
+                    else
+                    {
+                        if (lod0.IsInRange(distSq))
+                        {
+                            selectedLod = 0;
+                        }
+                        else if (lod1.IsInRange(distSq))
+                        {
+                            selectedLod = 1;
+                        }
+                    }
                 }
 
                 if (curLod != selectedLod)

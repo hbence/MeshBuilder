@@ -18,9 +18,8 @@ namespace MeshBuilder.SmallObject
         [SerializeField]
         private bool initMeshFromMeshFilter;
 
-        // the object is dynamic, its transform will need to be updated
         [SerializeField]
-        private bool dynamicObject;
+        private bool localObjects;
 
        // public ISmallObjectPlacementFilter[] filters;
 
@@ -32,7 +31,7 @@ namespace MeshBuilder.SmallObject
         private MeshFilter meshFilter;
         private bool wasMeshInited;
 
-        void Start()
+        void Awake()
         {
             if (initMeshFromMeshFilter)
             {
@@ -73,23 +72,25 @@ namespace MeshBuilder.SmallObject
             entityManager.AddSharedComponentData(entity, new TargetObject
             {
                 mesh = mesh,
-                dynamic = dynamicObject,
+                localObjects = localObjects,
                 filters = null,
                 smallObjects = smallObjects
             });
 
-            entityManager.AddComponentData(entity, new TransformMatrix { });
-            entityManager.AddComponentData(entity, new Position { });
-            entityManager.AddComponentData(entity, new Rotation { });
+            EnsureComponent<CopyInitialTransformFromGameObject>(entityManager, entity);
+            EnsureComponent<TransformMatrix>(entityManager, entity);
+            EnsureComponent<Position>(entityManager, entity);
+            EnsureComponent<Rotation>(entityManager, entity);
 
-            if (dynamicObject)
+            if (localObjects)
             {
-                entityManager.AddComponentData(entity, new CopyTransformFromGameObject { });
+                EnsureComponent<CopyTransformFromGameObject>(entityManager, entity);
             }
-            else
-            {
-                entityManager.AddComponentData(entity, new CopyInitialTransformFromGameObject { });
-            }
+        }
+
+        private void EnsureComponent<T>(EntityManager mgr, Entity entity) where T : struct, IComponentData
+        {
+            if (!mgr.HasComponent<T>(entity)) { mgr.AddComponentData(entity, default(T)); }
         }
         
         private void MeshWasUpdated()
