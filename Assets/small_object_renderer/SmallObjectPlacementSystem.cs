@@ -52,7 +52,7 @@ namespace MeshBuilder.SmallObject
         struct PartiallyProcessedTargetData
         {
             public readonly int Length;
-            [ReadOnly]public EntityArray entity;
+            [ReadOnly] public EntityArray entity;
             [ReadOnly] public ComponentDataArray<TargetObjectPartiallyProcessed> processed;
             [ReadOnly] public SharedComponentDataArray<TargetObject> data;
             [ReadOnly] public ComponentDataArray<TransformMatrix> transform;
@@ -74,7 +74,7 @@ namespace MeshBuilder.SmallObject
         {
             base.OnCreateManager(capacity);
 
-            randomArray = new NativeArray<float>(1000, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            randomArray = new NativeArray<float>(4000, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
             for (int i = 0; i < randomArray.Length; ++i)
             {
                 randomArray[i] = Random.value;
@@ -91,7 +91,8 @@ namespace MeshBuilder.SmallObject
                 typeof(LocalPosition),
                 typeof(LocalRotation),
                 typeof(Position),
-                typeof(Rotation)
+                typeof(Rotation),
+                typeof(Scale)
             );
 
             smallObjRootArcheTypeGlobal = EntityManager.CreateArchetype(
@@ -100,7 +101,8 @@ namespace MeshBuilder.SmallObject
                 typeof(LODLevelChanged),
                 typeof(TransformMatrix),
                 typeof(Position),
-                typeof(Rotation)
+                typeof(Rotation),
+                typeof(Scale)
             );
         }
 
@@ -170,16 +172,10 @@ namespace MeshBuilder.SmallObject
             NativeArray<float2> rayPositions = new NativeArray<float2>(objCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
             tempArrays.Add(rayPositions);
             
-            var generateRayPositionsJob = new GenerateRandomPositionsXZ
-            {
-                bounds = bounds,
-                randomArray = randomArray,
-                randomOffset = Random.Range(0, randomArray.Length),
-                results = rayPositions
-            };
-            
-            var posHandle = generateRayPositionsJob.Schedule(rayPositions.Length, 128, inputDeps);
-            
+            // Step 1 A
+            // generate the positions where we will check for collisions
+            var posHandle = Jobs.ScheduleRandomPositionsGen(rayPositions, bounds, randomArray, inputDeps);
+
             NativeArray<byte> lodClasses = new NativeArray<byte>(objCount, Allocator.Temp, NativeArrayOptions.ClearMemory);
             tempArrays.Add(lodClasses);
 
@@ -195,48 +191,30 @@ namespace MeshBuilder.SmallObject
             NativeArray<Bounds> triangleBounds = new NativeArray<Bounds>(triangleCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
             tempArrays.Add(triangleBounds);
 
-            var generateTriBound = new GenerateTriangleBounds
-            {
-                triangles = meshTriangles,
-                vertices = meshVertices,
-                triangleBounds = triangleBounds
-            };
-
-            var boundHandle = generateTriBound.Schedule(triangleBounds.Length, 64, inputDeps);
-
+            // Step 1 B
+            // optimization, go through the mesh and generate a bounding box for every triangle
+            // checking the bounding box will be a first step for ray - triangle intersection
+            var boundHandle = Jobs.ScheduleTriangleBoundGen(triangleBounds, meshVertices, meshTriangles, inputDeps);
             inputDeps = JobHandle.CombineDependencies(posHandle, boundHandle);
-
-            inputDeps.Complete();
 
             NativeArray<float3> resultPoints = new NativeArray<float3>(objCount, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
             tempArrays.Add(resultPoints);
 
-            var topdownIntersections = new TopDownIntersection
-            {
-                rayOriginY = bounds.max.y + 1,
-                positions = rayPositions,
+            // Step 2
+            // check for ray - triangle intersection points
+            inputDeps = Jobs.ScheduleTopDownIntersection(resultPoints, rayPositions, bounds.max.y + 1, meshVertices, meshTriangles, triangleBounds, inputDeps);
 
-                triangles = meshTriangles,
-                vertices = meshVertices,
-                triangleBounds = triangleBounds,
-
-                results = resultPoints
-            };
-
-            inputDeps = topdownIntersections.Schedule(resultPoints.Length, 32, inputDeps);
-            
+            // Step 2.5 
+            // transform the positions to global space
             if (!target.localObjects)
             {
-                var toGlobal = new TransformToGlobal
-                {
-                    rootTransform = transform,
-                    positions = resultPoints
-                };
-                inputDeps = toGlobal.Schedule(resultPoints.Length, 64, inputDeps);
+                inputDeps = Jobs.ScheduleTransformToGlobal(resultPoints, transform, inputDeps);
             }
-
+            
             inputDeps.Complete();
 
+            // Step 3
+            // use the intersection points to generate the object roots
             var parent = new SmallObjectParent { parent = target };
             var commandBuffer = spawnBarrier.CreateCommandBuffer();
 
@@ -262,9 +240,11 @@ namespace MeshBuilder.SmallObject
                     }
                 }
             }
-
+            
             return inputDeps;
         }
+
+        static private readonly float3 Zero = new float3(0, 0, 0);
 
         private void SpawnLocalEntity(EntityCommandBuffer commandBuffer, float3 pos, SmallObjectParent target, SmallObject smallObject, Entity parentEntity)
         {
@@ -273,6 +253,7 @@ namespace MeshBuilder.SmallObject
             commandBuffer.SetComponent(new MaxLODLevel { Value = 2 });
             commandBuffer.SetComponent(new CurrentLODLevel { Value = 0 });
             commandBuffer.SetComponent(new TransformParent { Value = parentEntity });
+            commandBuffer.SetComponent(new Scale { Value = CalcObjScale(smallObject) });
             commandBuffer.AddSharedComponent(target);
             commandBuffer.AddSharedComponent(smallObject);
         }
@@ -283,27 +264,24 @@ namespace MeshBuilder.SmallObject
             commandBuffer.SetComponent(new Position { Value = pos });
             commandBuffer.SetComponent(new MaxLODLevel { Value = 2 });
             commandBuffer.SetComponent(new CurrentLODLevel { Value = 0 });
+            commandBuffer.SetComponent(new Scale { Value = CalcObjScale(smallObject) });
             commandBuffer.AddSharedComponent(target);
             commandBuffer.AddSharedComponent(smallObject);
         }
 
-        [BurstCompile]
-        private struct GenerateRandomPositionsXZ : IJobParallelFor
+        static private Vector3 CalcObjScale(SmallObject obj)
         {
-            public Bounds bounds;
-            public int randomOffset;
-            [ReadOnly] public NativeArray<float> randomArray;
-            [WriteOnly] public NativeArray<float2> results;
+            return Vector3.Lerp(obj.minScale, obj.maxScale, Random.value);
+        }
 
-            public void Execute(int index)
-            {
-                int r = (randomOffset + index) % (randomArray.Length - 1);
-                results[index] = new float2
-                {
-                    x = math.lerp(bounds.min.x, bounds.max.x, randomArray[r]),
-                    y = math.lerp(bounds.min.z, bounds.max.z, randomArray[r + 1])
-                };
-            }
+        static private Vector3 CalcObjRotation(SmallObject obj)
+        {
+            return Vector3.Lerp(obj.minRotation, obj.maxRotation, Random.value);
+        }
+
+        static private Vector3 CalcObjOffset(SmallObject obj)
+        {
+            return Vector3.Lerp(obj.minOffset, obj.maxOffset, Random.value);
         }
 
         /// <summary>
@@ -341,9 +319,44 @@ namespace MeshBuilder.SmallObject
                 }
             }
         }
+    }
+
+    internal class Jobs
+    {
+        [BurstCompile]
+        internal struct GenerateRandomPositionsXZ : IJobParallelFor
+        {
+            public Bounds bounds;
+            public int randomOffset;
+            [ReadOnly] public NativeArray<float> randomArray;
+            [WriteOnly] public NativeArray<float2> results;
+
+            public void Execute(int index)
+            {
+                int r = (randomOffset + index) % (randomArray.Length - 1);
+                results[index] = new float2
+                {
+                    x = math.lerp(bounds.min.x, bounds.max.x, randomArray[r]),
+                    y = math.lerp(bounds.min.z, bounds.max.z, randomArray[r + 1])
+                };
+            }
+        }
+
+        internal static JobHandle ScheduleRandomPositionsGen(NativeArray<float2> results, Bounds bounds, NativeArray<float> randomArray, JobHandle inputDeps)
+        {
+            var generateRayPositionsJob = new GenerateRandomPositionsXZ
+            {
+                bounds = bounds,
+                randomArray = randomArray,
+                randomOffset = Random.Range(0, randomArray.Length),
+                results = results
+            };
+
+            return generateRayPositionsJob.Schedule(results.Length, 128, inputDeps);
+        }
 
         [BurstCompile]
-        private struct GenerateTriangleBounds : IJobParallelFor
+        internal struct GenerateTriangleBounds : IJobParallelFor
         {
             [ReadOnly] public NativeArray<int> triangles;
             [ReadOnly] public NativeArray<float3> vertices;
@@ -354,8 +367,8 @@ namespace MeshBuilder.SmallObject
             {
                 int tri = index * 3;
                 int i0 = triangles[tri];
-                int i1 = triangles[tri+1];
-                int i2 = triangles[tri+2];
+                int i1 = triangles[tri + 1];
+                int i2 = triangles[tri + 2];
                 float3 min = math.min(vertices[i0], vertices[i1]);
                 min = math.min(min, vertices[i2]);
                 float3 max = math.max(vertices[i0], vertices[i1]);
@@ -367,11 +380,23 @@ namespace MeshBuilder.SmallObject
             }
         }
 
+        internal static JobHandle ScheduleTriangleBoundGen(NativeArray<Bounds> results, NativeArray<float3> vertices, NativeArray<int> triangles, JobHandle inputDeps)
+        {
+            var generateTriBound = new GenerateTriangleBounds
+            {
+                triangles = triangles,
+                vertices = vertices,
+                triangleBounds = results
+            };
+
+            return generateTriBound.Schedule(results.Length, 64, inputDeps);
+        }
+
         static private readonly float3 Zero = new float3(0, 0, 0);
         static private readonly float3 Down = new float3(0, -1, 0);
 
         [BurstCompile]
-        private struct TopDownIntersection : IJobParallelFor
+        internal struct TopDownIntersection : IJobParallelFor
         {
             public float rayOriginY;
 
@@ -406,47 +431,6 @@ namespace MeshBuilder.SmallObject
                 results[index] = res;
             }
         }
-
-        public struct TransformToGlobal : IJobParallelFor
-        {
-            public float4x4 rootTransform;
-            public NativeArray<float3> positions;
-
-            public void Execute(int index)
-            {
-                float4 p = new float4(positions[index], 1);
-                p = math.mul(rootTransform, p);
-                positions[index] = new float3 { x = p.x, y = p.y, z = p.z };
-            }
-        }
-
-        /*
-        public struct SpawnSmallObjectRoots : IJobParallelFor
-        {
-            public SmallObjectParent objParent;
-            public Entity parentEntity;
-            public SmallObject smallObject;
-            [ReadOnly] public EntityArchetype rootArchetype;
-
-            [ReadOnly] public NativeArray<float3> rootPositions;
-
-            public EntityCommandBuffer.Concurrent commandBuffer;
-
-            public void Execute(int index)
-            {
-                float3 pos = rootPositions[index];
-                if (!Equals(pos, Zero))
-                {
-                    commandBuffer.CreateEntity(rootArchetype);
-                    commandBuffer.SetComponent(new Position { Value = pos });
-                    commandBuffer.SetComponent(new MaxLODLevel { Value = 2 });
-                    commandBuffer.SetComponent(new CurrentLODLevel { Value = 0 });
-                    commandBuffer.SetComponent(new TransformParent { Value = parentEntity });
-                    commandBuffer.AddSharedComponent(objParent);
-                    commandBuffer.AddSharedComponent(smallObject);
-                }
-            }
-        }*/
 
         static private bool Equals(float3 a, float3 b) { return a.x == b.x && a.y == b.y && a.z == b.z; }
 
@@ -485,7 +469,7 @@ namespace MeshBuilder.SmallObject
                 return false;
             }
 
-            float t = f * math.dot(edge2 , q);
+            float t = f * math.dot(edge2, q);
             if (t > math.epsilon_normal)
             {
                 intersection = origin + dir * t;
@@ -493,6 +477,46 @@ namespace MeshBuilder.SmallObject
             }
 
             return false;
+        }
+
+        static internal JobHandle ScheduleTopDownIntersection(NativeArray<float3> results, NativeArray<float2> rayOriginPositions, float rayOriginY, NativeArray<float3> meshVertices, NativeArray<int> meshTriangles, NativeArray<Bounds> triBounds, JobHandle inputDeps)
+        {
+            var topdownIntersections = new TopDownIntersection
+            {
+                rayOriginY = rayOriginY,
+                positions = rayOriginPositions,
+
+                triangles = meshTriangles,
+                vertices = meshVertices,
+                triangleBounds = triBounds,
+
+                results = results
+            };
+
+            return topdownIntersections.Schedule(results.Length, 32, inputDeps);
+        }
+
+        internal struct TransformToGlobal : IJobParallelFor
+        {
+            public float4x4 rootTransform;
+            public NativeArray<float3> positions;
+
+            public void Execute(int index)
+            {
+                float4 p = new float4(positions[index], 1);
+                p = math.mul(rootTransform, p);
+                positions[index] = new float3 { x = p.x, y = p.y, z = p.z };
+            }
+        }
+
+        internal static JobHandle ScheduleTransformToGlobal(NativeArray<float3> results, float4x4 transform, JobHandle inputDeps)
+        {
+            var toGlobal = new TransformToGlobal
+            {
+                rootTransform = transform,
+                positions = results
+            };
+            return toGlobal.Schedule(results.Length, 64, inputDeps);
         }
     }
 }

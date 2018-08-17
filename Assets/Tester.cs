@@ -14,7 +14,7 @@ public class Tester : MonoBehaviour
     public MeshFilter groundMeshFilter;
     private GridMesher groundMesher;
 
-    public VolumeTheme theme;
+    public VolumeThemeFullSize theme;
     public MeshFilter tileMeshFilter;
     private TileMesher tileMesher;
 
@@ -34,7 +34,7 @@ public class Tester : MonoBehaviour
         groundMeshFilter.sharedMesh = groundMesher.Mesh;
 
         tileMesher = new TileMesher();
-        tileMesher.Init(data, theme, 1f);
+        tileMesher.Init(data, theme, Filled, 1f);
 
         tileMeshFilter.sharedMesh = tileMesher.Mesh;
 	}

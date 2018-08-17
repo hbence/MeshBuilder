@@ -250,7 +250,7 @@ Transform:
   m_PrefabInternal: {fileID: 0}
   m_GameObject: {fileID: 282840810}
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1, z: -10}
+  m_LocalPosition: {x: 8.5, y: 11, z: -10}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children: []
   m_Father: {fileID: 0}
@@ -463,19 +463,19 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   mesh: {fileID: 0}
   initMeshFromMeshFilter: 1
-  dynamicObject: 0
+  localObjects: 0
   smallObjects:
   - name: grass
     lod0:
       renderer:
-        mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
-        material: {fileID: 2100000, guid: 0b1b353feaf231c48b690a7df2dbffaf, type: 2}
+        mesh: {fileID: 4300002, guid: 6062a3de6dd13d04da754d0ec76d3a9f, type: 3}
+        material: {fileID: 2100000, guid: b678686a9ac96c343ac01fc8216046bd, type: 2}
         subMesh: 0
         castShadows: 0
         receiveShadows: 0
       appearDistance: 0
-      disappearDistance: 20
-      numberPerCell: 100
+      disappearDistance: 40
+      numberPerCell: 1000
     lod1:
       renderer:
         mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
@@ -496,6 +496,12 @@ MonoBehaviour:
       appearDistance: 25
       disappearDistance: 40
       numberPerCell: 30
+    minScale: {x: 0.35, y: 0.35, z: 0.35}
+    maxScale: {x: 0.4, y: 0.4, z: 0.4}
+    minRotation: {x: 0, y: 0, z: 0}
+    maxRotation: {x: 0, y: 0, z: 0}
+    minOffset: {x: 0, y: 0, z: 0}
+    maxOffset: {x: 0, y: 0, z: 0}
 --- !u!114 &1653117004
 MonoBehaviour:
   m_ObjectHideFlags: 0

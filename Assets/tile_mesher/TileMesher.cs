@@ -8,20 +8,21 @@ using static MeshBuilder.Extents;
 
 using DataVolume = MeshBuilder.Volume<byte>;
 using TileVolume = MeshBuilder.Volume<MeshBuilder.TileMesher.TileData>;
-using TileElem = MeshBuilder.VolumeTheme.Elem;
+using TileElem = MeshBuilder.VolumeThemeFullSize.Elem;
 
 namespace MeshBuilder
 {
     public class TileMesher : IMeshBuilder
     {
         private const byte Empty = 0;
-        private const byte Filled = 1;
 
         // DATA
-        private VolumeTheme theme;
+        private VolumeThemeFullSize theme;
         private DataVolume data;
         private float cellSize = 1f;
         private float3 positionOffset;
+
+        private byte filledValue;
 
         private Extents dataExtents;
         private Extents tileExtents;
@@ -49,12 +50,13 @@ namespace MeshBuilder
             mesh = new Mesh();
         }
 
-        public void Init(DataVolume data, VolumeTheme theme, float cellSize = 1f, float3 posOffset = default(float3))
+        public void Init(DataVolume data, VolumeThemeFullSize theme, byte filledValue, float cellSize = 1f, float3 posOffset = default(float3))
         {
             inited = true;
 
             this.data = data;
             this.theme = theme;
+            this.filledValue = filledValue;
             this.cellSize = cellSize;
             this.positionOffset = posOffset;
 
@@ -134,12 +136,13 @@ namespace MeshBuilder
                 dataExtents = dataExtents,
                 tileExtents = tileExtents,
                 volumeData = data.Data,
+                filledValue = filledValue,
                 tileConfigurations = tileConfigurationArray,
                 tiles = tiles.Data
             };
             lastHandle = tileGenerationJob.Schedule(tiles.Data.Length, 256, lastHandle);
 
-            // collect the tiles which needs to be processed
+            // collect the tiles which need to be processed
             tileList = new NativeList<TileDataInfo>((int)(tiles.Data.Length * 0.2f), Allocator.Temp);
             var tileListGeneration = new GenerateTileDataInfoList
             {
@@ -223,8 +226,8 @@ namespace MeshBuilder
         [BurstCompile]
         internal struct GenerateTileDataJob : IJobParallelFor
         {
-            // tile are generated on the vertices points of the grid
-            // on a single layer, at every vertex 4 cells join
+            // tiles are generated on the vertices points of the grid, one layer at a time.
+            // At every vertex 4 cells join
             // the flags mean which cells are filled from the point of view of the vertex
             // the tile will be chosen based on the configuration of the filled cells
             // top Z+ / right X+
@@ -235,6 +238,7 @@ namespace MeshBuilder
 
             public Extents tileExtents;
             public Extents dataExtents;
+            public byte filledValue;
 
             [ReadOnly] public NativeArray<TileData> tileConfigurations;
             [ReadOnly] public NativeArray<byte> volumeData;
@@ -265,7 +269,7 @@ namespace MeshBuilder
 
             private bool IsFilled(int index)
             {
-                return volumeData[index] == Filled;
+                return volumeData[index] == filledValue;
             }
         }
 
@@ -389,5 +393,25 @@ namespace MeshBuilder
             new float3 { x = 0, y = 0, z = -1 },
             new float3 { x = -1, y = 0, z = 0 }
         };
+
+        internal enum GenerationType
+        {
+            None, // uninited value, invalid
+            HalfTileVolume,
+            FullTileVolume,
+            TopLayer,
+            BorderLayer,
+            CoverLayer
+        }
+
+        internal interface GenerationInfo
+        {
+            GenerationType Type { get; } 
+        }
+
+        internal class FullTileGenerationInfo : GenerationInfo
+        {
+            public GenerationType Type { get; } = GenerationType.FullTileVolume;
+        }
     }
 }

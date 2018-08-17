@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace MeshBuilder
 {
-    public class VolumeTheme : MonoBehaviour
+    public class VolumeThemeFullSize : MonoBehaviour
     {
         public enum Elem : sbyte
         {
@@ -12,23 +12,29 @@ namespace MeshBuilder
             TopSide = 0,
             TopCornerConvex,
             TopCornerConcave,
+            TopDoubleCocanve,
             Side,
             CornerConvex,
             CornerConcave,
+            DoubleConcave,
             BottomSide,
             BottomCornerConvex,
             BottomCornerConcave,
+            BottomDoubleConcave,
         }
 
         public Mesh[] topSide;
         public Mesh[] topCornerConvex;
         public Mesh[] topCornerConcave;
+        public Mesh[] topDoubleConcave;
         public Mesh[] side;
         public Mesh[] cornerConvex;
         public Mesh[] cornerConcave;
+        public Mesh[] doubleConcave;
         public Mesh[] bottomSide;
         public Mesh[] bottomCornerConvex;
         public Mesh[] bottomCornerConcave;
+        public Mesh[] bottomDoubleConcave;
 
         private Mesh[][] meshes;
 
@@ -39,14 +45,17 @@ namespace MeshBuilder
             topSide,
             topCornerConvex,
             topCornerConcave,
+            topDoubleConcave,
 
             side,
             cornerConvex,
             cornerConcave,
+            doubleConcave,
 
             bottomSide,
             bottomCornerConvex,
             bottomCornerConcave,
+            bottomDoubleConcave
             };
         }
 
