@@ -1,0 +1,228 @@
+fileFormatVersion: 2
+guid: 0374a23a0c06da340bf428cfa3867dd0
+ModelImporter:
+  serializedVersion: 23
+  fileIDToRecycleName:
+    100000: //RootNode
+    100002: case_1_bottom
+    100004: case_1_full
+    100006: case_1_top
+    100008: case_2_bottom
+    100010: case_2_bottom_1_top
+    100012: case_2_full
+    100014: case_2_top
+    100016: case_2_top_1_bottom
+    100018: case_3_2_top_2_bottom
+    100020: case_3_bottom
+    100022: case_3_bottom_1_top_center
+    100024: case_3_bottom_1_top_side
+    100026: case_3_bottom_2_top_side
+    100028: case_3_full
+    100030: case_3_top
+    100032: case_3_top_1_bottom_center
+    100034: case_3_top_1_bottom_side
+    100036: case_3_top_2_bottom_side
+    100038: case_4_bottom
+    100040: case_4_bottom_1_top
+    100042: case_4_bottom_2_top_side
+    100044: case_4_bottom_3_top
+    100046: case_4_top
+    100048: case_4_top_1_bottom
+    100050: case_4_top_2_bottom
+    100052: case_4_top_3_bottom
+    100054: case_4_bottom_2_top
+    400000: //RootNode
+    400002: case_1_bottom
+    400004: case_1_full
+    400006: case_1_top
+    400008: case_2_bottom
+    400010: case_2_bottom_1_top
+    400012: case_2_full
+    400014: case_2_top
+    400016: case_2_top_1_bottom
+    400018: case_3_2_top_2_bottom
+    400020: case_3_bottom
+    400022: case_3_bottom_1_top_center
+    400024: case_3_bottom_1_top_side
+    400026: case_3_bottom_2_top_side
+    400028: case_3_full
+    400030: case_3_top
+    400032: case_3_top_1_bottom_center
+    400034: case_3_top_1_bottom_side
+    400036: case_3_top_2_bottom_side
+    400038: case_4_bottom
+    400040: case_4_bottom_1_top
+    400042: case_4_bottom_2_top_side
+    400044: case_4_bottom_3_top
+    400046: case_4_top
+    400048: case_4_top_1_bottom
+    400050: case_4_top_2_bottom
+    400052: case_4_top_3_bottom
+    400054: case_4_bottom_2_top
+    2100000: unnamed
+    2300000: case_1_bottom
+    2300002: case_1_full
+    2300004: case_1_top
+    2300006: case_2_bottom
+    2300008: case_2_bottom_1_top
+    2300010: case_2_full
+    2300012: case_2_top
+    2300014: case_2_top_1_bottom
+    2300016: case_3_2_top_2_bottom
+    2300018: case_3_bottom
+    2300020: case_3_bottom_1_top_center
+    2300022: case_3_bottom_1_top_side
+    2300024: case_3_bottom_2_top_side
+    2300026: case_3_full
+    2300028: case_3_top
+    2300030: case_3_top_1_bottom_center
+    2300032: case_3_top_1_bottom_side
+    2300034: case_3_top_2_bottom_side
+    2300036: case_4_bottom
+    2300038: case_4_bottom_1_top
+    2300040: case_4_bottom_2_top_side
+    2300042: case_4_bottom_3_top
+    2300044: case_4_top
+    2300046: case_4_top_1_bottom
+    2300048: case_4_top_2_bottom
+    2300050: case_4_top_3_bottom
+    2300052: case_4_bottom_2_top
+    3300000: case_1_bottom
+    3300002: case_1_full
+    3300004: case_1_top
+    3300006: case_2_bottom
+    3300008: case_2_bottom_1_top
+    3300010: case_2_full
+    3300012: case_2_top
+    3300014: case_2_top_1_bottom
+    3300016: case_3_2_top_2_bottom
+    3300018: case_3_bottom
+    3300020: case_3_bottom_1_top_center
+    3300022: case_3_bottom_1_top_side
+    3300024: case_3_bottom_2_top_side
+    3300026: case_3_full
+    3300028: case_3_top
+    3300030: case_3_top_1_bottom_center
+    3300032: case_3_top_1_bottom_side
+    3300034: case_3_top_2_bottom_side
+    3300036: case_4_bottom
+    3300038: case_4_bottom_1_top
+    3300040: case_4_bottom_2_top_side
+    3300042: case_4_bottom_3_top
+    3300044: case_4_top
+    3300046: case_4_top_1_bottom
+    3300048: case_4_top_2_bottom
+    3300050: case_4_top_3_bottom
+    3300052: case_4_bottom_2_top
+    4300000: case_3_2_top_2_bottom
+    4300002: case_4_top_3_bottom
+    4300004: case_4_top_2_bottom
+    4300006: case_4_top_1_bottom
+    4300008: case_4_bottom_3_top
+    4300010: case_4_bottom_2_top_side
+    4300012: case_4_bottom_1_top
+    4300014: case_4_top
+    4300016: case_4_bottom
+    4300018: case_3_top_2_bottom_side
+    4300020: case_3_top_1_bottom_center
+    4300022: case_3_top_1_bottom_side
+    4300024: case_3_bottom_2_top_side
+    4300026: case_3_bottom_1_top_center
+    4300028: case_3_bottom_1_top_side
+    4300030: case_3_full
+    4300032: case_3_top
+    4300034: case_3_bottom
+    4300036: case_2_top_1_bottom
+    4300038: case_2_bottom_1_top
+    4300040: case_2_full
+    4300042: case_2_top
+    4300044: case_2_bottom
+    4300046: case_1_full
+    4300048: case_1_top
+    4300050: case_1_bottom
+    4300052: case_4_bottom_2_top
+    7400000: Default Take
+    9500000: //RootNode
+  externalObjects: {}
+  materials:
+    importMaterials: 0
+    materialName: 0
+    materialSearch: 1
+    materialLocation: 1
+  animations:
+    legacyGenerateAnimations: 4
+    bakeSimulation: 0
+    resampleCurves: 1
+    optimizeGameObjects: 0
+    motionNodeName: 
+    rigImportErrors: 
+    rigImportWarnings: 
+    animationImportErrors: 
+    animationImportWarnings: 
+    animationRetargetingWarnings: 
+    animationDoRetargetingWarnings: 0
+    importAnimatedCustomProperties: 0
+    importConstraints: 0
+    animationCompression: 1
+    animationRotationError: 0.5
+    animationPositionError: 0.5
+    animationScaleError: 0.5
+    animationWrapMode: 0
+    extraExposedTransformPaths: []
+    extraUserProperties: []
+    clipAnimations: []
+    isReadable: 1
+  meshes:
+    lODScreenPercentages: []
+    globalScale: 1
+    meshCompression: 0
+    addColliders: 0
+    importVisibility: 0
+    importBlendShapes: 0
+    importCameras: 0
+    importLights: 0
+    swapUVChannels: 0
+    generateSecondaryUV: 0
+    useFileUnits: 1
+    optimizeMeshForGPU: 0
+    keepQuads: 0
+    weldVertices: 0
+    preserveHierarchy: 0
+    indexFormat: 0
+    secondaryUVAngleDistortion: 8
+    secondaryUVAreaDistortion: 15.000001
+    secondaryUVHardAngle: 88
+    secondaryUVPackMargin: 4
+    useFileScale: 1
+    previousCalculatedGlobalScale: 1
+    hasPreviousCalculatedGlobalScale: 1
+  tangentSpace:
+    normalSmoothAngle: 60
+    normalImportMode: 0
+    tangentImportMode: 3
+    normalCalculationMode: 4
+  importAnimation: 0
+  copyAvatar: 0
+  humanDescription:
+    serializedVersion: 2
+    human: []
+    skeleton: []
+    armTwist: 0.5
+    foreArmTwist: 0.5
+    upperLegTwist: 0.5
+    legTwist: 0.5
+    armStretch: 0.05
+    legStretch: 0.05
+    feetSpacing: 0
+    rootMotionBoneName: 
+    rootMotionBoneRotation: {x: 0, y: 0, z: 0, w: 1}
+    hasTranslationDoF: 0
+    hasExtraRoot: 1
+    skeletonHasParents: 1
+  lastHumanDescriptionAvatarSource: {instanceID: 0}
+  animationType: 0
+  humanoidOversampling: 1
+  additionalBone: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

@@ -5,64 +5,50 @@ using UnityEngine;
 using MeshBuilder;
 using DataVolume = MeshBuilder.Volume<byte>;
 
-public class Tester : MonoBehaviour
+[RequireComponent(typeof(MeshFilter))]
+[RequireComponent(typeof(MeshRenderer))]
+public class TesterTileMesher3D : MonoBehaviour
 {
     private const int Filled = 1;
 
-    private DataVolume data;
+    public TileTheme3DComponent theme;
 
-    public MeshFilter groundMeshFilter;
-    private GridMesher groundMesher;
+    private MeshFilter filter;
+    private TileMesher3D mesher;
 
-    public VolumeThemeFullSize theme;
-    public MeshFilter tileMeshFilter;
-    private TileMesher tileMesher;
+    private DataVolume testData;
 
-    public Texture2D heightmap;
-    [Range(1, 4)]
-    public int resolution = 3;
-    public bool normalizeUV = true;
+    public TileMesher3D.Settings setting;
 
-	private void Awake ()
+	void Awake()
     {
-        data = CreateTestData();
+        filter = GetComponent<MeshFilter>();
 
-        groundMesher = new GridMesher();
-        //        groundMesher.Init(data, 1f, 1);
-        groundMesher.Init(data, 1f, resolution, heightmap, 1f, 128, normalizeUV);
+        mesher = new TileMesher3D();
 
-        groundMeshFilter.sharedMesh = groundMesher.Mesh;
-
-        tileMesher = new TileMesher();
-        tileMesher.Init(data, theme, Filled, 1f);
-
-        tileMeshFilter.sharedMesh = tileMesher.Mesh;
-	}
+        testData = CreateTestData();
+    }
 
     private void Start()
     {
-        groundMesher.StartGeneration();
-        tileMesher.StartGeneration();
+        mesher.Init(testData, Filled, theme.theme);
+        mesher.StartGeneration();
     }
 
-    private void LateUpdate()
+    void LateUpdate()
     {
-        if (groundMesher.IsGenerating)
+		if (mesher.IsGenerating)
         {
-            groundMesher.EndGeneration();
+            mesher.EndGeneration();
+            filter.sharedMesh = mesher.Mesh;
         }
-
-        if (tileMesher.IsGenerating)
-        {
-            tileMesher.EndGeneration();
-        }
-    }
+	}
 
     private void OnDestroy()
     {
-        groundMesher.Dispose();
-        tileMesher.Dispose();
-        data.Dispose();
+        mesher.Dispose();
+        testData.Dispose();
+        TileMesherConfigurations.Dispose();
     }
 
     private DataVolume CreateTestData()
@@ -125,4 +111,5 @@ public class Tester : MonoBehaviour
         volume[x, 6, z] = Filled;
         volume[x, 7, z] = Filled;
     }
+
 }

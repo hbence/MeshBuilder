@@ -44,12 +44,30 @@ namespace MeshBuilder
             disposed = true;
         }
 
-        public T At(int x, int y, int z) { return data[y * layerLength + z * XLength + x]; }
-        public void SetAt(int x, int y, int z, T value)
+        public T this[int i]
         {
-            int index = y * layerLength + z * XLength + x;
-            data[index] = value;
+            get { return data[i]; }
+            set { data[i] = value; }
         }
+
+        public T this[int x, int y, int z]
+        {
+            get { return data[IndexAt(x, y, z)]; }
+            set { data[IndexAt(x, y, z)] = value; }
+        }
+
+        public T this[Vector3Int c]
+        {
+            get { return data[IndexAt(c.x, c.y, c.z)]; }
+            set { data[IndexAt(c.x, c.y, c.z)] = value; }
+        }
+
+        private int IndexAt(int x, int y, int z)
+        {
+            return y * layerLength + z * XLength + x;
+        }
+
         public NativeArray<T> Data { get { return data; } }
+        public bool IsDisposed { get { return disposed; } }
     }
 }
