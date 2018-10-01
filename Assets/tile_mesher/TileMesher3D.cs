@@ -19,7 +19,7 @@ namespace MeshBuilder
     {
         private const string DefaultName = "tile_mesh_3d";
         private const float MinCellSize = float.Epsilon;
-        static private readonly Settings DefaultSettings = new Settings();
+        static private readonly Settings DefaultSettings = new Settings { };
         private enum State { Uninitialized, Initialized, Generating }
         private enum GenerationType { FromDataUncached, FromDataCachedTiles, FromTiles }
         
@@ -71,6 +71,8 @@ namespace MeshBuilder
         public void Init(DataVolume dataVolume, byte fillValue, TileTheme3D theme, Settings settings, float3 posOffset = default(float3))
         {
             Dispose();
+
+            SettingsSanityCheck(settings);
 
             this.data = dataVolume;
             this.theme = theme;
@@ -223,8 +225,8 @@ namespace MeshBuilder
         {
             var listGeneration = new GeneratePlacedTileList
             {
-                skipFloor = settings.skipFloor,
-                skipCeiling = settings.skipCeiling,
+                skipDirection = settings.skipDirections,
+                skipDirectionWithNoBorders = settings.skipDirectionsAndBorders,
                 tileExtents = tileExtents,
                 tiles = tiles.Data,
                 tileConfigs = Config.FullSetConfigurations,
@@ -308,12 +310,18 @@ namespace MeshBuilder
         // elems with their config and coordinates
         private struct GeneratePlacedTileList : IJob
         {
-            private static readonly byte FloorConfig = Config.ToIndex(false, false, false, false, true, true, true, true);
-            private static readonly byte CeilingConfig = Config.ToIndex(true, true, true, true, false, false, false, false);
+            private const byte None = (byte)Direction.None; 
+
+            private const byte BottomConfig = Config.BottomBackLeft | Config.BottomBackRight | Config.BottomFrontLeft | Config.BottomFrontRight;
+            private const byte TopConfig = Config.TopBackLeft | Config.TopBackRight | Config.TopFrontLeft | Config.TopFrontRight;
+            private const byte LeftConfig = Config.TopBackLeft | Config.TopFrontLeft | Config.BottomBackLeft | Config.BottomFrontLeft;
+            private const byte RightConfig = Config.TopBackRight | Config.TopFrontRight| Config.BottomBackRight| Config.BottomFrontRight;
+            private const byte FrontConfig = Config.BottomFrontLeft | Config.BottomFrontRight | Config.TopFrontLeft | Config.TopFrontRight;
+            private const byte BackConfig = Config.TopBackLeft | Config.TopBackRight | Config.BottomBackLeft | Config.BottomBackRight;
 
             public Extents tileExtents;
-            public bool skipFloor;
-            public bool skipCeiling;
+            public byte skipDirection;
+            public byte skipDirectionWithNoBorders;
 
             [ReadOnly] public NativeArray<TileVariant> tiles;
             [ReadOnly] public NativeArray<TileConfiguration> tileConfigs;
@@ -321,32 +329,89 @@ namespace MeshBuilder
 
             public void Execute()
             {
-                if (!skipFloor && ! skipCeiling)
+                // TEST TODO: I separated the cases and rolled out some of the expected values, it made the Job a bit more
+                // convoluted, maybe I should test it later if it was worth it
+                if (skipDirection == None && skipDirectionWithNoBorders == None)
                 {
                     FillListNoSkip();
                 }
-                else
+                else if (skipDirection != None)
                 {
-                    if (skipFloor && !skipCeiling)
+                    byte[] skipSides = new byte[6];
+                    int skipCount = 0;
+                    if (HasFlag(skipDirection, Direction.XPlus))  { skipSides[skipCount] = LeftConfig; ++skipCount; }
+                    if (HasFlag(skipDirection, Direction.XMinus)) { skipSides[skipCount] = RightConfig; ++skipCount; }
+                    if (HasFlag(skipDirection, Direction.YPlus))  { skipSides[skipCount] = BottomConfig; ++skipCount; }
+                    if (HasFlag(skipDirection, Direction.YMinus)) { skipSides[skipCount] = TopConfig; ++skipCount; }
+                    if (HasFlag(skipDirection, Direction.ZPlus))  { skipSides[skipCount] = BackConfig; ++skipCount; }
+                    if (HasFlag(skipDirection, Direction.ZMinus)) { skipSides[skipCount] = FrontConfig; ++skipCount; }
+
+                    SkipFn skipFn = (byte index) => { return Skip(index, skipSides[0]); };
+                    if (skipCount > 1)
                     {
-                        FillListSkipFn(SkipFloor);
+                        if (skipCount > 2)
+                        {
+                            if (skipCount > 3)
+                            {
+                                skipFn = (byte index) => { return Skip(index, skipSides, skipCount); };
+                            }
+                            else
+                            {
+                                skipFn = (byte index) => { return Skip(index, skipSides[0], skipSides[1], skipSides[2]); };
+                            }
+                        }
+                        else
+                        {
+                            skipFn = (byte index) => { return Skip(index, skipSides[0], skipSides[1]); };
+                        }
                     }
-                    else if (!skipFloor && skipCeiling)
+
+                    if (skipDirectionWithNoBorders != None)
                     {
-                        FillListSkipFn(SkipCeiling);
+                        FillListSkipBoth(skipFn);
                     }
                     else
                     {
-                        FillListSkipFn(SkipFloorAndCeiling);
+                        FillListSkip(skipFn);
                     }
+                }
+                else //(skipDirectionWithNoBorders != Direction.None)
+                {
+                    FillListSkipWithTransform();
                 }
             }
 
-            private delegate bool AllowConfig(byte index);
+            private delegate bool SkipFn(byte index);
 
-            private bool SkipFloor(byte index) { return tileConfigs[index].TileCount > 0 && index != FloorConfig; }
-            private bool SkipCeiling(byte index) { return tileConfigs[index].TileCount > 0 && index != CeilingConfig; }
-            private bool SkipFloorAndCeiling(byte index) { return tileConfigs[index].TileCount > 0 && index != FloorConfig && index != CeilingConfig; }
+            // TEST TODO: I wanted to roll out the most likely possibilites, with the double indirection I'm not sure it will make any difference, I should test that
+            static private bool Skip(byte index, byte skip0) { return index == skip0; }
+            static private bool Skip(byte index, byte skip0, byte skip1) { return index == skip0 || index == skip1; }
+            static private bool Skip(byte index, byte skip0, byte skip1, byte skip2) { return index == skip0 || index == skip1 || index == skip2; }
+            static private bool Skip(byte index, byte[] skip, int count)
+            {
+                for (int i = 0; i < count; ++i) { if (index == skip[i]){ return true; } }
+                return  false;
+            }
+
+            // a cell is divided into four quadrants, depending on which side needs to be skipped, 
+            // flagA is the side closer to that if you imagine going towards a box from that direction (the front of the box looks away from the camera) 
+            // (skip Z+ -> layerA are the back quadrants (forward you hit the back first), 
+            // skip X- -> layerA are the right quadrants (going left you hit the right side) etc.)
+            // layerB is the side behind layerA
+            static private byte TransformSkipSide(byte value, byte flagA0, byte flagA1, byte flagA2, byte flagA3, byte flagB0, byte flagB1, byte flagB2, byte flagB3)
+            {
+                int layerB0 = (value & flagB0);
+                int layerB1 = (value & flagB1);
+                int layerB2 = (value & flagB2);
+                int layerB3 = (value & flagB3);
+                byte result = (byte)(layerB0 | layerB1 | layerB2 | layerB3);
+                if ((value & flagA0) > 0 && layerB0 > 0) result |= flagA0;
+                if ((value & flagA1) > 0 && layerB1 > 0) result |= flagA1;
+                if ((value & flagA2) > 0 && layerB2 > 0) result |= flagA2;
+                if ((value & flagA3) > 0 && layerB3 > 0) result |= flagA3;
+
+                return result;
+            }
             
             private void FillListNoSkip()
             {
@@ -360,16 +425,80 @@ namespace MeshBuilder
                 }
             }
 
-            private void FillListSkipFn(AllowConfig allowConfig)
+            private void FillListSkip(SkipFn skipFn)
             {
                 for (int i = 0; i < tiles.Length; ++i)
                 {
                     byte confIndex = tiles[i].config;
-                    if (allowConfig(confIndex))
+                    if (tileConfigs[confIndex].TileCount > 0 && !skipFn(confIndex))
                     {
                         AddConfig(tileConfigs[confIndex], i);
                     }
                 }
+            }
+
+            private void FillListSkipWithTransform()
+            {
+                for (int i = 0; i < tiles.Length; ++i)
+                {
+                    byte confIndex = tiles[i].config;
+                    confIndex = TransformConfig(confIndex, skipDirectionWithNoBorders);
+
+                    if (tileConfigs[confIndex].TileCount > 0)
+                    {
+                        AddConfig(tileConfigs[confIndex], i);
+                    }
+                }
+            }
+
+            private void FillListSkipBoth(SkipFn skipFn)
+            {
+                for (int i = 0; i < tiles.Length; ++i)
+                {
+                    byte confIndex = tiles[i].config;
+                    confIndex = TransformConfig(confIndex, skipDirectionWithNoBorders);
+
+                    if (tileConfigs[confIndex].TileCount > 0 && !skipFn(confIndex))
+                    {
+                        AddConfig(tileConfigs[confIndex], i);
+                    }
+                }
+            }
+
+            private static byte TransformConfig(byte config, byte skipSides)
+            {
+                if (HasFlag(skipSides, Direction.XPlus))
+                {
+                    config = TransformSkipSide(config, Config.BottomBackRight, Config.BottomFrontRight, Config.TopBackRight, Config.TopFrontRight,
+                                                             Config.BottomBackLeft, Config.BottomFrontLeft, Config.TopBackLeft, Config.TopFrontLeft);
+                }
+                if (HasFlag(skipSides, Direction.XMinus))
+                {
+                    config = TransformSkipSide(config, Config.BottomBackLeft, Config.BottomFrontLeft, Config.TopBackLeft, Config.TopFrontLeft,
+                                                             Config.BottomBackRight, Config.BottomFrontRight, Config.TopBackRight, Config.TopFrontRight);
+                }
+                if (HasFlag(skipSides, Direction.YPlus))
+                {
+                    config = TransformSkipSide(config, Config.BottomBackLeft, Config.BottomFrontLeft, Config.BottomBackRight, Config.BottomFrontRight,
+                                                             Config.TopBackLeft, Config.TopFrontLeft, Config.TopBackRight, Config.TopFrontRight);
+                }
+                if (HasFlag(skipSides, Direction.YMinus))
+                {
+                    config = TransformSkipSide(config, Config.TopBackLeft, Config.TopFrontLeft, Config.TopBackRight, Config.TopFrontRight,
+                                                             Config.BottomBackLeft, Config.BottomFrontLeft, Config.BottomBackRight, Config.BottomFrontRight);
+                }
+                if (HasFlag(skipSides, Direction.ZMinus))
+                {
+                    config = TransformSkipSide(config, Config.TopFrontLeft, Config.TopFrontRight, Config.BottomFrontLeft, Config.BottomFrontRight,
+                                                             Config.TopBackLeft, Config.TopBackRight, Config.BottomBackLeft, Config.BottomBackRight);
+                }
+                if (HasFlag(skipSides, Direction.ZPlus))
+                {
+                    config = TransformSkipSide(config, Config.TopBackLeft, Config.TopBackRight, Config.BottomBackLeft, Config.BottomBackRight,
+                                                             Config.TopFrontLeft, Config.TopFrontRight, Config.BottomFrontLeft, Config.BottomFrontRight);
+                }
+
+                return config;
             }
 
             private void AddConfig(TileConfiguration config, int i)
@@ -387,6 +516,8 @@ namespace MeshBuilder
                     placedList.Add(tile);
                 }
             }
+
+            static private bool HasFlag(byte value, Direction dir) { return (value & (byte)dir) != 0; }
         }
 
         [BurstCompile]
@@ -462,15 +593,14 @@ namespace MeshBuilder
             }
         }
 
-        private float ValidateCellSize(float value)
+        private void SettingsSanityCheck(Settings settings)
         {
-            if (value <= 0)
-            {
-                value = MinCellSize;
-                Warning("Minimum cell size has to be greater than 0!");
-            }
+            int skipDir = settings.skipDirections;
+            int skipDirBor = settings.skipDirectionsAndBorders;
+            if (skipDir == (int)Direction.All) Warning("all directions are skipped!");
+            if (skipDirBor == (int)Direction.All) Warning("all directions are skipped, nothing will be rendered!");
 
-            return value;
+            // should I check for skipDirections and skipDirectionsAndBorders overlap?
         }
 
         private void Warning(string msg, params object[] args)
@@ -489,6 +619,7 @@ namespace MeshBuilder
         [System.Serializable]
         public class Settings
         {
+            //TODO: NOT IMPLEMENTED
             /// <summary>
             /// themes can have multiple variations for the same tile,
             /// by default only the first one is used when generating a mesh
@@ -501,23 +632,22 @@ namespace MeshBuilder
             public int variationSeed = 0;
 
             /// <summary>
-            /// Skip floor tiles (useful if floor surface is generated by something else).
+            /// skip sides of the mesh, only full side elements get skipped (so borders, edges, corners stay intact),
+            /// it doesn't modify the tile selection
+            /// - which means smaller tunnels for example may stay unaffected (if they only contain edge pieces)
+            /// - if the edge or corner tiles contain visible features (e.g. rocks standing out), this will keep them so
+            /// so there is no visible change if the mesh is recalculated with different skipDirections
             /// </summary>
-            public bool skipFloor = true;
+            public byte skipDirections = (byte)Direction.None;
 
             /// <summary>
-            /// Skip ceiling tiles.
+            /// skip every tile piece which covers a certain direction, this removes more tiles, but changes the selected tile
+            /// pieces, it is recommended if the skip directions never change (not used for dynamic culling) or for certain tile sets
+            /// where the change is not visible
             /// </summary>
-            public bool skipCeiling = true;
+            public byte skipDirectionsAndBorders = (byte)Direction.None;
 
-            /// <summary>
-            /// Skip tiles which cover a certain direction, the difference between this and
-            /// skip floor / ceiling is this one also skips borders and corners. Mostly useful for
-            /// chunks which are only visible from certain camera directions, other directions can be
-            /// skipped.
-            /// </summary>
-            public byte skipDirections = (int)Direction.None;
-
+            // NOT IMPLEMENTED
             /// <summary>
             /// When generating the mesh, should the algorithm consider the chunk boundaries empty?
             /// If the chunk represents ground for example, then the bottom and side boundaries should

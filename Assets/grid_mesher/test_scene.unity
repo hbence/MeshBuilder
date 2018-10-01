@@ -356,7 +356,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   groundMeshFilter: {fileID: 1653117000}
-  theme: {fileID: 2105216778}
   tileMeshFilter: {fileID: 365720308}
   heightmap: {fileID: 2800000, guid: d478f2987ea0afc4885865527c11e410, type: 3}
   resolution: 3
@@ -409,9 +408,8 @@ MonoBehaviour:
   setting:
     hasTileVariation: 0
     variationSeed: 0
-    skipFloor: 1
-    skipCeiling: 1
     skipDirections: 0
+    skipDirectionsAndBorders: 0
     emptyBoundaries: 63
 --- !u!33 &1387806125
 MeshFilter:

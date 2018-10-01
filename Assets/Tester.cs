@@ -14,9 +14,7 @@ public class Tester : MonoBehaviour
     public MeshFilter groundMeshFilter;
     private GridMesher groundMesher;
 
-    public VolumeThemeFullSize theme;
     public MeshFilter tileMeshFilter;
-    private TileMesher tileMesher;
 
     public Texture2D heightmap;
     [Range(1, 4)]
@@ -33,16 +31,12 @@ public class Tester : MonoBehaviour
 
         groundMeshFilter.sharedMesh = groundMesher.Mesh;
 
-        tileMesher = new TileMesher();
-        tileMesher.Init(data, theme, Filled, 1f);
-
-        tileMeshFilter.sharedMesh = tileMesher.Mesh;
+  
 	}
 
     private void Start()
     {
         groundMesher.StartGeneration();
-        tileMesher.StartGeneration();
     }
 
     private void LateUpdate()
@@ -52,16 +46,12 @@ public class Tester : MonoBehaviour
             groundMesher.EndGeneration();
         }
 
-        if (tileMesher.IsGenerating)
-        {
-            tileMesher.EndGeneration();
-        }
+
     }
 
     private void OnDestroy()
     {
         groundMesher.Dispose();
-        tileMesher.Dispose();
         data.Dispose();
     }
 
