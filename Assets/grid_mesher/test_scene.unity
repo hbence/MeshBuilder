@@ -373,7 +373,7 @@ Transform:
   - {fileID: 1653117002}
   - {fileID: 365720310}
   m_Father: {fileID: 0}
-  m_RootOrder: 4
+  m_RootOrder: 3
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1387806123
 GameObject:
@@ -430,7 +430,7 @@ Transform:
   m_Children:
   - {fileID: 1697749888}
   m_Father: {fileID: 0}
-  m_RootOrder: 5
+  m_RootOrder: 4
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!23 &1387806127
 MeshRenderer:
@@ -698,70 +698,6 @@ Transform:
   m_Father: {fileID: 1387806126}
   m_RootOrder: 0
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &2105216777
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInternal: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 2105216779}
-  - component: {fileID: 2105216778}
-  m_Layer: 0
-  m_Name: volume_theme
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 0
---- !u!114 &2105216778
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInternal: {fileID: 0}
-  m_GameObject: {fileID: 2105216777}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: e464055ab010b9643b2b6aeee0baff0d, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  topSide:
-  - {fileID: 4300004, guid: ea7f90d1f84692e46922ef0af1ebfa08, type: 3}
-  topCornerConvex:
-  - {fileID: 4300002, guid: ea7f90d1f84692e46922ef0af1ebfa08, type: 3}
-  topCornerConcave:
-  - {fileID: 4300000, guid: ea7f90d1f84692e46922ef0af1ebfa08, type: 3}
-  topDoubleConcave:
-  - {fileID: 4300026, guid: ea7f90d1f84692e46922ef0af1ebfa08, type: 3}
-  side:
-  - {fileID: 4300006, guid: ea7f90d1f84692e46922ef0af1ebfa08, type: 3}
-  cornerConvex:
-  - {fileID: 4300008, guid: ea7f90d1f84692e46922ef0af1ebfa08, type: 3}
-  cornerConcave:
-  - {fileID: 4300010, guid: ea7f90d1f84692e46922ef0af1ebfa08, type: 3}
-  doubleConcave:
-  - {fileID: 4300022, guid: ea7f90d1f84692e46922ef0af1ebfa08, type: 3}
-  bottomSide:
-  - {fileID: 4300016, guid: ea7f90d1f84692e46922ef0af1ebfa08, type: 3}
-  bottomCornerConvex:
-  - {fileID: 4300014, guid: ea7f90d1f84692e46922ef0af1ebfa08, type: 3}
-  bottomCornerConcave:
-  - {fileID: 4300012, guid: ea7f90d1f84692e46922ef0af1ebfa08, type: 3}
-  bottomDoubleConcave:
-  - {fileID: 4300024, guid: ea7f90d1f84692e46922ef0af1ebfa08, type: 3}
---- !u!4 &2105216779
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInternal: {fileID: 0}
-  m_GameObject: {fileID: 2105216777}
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -4.2503443, y: 8.385547, z: -5.4336224}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_Children: []
-  m_Father: {fileID: 0}
-  m_RootOrder: 2
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &2136030585
 Prefab:
   m_ObjectHideFlags: 0
@@ -799,7 +735,7 @@ Prefab:
       objectReference: {fileID: 0}
     - target: {fileID: 400012, guid: ea7f90d1f84692e46922ef0af1ebfa08, type: 3}
       propertyPath: m_RootOrder
-      value: 3
+      value: 2
       objectReference: {fileID: 0}
     - target: {fileID: 400000, guid: ea7f90d1f84692e46922ef0af1ebfa08, type: 3}
       propertyPath: m_LocalRotation.x

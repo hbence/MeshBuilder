@@ -14,6 +14,7 @@ namespace MeshBuilder
     // - every piece is centered a certain way, imagine a box divided into four smaller boxes, the local origin is at the center,
     // the pieces cover some of these small boxes, the origin always stays at the same position (so it can be a corner, middle of an edge or
     // center of a face) pay attention to it when making custom meshes
+    // - 0.5 is the default size for a tile, custom tiles should be around that size
     // - the cases for the piece names are an arbitrary organization based on how many cells they fill from the top-down view
     // - the top/bottom part in the tile name comes from the POV of the origin point, so a top part will be above the local origin, and can be viewed from below.
     // This can look unintuitive if a top part is used as the bottom of a box, but these would be also the ceiling parts of a cave for example. So, if you have problem

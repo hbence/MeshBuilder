@@ -2,14 +2,37 @@
 
 using TileData = MeshBuilder.TileMesher3D.TileData;
 using TileConfiguration = MeshBuilder.TileMesher3D.TileConfiguration;
-using Rotation = MeshBuilder.TileMesher3D.Rotation;
-using Direction = MeshBuilder.TileMesher3D.Direction;
 using Elem = MeshBuilder.TileTheme3D.Elem;
 
 namespace MeshBuilder
 {
     public class TileMesherConfigurations
     {
+        public enum Rotation : byte
+        {
+            CW0 = 0,
+            CW90,
+            CW180,
+            CW270
+        }
+
+        public enum Direction : byte
+        {
+            None = 0,
+
+            XPlus = 1,
+            XMinus = 2,
+            YPlus = 4,
+            YMinus = 8,
+            ZPlus = 16,
+            ZMinus = 32,
+
+            XAxis = XPlus | XMinus,
+            YAxis = YPlus | YMinus,
+            ZAxis = ZPlus | ZMinus,
+            All = XAxis | YAxis | ZAxis
+        }
+
         static private TileMesherConfigurations instance = null;
         static private TileMesherConfigurations Instance
         {
@@ -85,6 +108,23 @@ namespace MeshBuilder
         public const byte TopBackLeft       = 1 << 5;
         public const byte TopFrontRight     = 1 << 6;
         public const byte TopFrontLeft      = 1 << 7;
+
+        static public byte ToIndex(bool backLeft, bool backRight, bool frontLeft, bool frontRight)
+        {
+            byte result = 0;
+
+            if (backLeft)   result |= BackLeft;
+            if (backRight)  result |= BackRight;
+            if (frontLeft)  result |= FrontLeft;
+            if (frontRight) result |= FrontRight;
+
+            return result;
+        }
+
+        public const byte BackLeft   = 1 << 0;
+        public const byte BackRight  = 1 << 1;
+        public const byte FrontLeft  = 1 << 2;
+        public const byte FrontRight = 1 << 3;
 
         #endregion
 

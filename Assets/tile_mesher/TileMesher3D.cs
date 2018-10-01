@@ -11,27 +11,20 @@ using DataVolume = MeshBuilder.Volume<byte>; // type values
 using TileVolume = MeshBuilder.Volume<MeshBuilder.TileMesher3D.TileVariant>; // configuration indices
 using TileElem = MeshBuilder.TileTheme3D.Elem;
 using Config = MeshBuilder.TileMesherConfigurations;
-using System;
+using Rotation = MeshBuilder.TileMesherConfigurations.Rotation;
+using Direction = MeshBuilder.TileMesherConfigurations.Direction;
 
 namespace MeshBuilder
 {
-    public class TileMesher3D : IMeshBuilder
+    public class TileMesher3D : TileMesherBase<TileMesher3D.TileVariant>
     {
         private const string DefaultName = "tile_mesh_3d";
-        private const float MinCellSize = float.Epsilon;
         static private readonly Settings DefaultSettings = new Settings { };
-        private enum State { Uninitialized, Initialized, Generating }
-        private enum GenerationType { FromDataUncached, FromDataCachedTiles, FromTiles }
-        
-        private string name;
-        private State state = State.Uninitialized;
-        private GenerationType generationType = GenerationType.FromDataUncached;
 
-    // INITIAL DATA
+        // INITIAL DATA
         private TileTheme3D theme;
         private DataVolume data;
         private Settings settings;
-        private float3 positionOffset;
 
         // in the data volume we're generating the mesh
         // for this value
@@ -40,16 +33,9 @@ namespace MeshBuilder
         private Extents dataExtents;
         private Extents tileExtents;
 
-        // GENERATED DATA
-        private TileVolume tiles;
-
-        private JobHandle lastHandle;
-
         // TEMP DATA
         private NativeList<PlacedTileData> tempTileList;
         private NativeArray<MeshTile> tempMeshTileInstances;
-
-        public Mesh Mesh { get; private set; }
 
         /// <summary>
         /// Constructor
@@ -63,12 +49,12 @@ namespace MeshBuilder
             Mesh.name = name;
         }
         
-        public void Init(DataVolume dataVolume, byte fillValue, TileTheme3D theme, float3 posOffset = default(float3))
+        public void Init(DataVolume dataVolume, byte fillValue, TileTheme3D theme)
         {
-            Init(dataVolume, fillValue, theme, DefaultSettings, posOffset);
+            Init(dataVolume, fillValue, theme, DefaultSettings);
         }
 
-        public void Init(DataVolume dataVolume, byte fillValue, TileTheme3D theme, Settings settings, float3 posOffset = default(float3))
+        public void Init(DataVolume dataVolume, byte fillValue, TileTheme3D theme, Settings settings)
         {
             Dispose();
 
@@ -78,7 +64,6 @@ namespace MeshBuilder
             this.theme = theme;
             this.fillValue = fillValue;
             this.settings = settings;
-            this.positionOffset = posOffset;
 
             this.theme.Init();
 
@@ -93,39 +78,8 @@ namespace MeshBuilder
             state = State.Initialized;
         }
 
-        public void Dispose()
+        override protected void ScheduleGenerationJobs()
         {
-            state = State.Uninitialized;
-
-            lastHandle.Complete();
-            DisposeTemp();
-
-            if (tiles != null)
-            {
-                tiles.Dispose();
-                tiles = null;
-            }
-        }
-
-        public void StartGeneration()
-        {
-            if (!IsInitialized)
-            {
-                Error("not initialized!");
-                return;
-            }
-
-            if (IsGenerating)
-            {
-                Error("is already generating!");
-                return;
-            }
-
-            state = State.Generating;
-
-            lastHandle.Complete();
-            DisposeTemp();
-
             if (generationType == GenerationType.FromDataUncached)
             {
                 if (HasTilesData)
@@ -169,29 +123,9 @@ namespace MeshBuilder
             JobHandle.ScheduleBatchedJobs();
         }
 
-        public void EndGeneration()
+        override protected void AfterGenerationJobsComplete()
         {
-            if (!IsGenerating)
-            {
-                Warning("is not generating! nothing to stop");
-                return;
-            }
-
-            lastHandle.Complete();
-            state = State.Initialized;
-
             CombineMeshes(Mesh, tempMeshTileInstances, theme);
-
-            if (generationType == GenerationType.FromDataUncached)
-            {
-                if (HasTilesData)
-                {
-                    tiles.Dispose();
-                    tiles = null;
-                }
-            }
-
-            DisposeTemp();
         }
 
         static private void CombineMeshes(Mesh mesh, NativeArray<MeshTile> instanceData, TileTheme3D theme)
@@ -247,7 +181,7 @@ namespace MeshBuilder
             return instanceGeneration.Schedule(tileList.Length, batchCount, dependOn);
         }
 
-        private void DisposeTemp()
+        override protected void DisposeTemp()
         {
             if (tempTileList.IsCreated)
             {
@@ -259,8 +193,6 @@ namespace MeshBuilder
                 tempMeshTileInstances.Dispose();
             }
         }
-
-        private bool HasTilesData { get { return tiles != null && !tiles.IsDisposed; } }
 
         [BurstCompile]
         private struct GenerateTileDataJob : IJobParallelFor
@@ -602,20 +534,7 @@ namespace MeshBuilder
 
             // should I check for skipDirections and skipDirectionsAndBorders overlap?
         }
-
-        private void Warning(string msg, params object[] args)
-        {
-            Debug.LogWarningFormat(name + " - " + msg, args);
-        }
-
-        private void Error(string msg, params object[] args)
-        {
-            Debug.LogErrorFormat(name + " - " + msg, args);
-        }
-
-        public bool IsInitialized { get { return state != State.Uninitialized; } }
-        public bool IsGenerating { get { return state == State.Generating; } }
-
+        
         [System.Serializable]
         public class Settings
         {
@@ -647,7 +566,7 @@ namespace MeshBuilder
             /// </summary>
             public byte skipDirectionsAndBorders = (byte)Direction.None;
 
-            // NOT IMPLEMENTED
+            // TODO: NOT IMPLEMENTED
             /// <summary>
             /// When generating the mesh, should the algorithm consider the chunk boundaries empty?
             /// If the chunk represents ground for example, then the bottom and side boundaries should
@@ -655,31 +574,6 @@ namespace MeshBuilder
             /// needs all of its sides rendered, then the boundaries should be considered empty.
             /// </summary>
             public byte emptyBoundaries = (int)Direction.All;
-        }
-
-        public enum Rotation : byte
-        {
-            CW0 = 0,
-            CW90,
-            CW180,
-            CW270
-        }
-        
-        public enum Direction : byte
-        {
-            None = 0,
-
-            XPlus = 1,
-            XMinus = 2,
-            YPlus = 4,
-            YMinus = 8,
-            ZPlus = 16,
-            ZMinus = 32,
-
-            XAxis = XPlus | XMinus,
-            YAxis = YPlus | YMinus,
-            ZAxis = ZPlus | ZMinus,
-            All = XAxis | YAxis | ZAxis
         }
         
         public struct TileData
@@ -695,14 +589,14 @@ namespace MeshBuilder
             public byte variation;
         }
 
-        public struct PlacedTileData
+        internal struct PlacedTileData
         {
             public int3 coord;
             public TileData data;
             public byte variation;
         }
 
-        public struct MeshTile
+        internal struct MeshTile
         {
             public TileElem elem;
             public int variation;
