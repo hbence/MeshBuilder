@@ -8,30 +8,50 @@ ModelImporter:
     100004: case_2
     100006: case_3
     100008: case_4
+    100010: 2d_template_case_1
+    100012: 2d_template_case_2
+    100014: 2d_template_case_3
+    100016: 2d_template_case_4
     400000: //RootNode
     400002: case_1
     400004: case_2
     400006: case_3
     400008: case_4
+    400010: 2d_template_case_1
+    400012: 2d_template_case_2
+    400014: 2d_template_case_3
+    400016: 2d_template_case_4
     2100000: unnamed
     2100002: Material
     2300000: case_1
     2300002: case_2
     2300004: case_3
     2300006: case_4
+    2300008: 2d_template_case_1
+    2300010: 2d_template_case_2
+    2300012: 2d_template_case_3
+    2300014: 2d_template_case_4
     3300000: case_1
     3300002: case_2
     3300004: case_3
     3300006: case_4
+    3300008: 2d_template_case_1
+    3300010: 2d_template_case_2
+    3300012: 2d_template_case_3
+    3300014: 2d_template_case_4
     4300000: case_4
     4300002: case_3
     4300004: case_2
     4300006: case_1
+    4300008: 2d_template_case_4
+    4300010: 2d_template_case_3
+    4300012: 2d_template_case_2
+    4300014: 2d_template_case_1
     7400000: Default Take
     9500000: //RootNode
   externalObjects: {}
   materials:
-    importMaterials: 1
+    importMaterials: 0
     materialName: 0
     materialSearch: 1
     materialLocation: 1
@@ -60,19 +80,19 @@ ModelImporter:
     isReadable: 1
   meshes:
     lODScreenPercentages: []
-    globalScale: 1
+    globalScale: 0.25
     meshCompression: 0
     addColliders: 0
-    importVisibility: 1
-    importBlendShapes: 1
-    importCameras: 1
-    importLights: 1
+    importVisibility: 0
+    importBlendShapes: 0
+    importCameras: 0
+    importLights: 0
     swapUVChannels: 0
     generateSecondaryUV: 0
     useFileUnits: 1
-    optimizeMeshForGPU: 1
+    optimizeMeshForGPU: 0
     keepQuads: 0
-    weldVertices: 1
+    weldVertices: 0
     preserveHierarchy: 0
     indexFormat: 0
     secondaryUVAngleDistortion: 8
@@ -87,7 +107,7 @@ ModelImporter:
     normalImportMode: 0
     tangentImportMode: 3
     normalCalculationMode: 4
-  importAnimation: 1
+  importAnimation: 0
   copyAvatar: 0
   humanDescription:
     serializedVersion: 2
@@ -103,10 +123,10 @@ ModelImporter:
     rootMotionBoneName: 
     rootMotionBoneRotation: {x: 0, y: 0, z: 0, w: 1}
     hasTranslationDoF: 0
-    hasExtraRoot: 0
+    hasExtraRoot: 1
     skeletonHasParents: 1
   lastHumanDescriptionAvatarSource: {instanceID: 0}
-  animationType: 2
+  animationType: 0
   humanoidOversampling: 1
   additionalBone: 0
   userData: 

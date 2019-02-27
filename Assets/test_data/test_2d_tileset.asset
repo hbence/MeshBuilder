@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInternal: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 048446701a639a449a21c1e56229ad83, type: 3}
+  m_Name: test_2d_tileset
+  m_EditorClassIdentifier: 
+  themeName: test
+  type: 5
+  openTowardsThemes: []
+  baseVariants:
+  - pieceConfig: 8
+    variants:
+    - {fileID: 4300014, guid: 2c824e4845ca5d441ac9207efe643281, type: 3}
+  - pieceConfig: 12
+    variants:
+    - {fileID: 4300012, guid: 2c824e4845ca5d441ac9207efe643281, type: 3}
+  - pieceConfig: 14
+    variants:
+    - {fileID: 4300010, guid: 2c824e4845ca5d441ac9207efe643281, type: 3}
+  - pieceConfig: 15
+    variants:
+    - {fileID: 4300008, guid: 2c824e4845ca5d441ac9207efe643281, type: 3}

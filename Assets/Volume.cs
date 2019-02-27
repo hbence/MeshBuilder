@@ -69,5 +69,6 @@ namespace MeshBuilder
 
         public NativeArray<T> Data { get { return data; } }
         public bool IsDisposed { get { return disposed; } }
+        public int Length { get { return data.Length; } }
     }
 }

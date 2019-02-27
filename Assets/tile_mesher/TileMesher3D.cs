@@ -8,14 +8,20 @@ using System.Runtime.InteropServices;
 using static MeshBuilder.Extents;
 
 using DataVolume = MeshBuilder.Volume<byte>; // type values
+/*
 using TileVolume = MeshBuilder.Volume<MeshBuilder.TileMesher3D.TileVariant>; // configuration indices
 using TileElem = MeshBuilder.TileTheme3D.Elem;
 using Config = MeshBuilder.TileMesherConfigurations;
 using Rotation = MeshBuilder.TileMesherConfigurations.Rotation;
 using Direction = MeshBuilder.TileMesherConfigurations.Direction;
-
+*/
 namespace MeshBuilder
 {
+    /*
+    // TODO:
+    // I haven't really worked on tile variants yet, some structs contain variant info, but
+    // I will have to rework those so multiple variants are allowed in the same configuration
+    // for example two diagonal corner edges may use different variants
     public class TileMesher3D : TileMesherBase<TileMesher3D.TileVariant>
     {
         private const string DefaultName = "tile_mesh_3d";
@@ -107,11 +113,13 @@ namespace MeshBuilder
                 // but then I would waste more memory and I would have to go through the whole volume to collect the CombineInstances into an array later.
                 // not sure if it would be worth it but perhaps I could test it later?
 
+                // filter tiles which needs to be placed
                 tempTileList = new NativeList<PlacedTileData>((int)(tiles.Data.Length * 0.25f), Allocator.Temp);
                 lastHandle = SchedulePlacedTileListGeneration(tempTileList, tiles, lastHandle);
                 
                 lastHandle.Complete();
 
+                // set mesh data for tiles
                 tempMeshTileInstances = new NativeArray<MeshTile>(tempTileList.Length, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
                 lastHandle = ScheduleCombineInstanceGeneration(tempMeshTileInstances, tempTileList, 16, lastHandle);
             }
@@ -128,7 +136,7 @@ namespace MeshBuilder
             CombineMeshes(Mesh, tempMeshTileInstances, theme);
         }
 
-        static private void CombineMeshes(Mesh mesh, NativeArray<MeshTile> instanceData, TileTheme3D theme)
+        static private void CombineMeshes(Mesh mesh, NativeArray<MeshTile> instanceData, TileTheme theme)
         {
             var instanceArray = new CombineInstance[instanceData.Length];
             for (int i = 0; i < instanceData.Length; ++i)
@@ -163,7 +171,7 @@ namespace MeshBuilder
                 skipDirectionWithNoBorders = settings.skipDirectionsAndBorders,
                 tileExtents = tileExtents,
                 tiles = tiles.Data,
-                tileConfigs = Config.FullSetConfigurations,
+                tileConfigs = Config.FullSetConfigurations3D,
                 placedList = resultTileList
             };
 
@@ -238,8 +246,7 @@ namespace MeshBuilder
             }
         }
 
-        // go through the tile volume data and separate the configs into separate 
-        // elems with their config and coordinates
+        // Filter out tiles which needs mesh generated
         private struct GeneratePlacedTileList : IJob
         {
             private const byte None = (byte)Direction.None; 
@@ -456,7 +463,6 @@ namespace MeshBuilder
         private struct GenerateCombineInstances : IJobParallelFor
         {
             private static readonly float3 Up = new float3 { x = 0, y = 1, z = 0 };
-            private static readonly float3 Down = new float3 { x = 1, y = 0, z = 0 };
             private static readonly float3 One = new float3 { x = 1, y = 1, z = 1 };
 
             private static readonly float3 MirrorX = new float3 { x = -1, y = 1, z = 1 };
@@ -478,8 +484,7 @@ namespace MeshBuilder
                 
                 MatrixConverter m = new MatrixConverter {  };
                 Vector3 forward = ToDirection(tile.rot);
-                Vector3 up = Up;
-                m.float4x4 = math.mul(float4x4.lookAt(pos, forward, up), float4x4.scale(ToScale(tile.mirror)));
+                m.float4x4 = math.mul(float4x4.lookAt(pos, forward, Up), float4x4.scale(ToScale(tile.mirror)));
 
                 meshTiles[index] = new MeshTile
                 {
@@ -506,10 +511,10 @@ namespace MeshBuilder
                 // TODO: bug in the burst compiler, remove the casting and uncomment the enums when it gets fixed
                 switch ((int)rot)
                 {
-                    case 0/*Rotation.CW0*/: return ZMinus;
-                    case 1/*Rotation.CW90*/: return XMinus;
-                    case 2/*Rotation.CW180*/: return ZPlus;
-                    case 3/*Rotation.CW270*/: return XPlus;
+                    case 0: return ZMinus; // Rotation.CW0
+                    case 1: return XMinus; // Rotation.CW90
+                    case 2: return ZPlus; // Rotation.CW180
+                    case 3: return XPlus; // Rotation.CW270
                 }
                 return ZPlus;
             }
@@ -576,6 +581,7 @@ namespace MeshBuilder
             public byte emptyBoundaries = (int)Direction.All;
         }
         
+        // describes the placement of a piece of tile
         public struct TileData
         {
             public TileElem elem;
@@ -583,12 +589,14 @@ namespace MeshBuilder
             public Direction mirror;
         }
 
+        // describes which configuration is needed at a certain cell
         public struct TileVariant
         {
             public byte config;
             public byte variation;
         }
 
+        // describes what exact piece needs to be placed, where and how (rotation, mirror)
         internal struct PlacedTileData
         {
             public int3 coord;
@@ -596,6 +604,7 @@ namespace MeshBuilder
             public byte variation;
         }
 
+        // the exact piece (elem, variant) and its transform
         internal struct MeshTile
         {
             public TileElem elem;
@@ -611,7 +620,7 @@ namespace MeshBuilder
             private TileData tile1;
             private TileData tile2;
             private TileData tile3;
-            public byte TileCount { get; private set; }
+            public int TileCount { get; private set; }
 
             public TileConfiguration(params TileData[] tiles)
             {
@@ -651,4 +660,5 @@ namespace MeshBuilder
             }
         }
     }
+    */
 }

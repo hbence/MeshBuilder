@@ -9,6 +9,7 @@ using DataVolume = MeshBuilder.Volume<byte>;
 [RequireComponent(typeof(MeshRenderer))]
 public class TesterTileMesher3D : MonoBehaviour
 {
+    /*
     private const int Filled = 1;
 
     public TileTheme3DComponent theme;
@@ -111,5 +112,5 @@ public class TesterTileMesher3D : MonoBehaviour
         volume[x, 6, z] = Filled;
         volume[x, 7, z] = Filled;
     }
-
+    */
 }

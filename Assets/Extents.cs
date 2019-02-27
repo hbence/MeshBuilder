@@ -54,6 +54,11 @@ namespace MeshBuilder
         {
             return y * xzLength + z * xLength + x;
         }
+
+        static public int IndexFromCoord(int x, int y, int z, Extents ext)
+        {
+            return y * ext.XZ + z * ext.X + x;
+        }
     }
 }
 
