@@ -36,8 +36,21 @@ public class Tester2D : MonoBehaviour
 
         Set(5, 6);
         Set(5, 7);
+        Set(5, 8);
         Set(6, 6);
-        Set(6, 7);
+        //Set(6, 7);
+        Set(6, 8);
+        Set(7, 6);
+        Set(7, 7);
+        Set(7, 8);
+
+        Set(8, 9);
+
+        Set(6, 5);
+        Set(7, 4);
+        Set(7, 3);
+        Set(8, 3);
+
         /*
         Set(2, 2);
         Set(3, 2);

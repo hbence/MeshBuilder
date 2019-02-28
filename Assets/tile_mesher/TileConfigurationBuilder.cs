@@ -1,8 +1,8 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
 
-using Direction = MeshBuilder.Tile.Direction;
 using Piece = MeshBuilder.Tile.Piece;
+using PieceTransform = MeshBuilder.Tile.PieceTransform;
 
 namespace MeshBuilder
 {
@@ -227,19 +227,19 @@ namespace MeshBuilder
                     var basic = basicConfigs[i];
                     if (value == (byte)basic.PieceConfig)
                     {
-                        configTransform = new ConfigTransform(i, Direction.None);
+                        configTransform = new ConfigTransform(i, PieceTransform.None);
                         return true;
                     }
                 }
 
                 // no direct match, so try to transform them
-                Direction mirrorDir;
+                PieceTransform transform;
                 for (byte i = 0; i < basicConfigs.Length; ++i)
                 {
                     var basic = basicConfigs[i];
-                    if (FindTransform(value, (byte)basic.PieceConfig, out mirrorDir))
+                    if (FindTransform(value, (byte)basic.PieceConfig, out transform))
                     {
-                        configTransform = new ConfigTransform(i, mirrorDir);
+                        configTransform = new ConfigTransform(i, transform);
                         return true;
                     }
                 }
@@ -254,30 +254,35 @@ namespace MeshBuilder
             /// <param name="target"></param>
             /// <param name="mirrorDirection"></param>
             /// <returns></returns>
-            static private bool FindTransform(byte value, byte target, out Direction mirrorDirection)
+            static private bool FindTransform(byte value, byte target, out PieceTransform transform)
             {
-                mirrorDirection = Direction.None;
+                transform = PieceTransform.None;
                 
                 if (value == target)
                 {
                     return true;
                 }
 
-                byte valueX = MirrorX(value);
-                byte valueY = MirrorY(value);
-                byte valueZ = MirrorZ(value);
-                byte valueXY = MirrorY(valueX);
-                byte valueXZ = MirrorZ(valueX);
-                byte valueXYZ = MirrorZ(valueXY);
+                byte value90 = RotateCW90(value);
+                byte value180 = RotateCW90(value90);
+                byte value270 = RotateCW90(value180);
+                byte valueMirY = MirrorY(value);
+                byte value90MirY = MirrorY(value90);
+                byte value180MirY = MirrorY(value180);
+                byte value270MirY = MirrorY(value270);
 
-                byte[] values = { valueX, valueY, valueZ, valueXY, valueXZ, valueXYZ };
-                Direction[] dirs = { Direction.XAxis, Direction.YAxis, Direction.ZAxis, Direction.XAxis | Direction.YAxis, Direction.XAxis | Direction.ZAxis, Direction.All };
+                byte[] values = { value90, value180, value270, valueMirY, value90MirY, value180MirY, value270MirY };
+                PieceTransform[] dirs = 
+                {
+                    PieceTransform.Rotate90, PieceTransform.Rotate180, PieceTransform.Rotate270,
+                    PieceTransform.MirrorY, PieceTransform.MirrorY | PieceTransform.Rotate90, PieceTransform.MirrorY | PieceTransform.Rotate180, PieceTransform.MirrorY | PieceTransform.Rotate270,
+                };
 
                 for (int i = 0; i < values.Length; ++i)
                 {
                     if (values[i] == target)
                     {
-                        mirrorDirection = dirs[i];
+                        transform = dirs[i];
                         return true;
                     }
                 }
@@ -342,6 +347,21 @@ namespace MeshBuilder
                 result = FillCell(result, 2, IsFilled(value, 0));
 
                 result = FillCell(result, 1, IsFilled(value, 3));
+                result = FillCell(result, 0, IsFilled(value, 2));
+                return result;
+            }
+
+            static private byte RotateCW90(byte value)
+            {
+                byte result = 0;
+                result = FillCell(result, 7, IsFilled(value, 5));
+                result = FillCell(result, 6, IsFilled(value, 7));
+                result = FillCell(result, 5, IsFilled(value, 4));
+                result = FillCell(result, 4, IsFilled(value, 6));
+
+                result = FillCell(result, 3, IsFilled(value, 1));
+                result = FillCell(result, 2, IsFilled(value, 3));
+                result = FillCell(result, 1, IsFilled(value, 0));
                 result = FillCell(result, 0, IsFilled(value, 2));
                 return result;
             }

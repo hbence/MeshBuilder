@@ -86,17 +86,39 @@ namespace MeshBuilder
         {
             None = 0,
 
-            XPlus = 1,
-            XMinus = 2,
-            YPlus = 4,
-            YMinus = 8,
-            ZPlus = 16,
-            ZMinus = 32,
+            XPlus   = 1 << 0,
+            XMinus  = 1 << 1,
+            YPlus   = 1 << 2,
+            YMinus  = 1 << 3,
+            ZPlus   = 1 << 4,
+            ZMinus  = 1 << 5,
 
             XAxis = XPlus | XMinus,
             YAxis = YPlus | YMinus,
             ZAxis = ZPlus | ZMinus,
             All = XAxis | YAxis | ZAxis
+        }
+
+        /// <summary>
+        /// Used to describe what transformations has to happen to a piece.
+        /// These transformations could lead to different outcomes depending the order of the mirroring, rotation,
+        /// but the way it's used by the TileConfigurationBuilder and the meshers takes this into consideration.
+        /// </summary>
+        public enum PieceTransform : byte
+        {
+            None = 0,
+
+            MirrorX = 1 << 0,
+            MirrorY = 1 << 1,
+            MirrorZ = 1 << 2,
+
+            MirrorXY = MirrorX | MirrorY,
+            MirrorXZ = MirrorX | MirrorZ,
+            MirrorXYZ = MirrorX | MirrorY | MirrorZ,
+
+            Rotate90  = 1 << 3,
+            Rotate180 = 1 << 4,
+            Rotate270 = 1 << 5
         }
     }
 }

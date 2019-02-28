@@ -2,8 +2,8 @@
 using UnityEngine;
 using Unity.Collections;
 
-using Direction = MeshBuilder.Tile.Direction;
 using Piece = MeshBuilder.Tile.Piece;
+using PieceTransform = MeshBuilder.Tile.PieceTransform;
 
 namespace MeshBuilder
 {
@@ -78,12 +78,28 @@ namespace MeshBuilder
 
         private void FillConfigurations()
         {
+            List<int> nullConfigs = new List<int>();
             for (byte i = 0; i < configs.Length; ++i)
             {
                 configs[i] = TileConfigurationBuilder.Decompose(i, baseVariants);
- //               Debug.Log(i + ". :");
- //               LogGroup(configs[i]);
-//                Debug.Log("---");
+                if (i > 0 && configs[i].Count == 0)
+                {
+                    nullConfigs.Add(i);
+                }
+                /*
+                Debug.Log(i + ". :");
+                LogGroup(configs[i]);
+                Debug.Log("---");
+                */
+            }
+
+            if (nullConfigs.Count > 0)
+            {
+                Debug.LogWarning("There are uncovered configurations!");
+                foreach (var c in nullConfigs)
+                {
+                    Debug.LogWarning("config: " + c);
+                }
             }
         }
 
@@ -91,7 +107,7 @@ namespace MeshBuilder
         {
             for (int i = 0; i < g.Count; ++i)
             {
-               Debug.Log(" base:" + g[i].BaseMeshIndex + " mir:" + g[i].MirrorDirection);
+               Debug.Log(" base:" + g[i].BaseMeshIndex + " transform:" + g[i].PieceTransform);
             }
         }
 
@@ -127,7 +143,7 @@ namespace MeshBuilder
             return Type3DConfigCount;
         }
 
-        public static readonly ConfigTransform NullTransform = new ConfigTransform(0, Direction.None);
+        public static readonly ConfigTransform NullTransform = new ConfigTransform(0, PieceTransform.None);
 
         [System.Serializable]
         public class BaseMeshVariants
@@ -152,13 +168,13 @@ namespace MeshBuilder
             private byte baseMeshIndex;
             public byte BaseMeshIndex { get { return baseMeshIndex; } }
 
-            private Direction mirrorDirection;
-            public Direction MirrorDirection { get { return mirrorDirection; } }
+            private PieceTransform pieceTransform;
+            public PieceTransform PieceTransform { get { return pieceTransform; } }
 
-            public ConfigTransform(byte baseMeshIndex, Direction mirrorDirection)
+            public ConfigTransform(byte baseMeshIndex, PieceTransform pieceTransform)
             {
                 this.baseMeshIndex = baseMeshIndex;
-                this.mirrorDirection = mirrorDirection;
+                this.pieceTransform = pieceTransform;
             }
         }
 

@@ -12,6 +12,7 @@ using DataVolume = MeshBuilder.Volume<MeshBuilder.Tile.Data>; // type values
 using TileVolume = MeshBuilder.Volume<MeshBuilder.TileMesher2D.TileMeshData>; // configuration indices
 using ConfigTransformGroup = MeshBuilder.TileTheme.ConfigTransformGroup;
 using ConfigTransform = MeshBuilder.TileTheme.ConfigTransform;
+using PieceTransform = MeshBuilder.Tile.PieceTransform;
 using Direction = MeshBuilder.Tile.Direction;
 
 namespace MeshBuilder
@@ -236,6 +237,8 @@ namespace MeshBuilder
     //    [BurstCompile]
         private struct GenerateMeshDataJob : IJobParallelFor
         {
+            private const byte MirrorMask = (byte)PieceTransform.MirrorXYZ;
+
             public Extents tileExtents;
             public int yLevel;
             [ReadOnly] public NativeArray<TileMeshData> tiles;
@@ -258,13 +261,13 @@ namespace MeshBuilder
 
                             mesh0 = new MeshInstance
                             {
-                                instance = CreateInstance(pos, group[0].MirrorDirection),
+                                instance = CreateInstance(pos, group[0].PieceTransform),
                                 basePieceIndex = group[0].BaseMeshIndex,
                                 variantIndex = tile.variant0
                             },
                             mesh1 = new MeshInstance
                             {
-                                instance = CreateInstance(pos, group[1].MirrorDirection),
+                                instance = CreateInstance(pos, group[1].PieceTransform),
                                 basePieceIndex = group[1].BaseMeshIndex,
                                 variantIndex = tile.variant1
                             }
@@ -278,7 +281,7 @@ namespace MeshBuilder
 
                             mesh0 = new MeshInstance
                             {
-                                instance = CreateInstance(pos, group[0].MirrorDirection),
+                                instance = CreateInstance(pos, group[0].PieceTransform),
                                 basePieceIndex = group[0].BaseMeshIndex,
                                 variantIndex = tile.variant0
                             }
@@ -291,15 +294,23 @@ namespace MeshBuilder
                 }
             }
 
-            private CombineInstance CreateInstance(float3 pos, Direction mirrorDirection)
+            private CombineInstance CreateInstance(float3 pos, PieceTransform pieceTransform)
             {
                 MatrixConverter m = new MatrixConverter { };
-                m.float4x4 = math.mul(float4x4.translate(pos), ToScaleMatrix(mirrorDirection));
+
+                float4x4 transform = ToRotationMatrix(pieceTransform);
+
+                if (((byte)pieceTransform & MirrorMask) != 0)
+                {
+                    transform = math.mul(transform, ToScaleMatrix(pieceTransform));
+                }
+
+                m.float4x4 = math.mul(float4x4.translate(pos), transform);
 
                 return new CombineInstance { subMeshIndex = 0, transform = m.Matrix4x4 };
             }
 
-            private static readonly float4x4 NoMirror  = float4x4.identity;
+            private static readonly float4x4 Identity  = float4x4.identity;
             private static readonly float4x4 XMirror   = float4x4.scale(-1, 1, 1);
             private static readonly float4x4 YMirror   = float4x4.scale(1, -1, 1);
             private static readonly float4x4 ZMirror   = float4x4.scale(1, 1, -1);
@@ -307,20 +318,34 @@ namespace MeshBuilder
             private static readonly float4x4 XZMirror  = float4x4.scale(-1, 1, -1);
             private static readonly float4x4 XYZMirror = float4x4.scale(-1, -1, -1);
 
-            static private float4x4 ToScaleMatrix(Direction mirrorDirection)
+            static private float4x4 ToScaleMatrix(PieceTransform pieceTransform)
             {
-                switch (mirrorDirection)
+                switch (pieceTransform)
                 {
-                    case Direction.XAxis: return XMirror;
-                    case Direction.YAxis: return YMirror;
-                    case Direction.ZAxis: return ZMirror;
-
-                    case Direction.XAxis | Direction.YAxis: return XYMirror;
-                    case Direction.XAxis | Direction.ZAxis: return XZMirror;
-
-                    case Direction.All: return XYZMirror;
+                    case PieceTransform.MirrorX: return XMirror;
+                    case PieceTransform.MirrorY: return YMirror;
+                    case PieceTransform.MirrorZ: return ZMirror;
+                    case PieceTransform.MirrorXY: return XYMirror;
+                    case PieceTransform.MirrorXZ: return XZMirror;
+                    case PieceTransform.MirrorXYZ: return XYZMirror;
                 }
-                return NoMirror;
+                return Identity;
+            }
+
+            private static readonly float4x4 Rotate90 = float4x4.rotateY(math.radians(-90));
+            private static readonly float4x4 Rotate180 = float4x4.rotateY(math.radians(180));
+            private static readonly float4x4 Rotate270 = float4x4.rotateY(math.radians(-270));
+
+            static private float4x4 ToRotationMatrix(PieceTransform pieceTransform)
+            {
+                switch (pieceTransform)
+                {
+                    case PieceTransform.Rotate90: return Rotate90;
+                    case PieceTransform.Rotate180: return Rotate180;
+                    case PieceTransform.Rotate270: return Rotate270;
+                }
+
+                return Identity;
             }
 
             [StructLayout(LayoutKind.Explicit)]
