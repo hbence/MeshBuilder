@@ -53,6 +53,11 @@ namespace MeshBuilder
             return (Piece)ToConfig(leftForward, rightForward, leftBackward, rightBackward);
         }
 
+        static public Piece ToPiece(byte config)
+        {
+            return (Piece)(config & 0b00001111);
+        }
+
         static public int ToConfig(bool leftForward, bool rightForward, bool leftBackward, bool rightBackward)
         {
             int res = leftForward ? LeftForward : 0;
@@ -80,6 +85,29 @@ namespace MeshBuilder
         {
             public byte themeIndex;
             public byte variant;
+        }
+
+        public enum Type : byte
+        {
+            /// <summary>
+            /// a single tile, which needs to be drawn (depending on the configuration)
+            /// </summary>
+            Normal,
+
+            /// <summary>
+            /// a custom tile, possibly filling multiple cells, needs to be drawn
+            /// </summary>
+            Custom,
+
+            /// <summary>
+            /// cell doesn't need to be drawn, it is overlapped by a custom tile
+            /// </summary>
+            Overlapped,
+
+            /// <summary>
+            /// the cell is culled by something, it won't be drawn
+            /// </summary>
+            Culled
         }
 
         public enum Direction : byte

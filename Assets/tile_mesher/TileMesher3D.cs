@@ -7,71 +7,70 @@ using System.Runtime.InteropServices;
 
 using static MeshBuilder.Extents;
 
-using DataVolume = MeshBuilder.Volume<byte>; // type values
-/*
-using TileVolume = MeshBuilder.Volume<MeshBuilder.TileMesher3D.TileVariant>; // configuration indices
-using TileElem = MeshBuilder.TileTheme3D.Elem;
-using Config = MeshBuilder.TileMesherConfigurations;
-using Rotation = MeshBuilder.TileMesherConfigurations.Rotation;
-using Direction = MeshBuilder.TileMesherConfigurations.Direction;
-*/
+using TileData = MeshBuilder.Tile.Data;
+using TileType = MeshBuilder.Tile.Type;
+using DataVolume = MeshBuilder.Volume<MeshBuilder.Tile.Data>; // type values
+using TileVolume = MeshBuilder.Volume<MeshBuilder.TileMesher3D.TileMeshData>; // configuration indices
+using ConfigTransformGroup = MeshBuilder.TileTheme.ConfigTransformGroup;
+using PieceTransform = MeshBuilder.Tile.PieceTransform;
+using Direction = MeshBuilder.Tile.Direction;
+
 namespace MeshBuilder
 {
-    /*
-    // TODO:
-    // I haven't really worked on tile variants yet, some structs contain variant info, but
-    // I will have to rework those so multiple variants are allowed in the same configuration
-    // for example two diagonal corner edges may use different variants
-    public class TileMesher3D : TileMesherBase<TileMesher3D.TileVariant>
+    public class TileMesher3D : TileMesherBase<TileMesher3D.TileMeshData>
     {
         private const string DefaultName = "tile_mesh_3d";
         static private readonly Settings DefaultSettings = new Settings { };
 
         // INITIAL DATA
-        private TileTheme3D theme;
+        private TileTheme theme;
         private DataVolume data;
         private Settings settings;
 
         // in the data volume we're generating the mesh
         // for this value
-        private byte fillValue;
+        private int themeIndex;
 
         private Extents dataExtents;
         private Extents tileExtents;
 
+        // GENERATED DATA
+        private Volume<MeshTile> tileMeshes;
+
         // TEMP DATA
-        private NativeList<PlacedTileData> tempTileList;
-        private NativeArray<MeshTile> tempMeshTileInstances;
+        private NativeList<MeshInstance> tempInstanceList;
 
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="name">name of the mesher, mostly for logging and debug purposes</param>
+        /// <param name="name">name of the mesher, mostly for logging and debugging purposes</param>
         public TileMesher3D(string name = DefaultName)
+            : base(name)
         {
-            this.name = name;
 
-            Mesh = new Mesh();
-            Mesh.name = name;
-        }
-        
-        public void Init(DataVolume dataVolume, byte fillValue, TileTheme3D theme)
-        {
-            Init(dataVolume, fillValue, theme, DefaultSettings);
         }
 
-        public void Init(DataVolume dataVolume, byte fillValue, TileTheme3D theme, Settings settings)
+        public void Init(DataVolume dataVolume, int themeIndex, TileThemePalette themePalette)
+        {
+            Init(dataVolume, themeIndex, themePalette, DefaultSettings);
+        }
+
+        public void Init(DataVolume dataVolume, int themeIndex, TileThemePalette themePalette, Settings settings)
         {
             Dispose();
 
-            SettingsSanityCheck(settings);
-
             this.data = dataVolume;
-            this.theme = theme;
-            this.fillValue = fillValue;
+            this.ThemePalette = themePalette;
+            this.theme = themePalette.Get(themeIndex);
+            this.themeIndex = themeIndex;
             this.settings = settings;
 
-            this.theme.Init();
+            if (theme.Configs.Length < TileTheme.Type3DConfigCount)
+            {
+                Error("The theme has less than the required number of configurations!");
+                state = State.Uninitialized;
+                return;
+            }
 
             int x = data.XLength;
             int y = data.YLength;
@@ -86,76 +85,86 @@ namespace MeshBuilder
 
         override protected void ScheduleGenerationJobs()
         {
+            if (state != State.Initialized)
+            {
+                Error("Can't start generating mesh data, the mesher is not in the Initialized state!");
+                return;
+            }
+
             if (generationType == GenerationType.FromDataUncached)
             {
                 if (HasTilesData)
                 {
                     tiles.Dispose();
                 }
-                tiles = new TileVolume(tileExtents.X, tileExtents.Y, tileExtents.Z);
-                lastHandle = ScheduleTileGeneration(tiles, data, 128, lastHandle);
-            }
-            else if (generationType == GenerationType.FromDataCachedTiles)
-            {
-               if (!HasTilesData)
+                tiles = new TileVolume(tileExtents.X, 1, tileExtents.Z);
+
+                if (HasTileMeshes)
                 {
-                    tiles = new TileVolume(tileExtents.X, tileExtents.Y, tileExtents.Z);
-                    lastHandle = ScheduleTileGeneration(tiles, data, 128, lastHandle);
+                    tileMeshes.Dispose();
                 }
+
+                tileMeshes = new Volume<MeshTile>(tileExtents.X, 1, tileExtents.Z);
+
+                lastHandle = ScheduleTileGeneration(tiles, data, 64, lastHandle);
             }
 
-            if (HasTilesData)
+            if (HasTilesData && HasTileMeshes)
             {
-                // TODO:
-                // unfortunately I have to call complete() immediately after collecting the tile pieces which need meshes, because I need to know the 
-                // list size
-                // I could avoid this if I would store the CombineInstance in the tiles volume (three per cell), and then set them in a single parallel job,
-                // but then I would waste more memory and I would have to go through the whole volume to collect the CombineInstances into an array later.
-                // not sure if it would be worth it but perhaps I could test it later?
+                lastHandle = ScheduleMeshTileGeneration(tileMeshes, tiles, 32, lastHandle);
 
-                // filter tiles which needs to be placed
-                tempTileList = new NativeList<PlacedTileData>((int)(tiles.Data.Length * 0.25f), Allocator.Temp);
-                lastHandle = SchedulePlacedTileListGeneration(tempTileList, tiles, lastHandle);
-                
-                lastHandle.Complete();
-
-                // set mesh data for tiles
-                tempMeshTileInstances = new NativeArray<MeshTile>(tempTileList.Length, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
-                lastHandle = ScheduleCombineInstanceGeneration(tempMeshTileInstances, tempTileList, 16, lastHandle);
+                tempInstanceList = new NativeList<MeshInstance>(Allocator.Temp);
+                lastHandle = ScheduleFillCombineInstanceList(tempInstanceList, tileMeshes, lastHandle);
             }
             else
             {
-                Error("there is no tile data!");
+                if (!HasTilesData) Error("no tiles data!");
+                if (!HasTileMeshes) Error("no mesh tiles data!");
             }
-
-            JobHandle.ScheduleBatchedJobs();
         }
 
         override protected void AfterGenerationJobsComplete()
         {
-            CombineMeshes(Mesh, tempMeshTileInstances, theme);
-        }
-
-        static private void CombineMeshes(Mesh mesh, NativeArray<MeshTile> instanceData, TileTheme theme)
-        {
-            var instanceArray = new CombineInstance[instanceData.Length];
-            for (int i = 0; i < instanceData.Length; ++i)
+            if (tempInstanceList.IsCreated)
             {
-                var data = instanceData[i];
-                data.instance.mesh = theme.GetMesh(data.elem, data.variation);
-                instanceArray[i] = data.instance;
+                CombineMeshes(Mesh, tempInstanceList, theme);
             }
 
-            mesh.CombineMeshes(instanceArray, true, true);
+            if (state == State.Generating)
+            {
+                state = State.Initialized;
+            }
         }
 
+        protected override void DisposeTemp()
+        {
+            base.DisposeTemp();
+
+            if (tempInstanceList.IsCreated)
+            {
+                tempInstanceList.Dispose();
+            }
+        }
+
+        public override void Dispose()
+        {
+            base.Dispose();
+
+            if (tileMeshes != null)
+            {
+                tileMeshes.Dispose();
+                tileMeshes = null;
+            }
+        }
+        
         private JobHandle ScheduleTileGeneration(TileVolume resultTiles, DataVolume data, int batchCount, JobHandle dependOn)
         {
             var tileGeneration = new GenerateTileDataJob
             {
                 tileExtents = tileExtents,
                 dataExtents = dataExtents,
-                fillValue = fillValue,
+                themeIndex = themeIndex,
+                configs = theme.Configs,
                 data = data.Data,
                 tiles = resultTiles.Data
             };
@@ -163,364 +172,216 @@ namespace MeshBuilder
             return tileGeneration.Schedule(resultTiles.Data.Length, batchCount, dependOn);
         }
 
-        private JobHandle SchedulePlacedTileListGeneration(NativeList<PlacedTileData> resultTileList, TileVolume tiles, JobHandle dependOn)
+        private JobHandle ScheduleMeshTileGeneration(Volume<MeshTile> resultMeshTiles, TileVolume tiles, int batchCount, JobHandle dependOn)
         {
-            var listGeneration = new GeneratePlacedTileList
+            var tileGeneration = new GenerateMeshDataJob
             {
-                skipDirection = settings.skipDirections,
-                skipDirectionWithNoBorders = settings.skipDirectionsAndBorders,
                 tileExtents = tileExtents,
                 tiles = tiles.Data,
-                tileConfigs = Config.FullSetConfigurations3D,
-                placedList = resultTileList
+                meshTiles = resultMeshTiles.Data
             };
 
-            return listGeneration.Schedule(dependOn);
+            return tileGeneration.Schedule(tiles.Data.Length, batchCount, dependOn);
         }
 
-        private JobHandle ScheduleCombineInstanceGeneration(NativeArray<MeshTile> resultMeshTiles, NativeList<PlacedTileData> tileList, int batchCount, JobHandle dependOn)
+        private JobHandle ScheduleFillCombineInstanceList(NativeList<MeshInstance> resultList, Volume<MeshTile> meshTiles, JobHandle dependOn)
         {
-            var instanceGeneration = new GenerateCombineInstances
+            var fillList = new FillCombineInstanceListJob
             {
-                tiles = tileList.ToDeferredJobArray(),
-                meshTiles = resultMeshTiles
+                meshTiles = meshTiles.Data,
+                resultCombineInstances = resultList
             };
 
-            return instanceGeneration.Schedule(tileList.Length, batchCount, dependOn);
+            return fillList.Schedule(dependOn);
         }
 
-        override protected void DisposeTemp()
-        {
-            if (tempTileList.IsCreated)
-            {
-                tempTileList.Dispose();
-            }
-
-            if (tempMeshTileInstances.IsCreated)
-            {
-                tempMeshTileInstances.Dispose();
-            }
-        }
-
+        /// <summary>
+        /// Takes the simple tile data volume (theme index - variant index pairs) and turns them into a volume of
+        /// TileMeshData which contains every information to find and transform the correct mesh pieces for rendering
+        /// </summary>
         [BurstCompile]
         private struct GenerateTileDataJob : IJobParallelFor
         {
             public Extents tileExtents;
             public Extents dataExtents;
-            public byte fillValue;
+            public int themeIndex;
 
-            [ReadOnly] public NativeArray<byte> data;
-            [WriteOnly] public NativeArray<TileVariant> tiles;
+            [ReadOnly] public NativeArray<ConfigTransformGroup> configs;
+            [ReadOnly] public NativeArray<TileData> data;
+            [WriteOnly] public NativeArray<TileMeshData> tiles;
 
             public void Execute(int index)
             {
                 byte configuration = 0;
                 int3 dc = CoordFromIndex(index, tileExtents);
 
-                if (IsFilled(dc.x, dc.y, dc.z)) configuration |= Config.TopFrontRight;
-                if (IsFilled(dc.x - 1, dc.y, dc.z)) configuration |= Config.TopFrontLeft;
-                if (IsFilled(dc.x, dc.y, dc.z - 1)) configuration |= Config.TopBackRight;
-                if (IsFilled(dc.x - 1, dc.y, dc.z - 1)) configuration |= Config.TopBackLeft;
+                bool hasLF, hasRF, hasLB, hasRB;
+                if (dc.y < dataExtents.Y)
+                {
+                    hasLF = dc.x > 0 && dc.z < dataExtents.Z && IsFilled(dc.x - 1, dc.y, dc.z);
+                    hasRF = dc.x < dataExtents.X && dc.z < dataExtents.Z && IsFilled(dc.x, dc.y, dc.z);
+                    hasLB = dc.x > 0 && dc.z > 0 && IsFilled(dc.x - 1, dc.y, dc.z - 1);
+                    hasRB = dc.x < dataExtents.X && dc.z > 0 && IsFilled(dc.x, dc.y, dc.z - 1);
 
-                if (IsFilled(dc.x, dc.y - 1, dc.z)) configuration |= Config.BottomFrontRight;
-                if (IsFilled(dc.x - 1, dc.y - 1, dc.z)) configuration |= Config.BottomFrontLeft;
-                if (IsFilled(dc.x, dc.y - 1, dc.z - 1)) configuration |= Config.BottomBackRight;
-                if (IsFilled(dc.x - 1, dc.y - 1, dc.z - 1)) configuration |= Config.BottomBackLeft;
+                    if (hasLF) configuration |= Tile.TopLeftForward;
+                    if (hasRF) configuration |= Tile.TopRightForward;
+                    if (hasLB) configuration |= Tile.TopLeftBackward;
+                    if (hasRB) configuration |= Tile.TopRightBackward;
+                }
+                if (dc.y > 0)
+                {
+                    hasLF = dc.x > 0 && dc.z < dataExtents.Z && IsFilled(dc.x - 1, dc.y - 1, dc.z);
+                    hasRF = dc.x < dataExtents.X && dc.z < dataExtents.Z && IsFilled(dc.x, dc.y - 1, dc.z);
+                    hasLB = dc.x > 0 && dc.z > 0 && IsFilled(dc.x - 1, dc.y - 1, dc.z - 1);
+                    hasRB = dc.x < dataExtents.X && dc.z > 0 && IsFilled(dc.x, dc.y - 1, dc.z - 1);
 
-                tiles[index] = new TileVariant { config = configuration, variation = 0 };
+                    if (hasLF) configuration |= Tile.BottomLeftForward;
+                    if (hasRF) configuration |= Tile.BottomRightForward;
+                    if (hasLB) configuration |= Tile.BottomLeftBackward;
+                    if (hasRB) configuration |= Tile.BottomRightBackward;
+                }
+
+                var transformGroup = configs[configuration];
+
+                tiles[index] = new TileMeshData { type = TileType.Normal, configTransformGroup = transformGroup, variant0 = 0, variant1 = 0 };
             }
 
             private bool IsFilled(int x, int y, int z)
             {
-                if (x < 0 || y < 0 || z < 0 || x >= dataExtents.X || y >= dataExtents.Y || z >= dataExtents.Z)
-                {
-                    return false;
-                }
-
-                return IsFilled(IndexFromCoord(x, y, z, dataExtents.XZ, dataExtents.X));
+                int index = IndexFromCoord(x, y, z, dataExtents);
+                return data[index].themeIndex == themeIndex;
             }
-
-            private bool IsFilled(int index)
-            {
-                return data[index] == fillValue;
-            }
-        }
-
-        // Filter out tiles which needs mesh generated
-        private struct GeneratePlacedTileList : IJob
-        {
-            private const byte None = (byte)Direction.None; 
-
-            private const byte BottomConfig = Config.BottomBackLeft | Config.BottomBackRight | Config.BottomFrontLeft | Config.BottomFrontRight;
-            private const byte TopConfig = Config.TopBackLeft | Config.TopBackRight | Config.TopFrontLeft | Config.TopFrontRight;
-            private const byte LeftConfig = Config.TopBackLeft | Config.TopFrontLeft | Config.BottomBackLeft | Config.BottomFrontLeft;
-            private const byte RightConfig = Config.TopBackRight | Config.TopFrontRight| Config.BottomBackRight| Config.BottomFrontRight;
-            private const byte FrontConfig = Config.BottomFrontLeft | Config.BottomFrontRight | Config.TopFrontLeft | Config.TopFrontRight;
-            private const byte BackConfig = Config.TopBackLeft | Config.TopBackRight | Config.BottomBackLeft | Config.BottomBackRight;
-
-            public Extents tileExtents;
-            public byte skipDirection;
-            public byte skipDirectionWithNoBorders;
-
-            [ReadOnly] public NativeArray<TileVariant> tiles;
-            [ReadOnly] public NativeArray<TileConfiguration> tileConfigs;
-            [WriteOnly] public NativeList<PlacedTileData> placedList;
-
-            public void Execute()
-            {
-                // TEST TODO: I separated the cases and rolled out some of the expected values, it made the Job a bit more
-                // convoluted, maybe I should test it later if it was worth it
-                if (skipDirection == None && skipDirectionWithNoBorders == None)
-                {
-                    FillListNoSkip();
-                }
-                else if (skipDirection != None)
-                {
-                    byte[] skipSides = new byte[6];
-                    int skipCount = 0;
-                    if (HasFlag(skipDirection, Direction.XPlus))  { skipSides[skipCount] = LeftConfig; ++skipCount; }
-                    if (HasFlag(skipDirection, Direction.XMinus)) { skipSides[skipCount] = RightConfig; ++skipCount; }
-                    if (HasFlag(skipDirection, Direction.YPlus))  { skipSides[skipCount] = BottomConfig; ++skipCount; }
-                    if (HasFlag(skipDirection, Direction.YMinus)) { skipSides[skipCount] = TopConfig; ++skipCount; }
-                    if (HasFlag(skipDirection, Direction.ZPlus))  { skipSides[skipCount] = BackConfig; ++skipCount; }
-                    if (HasFlag(skipDirection, Direction.ZMinus)) { skipSides[skipCount] = FrontConfig; ++skipCount; }
-
-                    SkipFn skipFn = (byte index) => { return Skip(index, skipSides[0]); };
-                    if (skipCount > 1)
-                    {
-                        if (skipCount > 2)
-                        {
-                            if (skipCount > 3)
-                            {
-                                skipFn = (byte index) => { return Skip(index, skipSides, skipCount); };
-                            }
-                            else
-                            {
-                                skipFn = (byte index) => { return Skip(index, skipSides[0], skipSides[1], skipSides[2]); };
-                            }
-                        }
-                        else
-                        {
-                            skipFn = (byte index) => { return Skip(index, skipSides[0], skipSides[1]); };
-                        }
-                    }
-
-                    if (skipDirectionWithNoBorders != None)
-                    {
-                        FillListSkipBoth(skipFn);
-                    }
-                    else
-                    {
-                        FillListSkip(skipFn);
-                    }
-                }
-                else //(skipDirectionWithNoBorders != Direction.None)
-                {
-                    FillListSkipWithTransform();
-                }
-            }
-
-            private delegate bool SkipFn(byte index);
-
-            // TEST TODO: I wanted to roll out the most likely possibilites, with the double indirection I'm not sure it will make any difference, I should test that
-            static private bool Skip(byte index, byte skip0) { return index == skip0; }
-            static private bool Skip(byte index, byte skip0, byte skip1) { return index == skip0 || index == skip1; }
-            static private bool Skip(byte index, byte skip0, byte skip1, byte skip2) { return index == skip0 || index == skip1 || index == skip2; }
-            static private bool Skip(byte index, byte[] skip, int count)
-            {
-                for (int i = 0; i < count; ++i) { if (index == skip[i]){ return true; } }
-                return  false;
-            }
-
-            // a cell is divided into four quadrants, depending on which side needs to be skipped, 
-            // flagA is the side closer to that if you imagine going towards a box from that direction (the front of the box looks away from the camera) 
-            // (skip Z+ -> layerA are the back quadrants (forward you hit the back first), 
-            // skip X- -> layerA are the right quadrants (going left you hit the right side) etc.)
-            // layerB is the side behind layerA
-            static private byte TransformSkipSide(byte value, byte flagA0, byte flagA1, byte flagA2, byte flagA3, byte flagB0, byte flagB1, byte flagB2, byte flagB3)
-            {
-                int layerB0 = (value & flagB0);
-                int layerB1 = (value & flagB1);
-                int layerB2 = (value & flagB2);
-                int layerB3 = (value & flagB3);
-                byte result = (byte)(layerB0 | layerB1 | layerB2 | layerB3);
-                if ((value & flagA0) > 0 && layerB0 > 0) result |= flagA0;
-                if ((value & flagA1) > 0 && layerB1 > 0) result |= flagA1;
-                if ((value & flagA2) > 0 && layerB2 > 0) result |= flagA2;
-                if ((value & flagA3) > 0 && layerB3 > 0) result |= flagA3;
-
-                return result;
-            }
-            
-            private void FillListNoSkip()
-            {
-                for (int i = 0; i < tiles.Length; ++i)
-                {
-                    byte confIndex = tiles[i].config;
-                    if (tileConfigs[confIndex].TileCount > 0)
-                    {
-                        AddConfig(tileConfigs[confIndex], i);   
-                    }
-                }
-            }
-
-            private void FillListSkip(SkipFn skipFn)
-            {
-                for (int i = 0; i < tiles.Length; ++i)
-                {
-                    byte confIndex = tiles[i].config;
-                    if (tileConfigs[confIndex].TileCount > 0 && !skipFn(confIndex))
-                    {
-                        AddConfig(tileConfigs[confIndex], i);
-                    }
-                }
-            }
-
-            private void FillListSkipWithTransform()
-            {
-                for (int i = 0; i < tiles.Length; ++i)
-                {
-                    byte confIndex = tiles[i].config;
-                    confIndex = TransformConfig(confIndex, skipDirectionWithNoBorders);
-
-                    if (tileConfigs[confIndex].TileCount > 0)
-                    {
-                        AddConfig(tileConfigs[confIndex], i);
-                    }
-                }
-            }
-
-            private void FillListSkipBoth(SkipFn skipFn)
-            {
-                for (int i = 0; i < tiles.Length; ++i)
-                {
-                    byte confIndex = tiles[i].config;
-                    confIndex = TransformConfig(confIndex, skipDirectionWithNoBorders);
-
-                    if (tileConfigs[confIndex].TileCount > 0 && !skipFn(confIndex))
-                    {
-                        AddConfig(tileConfigs[confIndex], i);
-                    }
-                }
-            }
-
-            private static byte TransformConfig(byte config, byte skipSides)
-            {
-                if (HasFlag(skipSides, Direction.XPlus))
-                {
-                    config = TransformSkipSide(config, Config.BottomBackRight, Config.BottomFrontRight, Config.TopBackRight, Config.TopFrontRight,
-                                                             Config.BottomBackLeft, Config.BottomFrontLeft, Config.TopBackLeft, Config.TopFrontLeft);
-                }
-                if (HasFlag(skipSides, Direction.XMinus))
-                {
-                    config = TransformSkipSide(config, Config.BottomBackLeft, Config.BottomFrontLeft, Config.TopBackLeft, Config.TopFrontLeft,
-                                                             Config.BottomBackRight, Config.BottomFrontRight, Config.TopBackRight, Config.TopFrontRight);
-                }
-                if (HasFlag(skipSides, Direction.YPlus))
-                {
-                    config = TransformSkipSide(config, Config.BottomBackLeft, Config.BottomFrontLeft, Config.BottomBackRight, Config.BottomFrontRight,
-                                                             Config.TopBackLeft, Config.TopFrontLeft, Config.TopBackRight, Config.TopFrontRight);
-                }
-                if (HasFlag(skipSides, Direction.YMinus))
-                {
-                    config = TransformSkipSide(config, Config.TopBackLeft, Config.TopFrontLeft, Config.TopBackRight, Config.TopFrontRight,
-                                                             Config.BottomBackLeft, Config.BottomFrontLeft, Config.BottomBackRight, Config.BottomFrontRight);
-                }
-                if (HasFlag(skipSides, Direction.ZMinus))
-                {
-                    config = TransformSkipSide(config, Config.TopFrontLeft, Config.TopFrontRight, Config.BottomFrontLeft, Config.BottomFrontRight,
-                                                             Config.TopBackLeft, Config.TopBackRight, Config.BottomBackLeft, Config.BottomBackRight);
-                }
-                if (HasFlag(skipSides, Direction.ZPlus))
-                {
-                    config = TransformSkipSide(config, Config.TopBackLeft, Config.TopBackRight, Config.BottomBackLeft, Config.BottomBackRight,
-                                                             Config.TopFrontLeft, Config.TopFrontRight, Config.BottomFrontLeft, Config.BottomFrontRight);
-                }
-
-                return config;
-            }
-
-            private void AddConfig(TileConfiguration config, int i)
-            {
-                var coord = CoordFromIndex(i, tileExtents);
-
-                for (int tileInd = 0; tileInd < config.TileCount; ++tileInd)
-                {
-                    var tile = new PlacedTileData
-                    {
-                        coord = coord,
-                        data = config.GetTile(tileInd),
-                        variation = tiles[i].variation
-                    };
-                    placedList.Add(tile);
-                }
-            }
-
-            static private bool HasFlag(byte value, Direction dir) { return (value & (byte)dir) != 0; }
         }
 
         [BurstCompile]
-        private struct GenerateCombineInstances : IJobParallelFor
+        private struct GenerateMeshDataJob : IJobParallelFor
         {
-            private static readonly float3 Up = new float3 { x = 0, y = 1, z = 0 };
-            private static readonly float3 One = new float3 { x = 1, y = 1, z = 1 };
+            private const byte MirrorMask = (byte)PieceTransform.MirrorXYZ;
 
-            private static readonly float3 MirrorX = new float3 { x = -1, y = 1, z = 1 };
-            private static readonly float3 MirrorY = new float3 { x = 1, y = -1, z = 1 };
-            private static readonly float3 MirrorXY = new float3 { x = -1, y = -1, z = 1 };
-
-            private static readonly float3 XPlus  = new float3 { x = 1, y = 0, z = 0 };
-            private static readonly float3 XMinus = new float3 { x =-1, y = 0, z = 0 };
-            private static readonly float3 ZPlus  = new float3 { x = 0, y = 0, z = 1 };
-            private static readonly float3 ZMinus = new float3 { x = 0, y = 0, z =-1 };
-
-            [ReadOnly] public NativeArray<PlacedTileData> tiles;
+            public Extents tileExtents;
+            [ReadOnly] public NativeArray<TileMeshData> tiles;
             [WriteOnly] public NativeArray<MeshTile> meshTiles;
 
             public void Execute(int index)
             {
-                TileData tile = tiles[index].data;
-                float3 pos = tiles[index].coord;
-                
-                MatrixConverter m = new MatrixConverter {  };
-                Vector3 forward = ToDirection(tile.rot);
-                m.float4x4 = math.mul(float4x4.lookAt(pos, forward, Up), float4x4.scale(ToScale(tile.mirror)));
-
-                meshTiles[index] = new MeshTile
+                var tile = tiles[index];
+                var group = tile.configTransformGroup;
+                if (group.Count > 0 && tile.type == TileType.Normal)
                 {
-                    elem = tile.elem,
-                    variation = tiles[index].variation,
-                    instance = new CombineInstance { subMeshIndex = 0, transform = m.Matrix4x4 }
+                    float3 pos = CoordFromIndex(index, tileExtents);
+                    meshTiles[index] = CreateMeshTile(pos, group, tile);
+                }
+                else
+                {
+                    meshTiles[index] = new MeshTile { count = 0 };
+                }
+            }
+
+            private MeshTile CreateMeshTile(float3 pos, ConfigTransformGroup group, TileMeshData tile)
+            {
+                switch(group.Count)
+                {
+                    case 1:
+                        return new MeshTile
+                        {
+                            count = 1,
+                            mesh0 = CreateMeshInstance(pos, 0, group, tile.variant0)
+                        };
+                    case 2:
+                        return new MeshTile
+                        {
+                            count = 2,
+                            mesh0 = CreateMeshInstance(pos, 0, group, tile.variant0),
+                            mesh1 = CreateMeshInstance(pos, 1, group, tile.variant1)
+                        };
+                    case 3:
+                        return new MeshTile
+                        {
+                            count = 3,
+                            mesh0 = CreateMeshInstance(pos, 0, group, tile.variant0),
+                            mesh1 = CreateMeshInstance(pos, 1, group, tile.variant1),
+                            mesh2 = CreateMeshInstance(pos, 2, group, tile.variant2)
+                        };
+                    case 4:
+                        return new MeshTile
+                        {
+                            count = 4,
+                            mesh0 = CreateMeshInstance(pos, 0, group, tile.variant0),
+                            mesh1 = CreateMeshInstance(pos, 1, group, tile.variant1),
+                            mesh2 = CreateMeshInstance(pos, 2, group, tile.variant2),
+                            mesh3 = CreateMeshInstance(pos, 3, group, tile.variant3)
+                        };
+                }
+
+                return new MeshTile { count = 0 };
+            }
+
+            private MeshInstance CreateMeshInstance(float3 pos, int index, ConfigTransformGroup group, byte variant)
+            {
+                return new MeshInstance
+                {
+                    instance = CreateCombineInstance(pos, group[index].PieceTransform),
+                    basePieceIndex = group[index].BaseMeshIndex,
+                    variantIndex = variant
                 };
             }
 
-            static private float3 ToScale(Direction mirrorDir)
+            private CombineInstance CreateCombineInstance(float3 pos, PieceTransform pieceTransform)
             {
-                switch(mirrorDir)
+                MatrixConverter m = new MatrixConverter { };
+
+                float4x4 transform = ToRotationMatrix(pieceTransform);
+
+                if (((byte)pieceTransform & MirrorMask) != 0)
                 {
-                    case Direction.XAxis: return MirrorX;
-                    case Direction.YAxis: return MirrorY;
-                    case (Direction.XAxis | Direction.YAxis): return MirrorXY;
+                    transform = math.mul(transform, ToScaleMatrix(pieceTransform));
                 }
-                
-                return One;
+
+                m.float4x4 = math.mul(float4x4.translate(pos), transform);
+
+                return new CombineInstance { subMeshIndex = 0, transform = m.Matrix4x4 };
             }
 
-            static private float3 ToDirection(Rotation rot)
+            // NOTE: I wanted to use static readonly matrices instead of constructing new ones
+            // but that didn't work with the Burst compiler
+
+            // NOTE: for some reason the Burst compiler gives an error without these casts,
+            // the switch cases have to be the same type
+            static private float4x4 ToScaleMatrix(PieceTransform pieceTransform)
             {
-                // TODO: bug in the burst compiler, remove the casting and uncomment the enums when it gets fixed
-                switch ((int)rot)
+                switch ((byte)pieceTransform)
                 {
-                    case 0: return ZMinus; // Rotation.CW0
-                    case 1: return XMinus; // Rotation.CW90
-                    case 2: return ZPlus; // Rotation.CW180
-                    case 3: return XPlus; // Rotation.CW270
+                    case (byte)PieceTransform.MirrorX: return float4x4.scale(-1, 1, 1);
+                    case (byte)PieceTransform.MirrorY: return float4x4.scale(1, -1, 1);
+                    case (byte)PieceTransform.MirrorZ: return float4x4.scale(1, 1, -1);
+                    case (byte)PieceTransform.MirrorXY: return float4x4.scale(-1, -1, 1);
+                    case (byte)PieceTransform.MirrorXZ: return float4x4.scale(-1, 1, -1);
+                    case (byte)PieceTransform.MirrorXYZ: return float4x4.scale(-1, -1, -1);
                 }
-                return ZPlus;
+                return float4x4.identity;
             }
 
+            static private float4x4 ToRotationMatrix(PieceTransform pieceTransform)
+            {
+                switch (pieceTransform)
+                {
+                    case PieceTransform.Rotate90: return float4x4.rotateY(math.radians(-90));
+                    case PieceTransform.Rotate180: return float4x4.rotateY(math.radians(-180));
+                    case PieceTransform.Rotate270: return float4x4.rotateY(math.radians(-270));
+                }
+                return float4x4.identity;
+            }
+
+            /// <summary>
+            /// Utility class for converting the matrxi data between the two different versions.
+            /// The jobs use the float4x4 version to perform operations which might be faster, but the CombineInstance
+            /// struct takes Matrix4x4.
+            /// TODO: Check this later, later versions of Unity might accept float4x4 which would make this obsolete.
+            /// NOTE: This is also used elsewhere, but when I moved it out from this struct to reuse it I got weird 
+            /// errors and the Unity editor started to glitch
+            /// </summary>
             [StructLayout(LayoutKind.Explicit)]
-            public struct MatrixConverter
+            private struct MatrixConverter
             {
                 [FieldOffset(0)]
                 public float4x4 float4x4;
@@ -530,31 +391,54 @@ namespace MeshBuilder
             }
         }
 
-        private void SettingsSanityCheck(Settings settings)
+        private struct FillCombineInstanceListJob : IJob
         {
-            int skipDir = settings.skipDirections;
-            int skipDirBor = settings.skipDirectionsAndBorders;
-            if (skipDir == (int)Direction.All) Warning("all directions are skipped!");
-            if (skipDirBor == (int)Direction.All) Warning("all directions are skipped, nothing will be rendered!");
+            [ReadOnly] public NativeArray<MeshTile> meshTiles;
+            [WriteOnly] public NativeList<MeshInstance> resultCombineInstances;
 
-            // should I check for skipDirections and skipDirectionsAndBorders overlap?
+            public void Execute()
+            {
+                for (int i = 0; i < meshTiles.Length; ++i)
+                {
+                    var tile = meshTiles[i];
+                    switch (tile.count)
+                    {
+                        case 1:
+                            {
+                                resultCombineInstances.Add(tile.mesh0);
+                                break;
+                            }
+                        case 2:
+                            {
+                                resultCombineInstances.Add(tile.mesh0);
+                                resultCombineInstances.Add(tile.mesh1);
+                                break;
+                            }
+                        case 3:
+                            {
+                                resultCombineInstances.Add(tile.mesh0);
+                                resultCombineInstances.Add(tile.mesh1);
+                                resultCombineInstances.Add(tile.mesh2);
+                                break;
+                            }
+                        case 4:
+                            {
+                                resultCombineInstances.Add(tile.mesh0);
+                                resultCombineInstances.Add(tile.mesh1);
+                                resultCombineInstances.Add(tile.mesh2);
+                                resultCombineInstances.Add(tile.mesh3);
+                                break;
+                            }
+                    }
+                }
+            }
         }
-        
+
+        private bool HasTileMeshes { get { return tileMeshes != null && !tileMeshes.IsDisposed; } }
+
         [System.Serializable]
         public class Settings
         {
-            //TODO: NOT IMPLEMENTED
-            /// <summary>
-            /// themes can have multiple variations for the same tile,
-            /// by default only the first one is used when generating a mesh
-            /// </summary>
-            public bool hasTileVariation = false;
-
-            /// <summary>
-            /// Seed for the random variation.
-            /// </summary>
-            public int variationSeed = 0;
-
             /// <summary>
             /// skip sides of the mesh, only full side elements get skipped (so borders, edges, corners stay intact),
             /// it doesn't modify the tile selection
@@ -562,103 +446,49 @@ namespace MeshBuilder
             /// - if the edge or corner tiles contain visible features (e.g. rocks standing out), this will keep them so
             /// so there is no visible change if the mesh is recalculated with different skipDirections
             /// </summary>
-            public byte skipDirections = (byte)Direction.None;
+            public Direction skipDirections = Direction.None;
 
             /// <summary>
             /// skip every tile piece which covers a certain direction, this removes more tiles, but changes the selected tile
             /// pieces, it is recommended if the skip directions never change (not used for dynamic culling) or for certain tile sets
             /// where the change is not visible
             /// </summary>
-            public byte skipDirectionsAndBorders = (byte)Direction.None;
+            public Direction skipDirectionsAndBorders = Direction.None;
 
-            // TODO: NOT IMPLEMENTED
             /// <summary>
             /// When generating the mesh, should the algorithm consider the chunk boundaries empty?
             /// If the chunk represents ground for example, then the bottom and side boundaries should
             /// be NOT empty so those sides don't get generated. If the chunk is a flying island which
             /// needs all of its sides rendered, then the boundaries should be considered empty.
             /// </summary>
-            public byte emptyBoundaries = (int)Direction.All;
+            public Direction emptyBoundaries = Direction.All;
+        }
+
+        /// <summary>
+        /// The tile data required to render a piece.
+        /// </summary>
+        public struct TileMeshData
+        {
+            public TileType type;
+            public ConfigTransformGroup configTransformGroup;
+
+            public byte variant0;
+            public byte variant1;
+            public byte variant2;
+            public byte variant3;
         }
         
-        // describes the placement of a piece of tile
-        public struct TileData
+        /// <summary>
+        /// a cell may have two meshes
+        /// </summary>
+        private struct MeshTile
         {
-            public TileElem elem;
-            public Rotation rot;
-            public Direction mirror;
-        }
+            public byte count;
 
-        // describes which configuration is needed at a certain cell
-        public struct TileVariant
-        {
-            public byte config;
-            public byte variation;
-        }
-
-        // describes what exact piece needs to be placed, where and how (rotation, mirror)
-        internal struct PlacedTileData
-        {
-            public int3 coord;
-            public TileData data;
-            public byte variation;
-        }
-
-        // the exact piece (elem, variant) and its transform
-        internal struct MeshTile
-        {
-            public TileElem elem;
-            public int variation;
-            public CombineInstance instance;
-        }
-
-        public struct TileConfiguration
-        {
-            // This has to be a struct, so instead of an allocated container it has 4 tile members
-            // no configuration needs more than that. NativeArray seemed like an overkill.
-            private TileData tile0;
-            private TileData tile1;
-            private TileData tile2;
-            private TileData tile3;
-            public int TileCount { get; private set; }
-
-            public TileConfiguration(params TileData[] tiles)
-            {
-                if (tiles == null || tiles.Length == 0)
-                {
-                    TileCount = 0;
-                    tile0 = default(TileData);
-                    tile1 = default(TileData);
-                    tile2 = default(TileData);
-                    tile3 = default(TileData);
-                }
-                else
-                {
-                    TileCount = (byte)tiles.Length;
-                    tile0 = tiles[0];
-                    tile1 = (tiles.Length > 1) ? tiles[1] : default(TileData);
-                    tile2 = (tiles.Length > 2) ? tiles[2] : default(TileData);
-                    tile3 = (tiles.Length > 3) ? tiles[3] : default(TileData);
-                }
-            }
-
-            public TileData GetTile(int index)
-            {
-                switch(index)
-                {
-                    case 0: return tile0;
-                    case 1: return tile1;
-                    case 2: return tile2;
-                    case 3: return tile3;
-                    default:
-                        {
-                            Debug.LogError("GetTile() invalid index:" + index);
-                            break;
-                        }
-                }
-                return tile0;
-            }
+            public MeshInstance mesh0;
+            public MeshInstance mesh1;
+            public MeshInstance mesh2;
+            public MeshInstance mesh3;
         }
     }
-    */
 }

@@ -8,10 +8,10 @@ using System.Runtime.InteropServices;
 using static MeshBuilder.Extents;
 
 using TileData = MeshBuilder.Tile.Data;
+using TileType = MeshBuilder.Tile.Type;
 using DataVolume = MeshBuilder.Volume<MeshBuilder.Tile.Data>; // type values
 using TileVolume = MeshBuilder.Volume<MeshBuilder.TileMesher2D.TileMeshData>; // configuration indices
 using ConfigTransformGroup = MeshBuilder.TileTheme.ConfigTransformGroup;
-using ConfigTransform = MeshBuilder.TileTheme.ConfigTransform;
 using PieceTransform = MeshBuilder.Tile.PieceTransform;
 using Direction = MeshBuilder.Tile.Direction;
 
@@ -45,13 +45,11 @@ namespace MeshBuilder
         /// <summary>
         /// Constructor
         /// </summary>
-        /// <param name="name">name of the mesher, mostly for logging and debug purposes</param>
+        /// <param name="name">name of the mesher, mostly for logging and debugging purposes</param>
         public TileMesher2D(string name = DefaultName)
+            : base(name)
         {
-            this.name = name;
 
-            Mesh = new Mesh();
-            Mesh.name = name;
         }
 
         public void Init(DataVolume dataVolume, int yLevel, int themeIndex, TileThemePalette themePalette)
@@ -72,7 +70,14 @@ namespace MeshBuilder
 
             if (this.yLevel != yLevel)
             {
-                Debug.Log("yLevel is out of bounds:" + yLevel);
+                Error("yLevel is out of bounds:" + yLevel + " it is clamped!");
+            }
+
+            if (theme.Configs.Length < TileTheme.Type2DConfigCount)
+            {
+                Error("The theme has less than the required number of configurations!");
+                state = State.Uninitialized;
+                return;
             }
 
             int x = data.XLength;
@@ -88,20 +93,26 @@ namespace MeshBuilder
 
         override protected void ScheduleGenerationJobs()
         {
+            if (state != State.Initialized)
+            {
+                Error("Can't start generating mesh data, the mesher is not in the Initialized state!");
+                return;
+            }
+
             if (generationType == GenerationType.FromDataUncached)
             {
                 if (HasTilesData)
                 {
                     tiles.Dispose();
                 }
-                tiles = new TileVolume(tileExtents.X, 1, tileExtents.Z);
+                tiles = new TileVolume(tileExtents);
 
                 if (HasTileMeshes)
                 {
                     tileMeshes.Dispose();
                 }
 
-                tileMeshes = new Volume<MeshTile>(tileExtents.X, 1, tileExtents.Z);
+                tileMeshes = new Volume<MeshTile>(tileExtents);
 
                 lastHandle = ScheduleTileGeneration(tiles, data, 64, lastHandle);
             }
@@ -125,6 +136,11 @@ namespace MeshBuilder
             if (tempInstanceList.IsCreated)
             {
                 CombineMeshes(Mesh, tempInstanceList, theme);
+            }
+
+            if (state == State.Generating)
+            {
+                state = State.Initialized;
             }
         }
 
@@ -170,7 +186,6 @@ namespace MeshBuilder
             var tileGeneration = new GenerateMeshDataJob
             {
                 tileExtents = tileExtents,
-                yLevel = yLevel,
                 tiles = tiles.Data,
                 meshTiles = resultMeshTiles.Data
             };
@@ -234,13 +249,12 @@ namespace MeshBuilder
             }
         }
 
-    //    [BurstCompile]
+        [BurstCompile]
         private struct GenerateMeshDataJob : IJobParallelFor
         {
             private const byte MirrorMask = (byte)PieceTransform.MirrorXYZ;
 
             public Extents tileExtents;
-            public int yLevel;
             [ReadOnly] public NativeArray<TileMeshData> tiles;
             [WriteOnly] public NativeArray<MeshTile> meshTiles;
 
@@ -251,26 +265,14 @@ namespace MeshBuilder
                 if (group.Count > 0 && tile.type == TileType.Normal)
                 {
                     float3 pos = CoordFromIndex(index, tileExtents);
-                    pos.y += yLevel;
 
                     if (group.Count == 2)
                     {
                         meshTiles[index] = new MeshTile
                         {
                             count = 2,
-
-                            mesh0 = new MeshInstance
-                            {
-                                instance = CreateInstance(pos, group[0].PieceTransform),
-                                basePieceIndex = group[0].BaseMeshIndex,
-                                variantIndex = tile.variant0
-                            },
-                            mesh1 = new MeshInstance
-                            {
-                                instance = CreateInstance(pos, group[1].PieceTransform),
-                                basePieceIndex = group[1].BaseMeshIndex,
-                                variantIndex = tile.variant1
-                            }
+                            mesh0 = CreateMeshInstance(pos, 0, group, tile.variant0),
+                            mesh1 = CreateMeshInstance(pos, 1, group, tile.variant1),
                         };
                     }
                     else
@@ -278,13 +280,7 @@ namespace MeshBuilder
                         meshTiles[index] = new MeshTile
                         {
                             count = 1,
-
-                            mesh0 = new MeshInstance
-                            {
-                                instance = CreateInstance(pos, group[0].PieceTransform),
-                                basePieceIndex = group[0].BaseMeshIndex,
-                                variantIndex = tile.variant0
-                            }
+                            mesh0 = CreateMeshInstance(pos, 0, group, tile.variant0)
                         };
                     }
                 }
@@ -294,7 +290,17 @@ namespace MeshBuilder
                 }
             }
 
-            private CombineInstance CreateInstance(float3 pos, PieceTransform pieceTransform)
+            private MeshInstance CreateMeshInstance(float3 pos, int index, ConfigTransformGroup group, byte variant)
+            {
+                return new MeshInstance
+                {
+                    instance = CreateCombineInstance(pos, group[index].PieceTransform),
+                    basePieceIndex = group[index].BaseMeshIndex,
+                    variantIndex = variant
+                };
+            }
+
+            private CombineInstance CreateCombineInstance(float3 pos, PieceTransform pieceTransform)
             {
                 MatrixConverter m = new MatrixConverter { };
 
@@ -309,47 +315,47 @@ namespace MeshBuilder
 
                 return new CombineInstance { subMeshIndex = 0, transform = m.Matrix4x4 };
             }
+            
+            // NOTE: I wanted to use static readonly matrices instead of constructing new ones
+            // but that didn't work with the Burst compiler
 
-            private static readonly float4x4 Identity  = float4x4.identity;
-            private static readonly float4x4 XMirror   = float4x4.scale(-1, 1, 1);
-            private static readonly float4x4 YMirror   = float4x4.scale(1, -1, 1);
-            private static readonly float4x4 ZMirror   = float4x4.scale(1, 1, -1);
-            private static readonly float4x4 XYMirror  = float4x4.scale(-1, -1, 1);
-            private static readonly float4x4 XZMirror  = float4x4.scale(-1, 1, -1);
-            private static readonly float4x4 XYZMirror = float4x4.scale(-1, -1, -1);
-
+            // NOTE: for some reason the Burst compiler gives an error without these casts,
+            // the switch cases have to be the same type
             static private float4x4 ToScaleMatrix(PieceTransform pieceTransform)
             {
-                switch (pieceTransform)
+                switch ((byte)pieceTransform)
                 {
-                    case PieceTransform.MirrorX: return XMirror;
-                    case PieceTransform.MirrorY: return YMirror;
-                    case PieceTransform.MirrorZ: return ZMirror;
-                    case PieceTransform.MirrorXY: return XYMirror;
-                    case PieceTransform.MirrorXZ: return XZMirror;
-                    case PieceTransform.MirrorXYZ: return XYZMirror;
+                    case (byte)PieceTransform.MirrorX: return float4x4.scale(-1, 1, 1);
+                    case (byte)PieceTransform.MirrorY: return float4x4.scale(1, -1, 1);
+                    case (byte)PieceTransform.MirrorZ: return float4x4.scale(1, 1, -1);
+                    case (byte)PieceTransform.MirrorXY: return float4x4.scale(-1, -1, 1);
+                    case (byte)PieceTransform.MirrorXZ: return float4x4.scale(-1, 1, -1);
+                    case (byte)PieceTransform.MirrorXYZ: return float4x4.scale(-1, -1, -1);
                 }
-                return Identity;
+                return float4x4.identity;
             }
-
-            private static readonly float4x4 Rotate90 = float4x4.rotateY(math.radians(-90));
-            private static readonly float4x4 Rotate180 = float4x4.rotateY(math.radians(180));
-            private static readonly float4x4 Rotate270 = float4x4.rotateY(math.radians(-270));
 
             static private float4x4 ToRotationMatrix(PieceTransform pieceTransform)
             {
                 switch (pieceTransform)
                 {
-                    case PieceTransform.Rotate90: return Rotate90;
-                    case PieceTransform.Rotate180: return Rotate180;
-                    case PieceTransform.Rotate270: return Rotate270;
+                    case PieceTransform.Rotate90: return float4x4.rotateY(math.radians(-90));
+                    case PieceTransform.Rotate180: return float4x4.rotateY(math.radians(-180));
+                    case PieceTransform.Rotate270: return float4x4.rotateY(math.radians(-270));
                 }
-
-                return Identity;
+                return float4x4.identity;
             }
 
+            /// <summary>
+            /// Utility class for converting the matrxi data between the two different versions.
+            /// The jobs use the float4x4 version to perform operations which might be faster, but the CombineInstance
+            /// struct takes Matrix4x4.
+            /// TODO: Check this later, later versions of Unity might accept float4x4 which would make this obsolete.
+            /// NOTE: This is also used elsewhere, but when I moved it out from this struct to reuse it I got weird 
+            /// errors and the Unity editor started to glitch
+            /// </summary>
             [StructLayout(LayoutKind.Explicit)]
-            public struct MatrixConverter
+            private struct MatrixConverter
             {
                 [FieldOffset(0)]
                 public float4x4 float4x4;
@@ -390,22 +396,24 @@ namespace MeshBuilder
         [System.Serializable]
         public class Settings
         {
-            //TODO: NOT IMPLEMENTED
+            // THIS should be somewhere else probably, data generations should be separated
             /// <summary>
             /// themes can have multiple variations for the same tile,
             /// by default only the first one is used when generating a mesh
             /// </summary>
-            public bool hasTileVariation = false;
+            //public bool hasTileVariation = false;
 
+            // THIS should be somewhere else probably, data generations should be separated
             /// <summary>
             /// Seed for the random variation.
             /// </summary>
-            public int variationSeed = 0;
+            //public int variationSeed = 0;
 
+            // THIS should be somewhere else probably, data generations should be separated
             /// <summary>
             /// try matching custom tiles if they are available in the theme
             /// </summary>
-            public bool useCustomTiles = false;
+            // public bool useCustomTiles = false;
 
             /// <summary>
             /// skip tiles in the center of the mesh
@@ -430,32 +438,9 @@ namespace MeshBuilder
             /// be NOT empty so those sides don't get generated. If the chunk is a flying island which
             /// needs all of its sides rendered, then the boundaries should be considered empty.
             /// </summary>
-            public byte emptyBoundaries = (byte)Direction.All;
+            public Direction emptyBoundaries = Direction.All;
         }
-
-        public enum TileType : byte
-        {
-            /// <summary>
-            /// a single tile, which needs to be drawn (depending on the configuration)
-            /// </summary>
-            Normal,
-
-            /// <summary>
-            /// a custom tile, possibly filling multiple cells, needs to be drawn
-            /// </summary>
-            Custom,
-
-            /// <summary>
-            /// cell doesn't need to be drawn, it is overlapped by a custom tile
-            /// </summary>
-            Overlapped,
-
-            /// <summary>
-            /// the cell is culled by something, it won't be drawn
-            /// </summary>
-            Culled
-        }
-
+        
         /// <summary>
         /// The tile data required to render a piece.
         /// </summary>

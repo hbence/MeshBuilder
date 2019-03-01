@@ -1,9 +1,6 @@
-﻿using System.Collections;
-using Unity.Collections;
+﻿using Unity.Collections;
 using Unity.Jobs;
-using System.Collections.Generic;
 using UnityEngine;
-
 
 namespace MeshBuilder
 {
@@ -33,7 +30,7 @@ namespace MeshBuilder
             FromTiles
         }
 
-        protected string name;
+        public string Name { get; private set; }
         protected State state = State.Uninitialized;
         protected GenerationType generationType = GenerationType.FromDataUncached;
 
@@ -63,6 +60,14 @@ namespace MeshBuilder
         protected JobHandle lastHandle;
 
         public Mesh Mesh { get; protected set; }
+
+        public TileMesherBase(string name)
+        {
+            Name = name;
+
+            Mesh = new Mesh();
+            Mesh.name = name;
+        }
 
         public void StartGeneration()
         {
@@ -159,12 +164,12 @@ namespace MeshBuilder
 
         protected void Warning(string msg, params object[] args)
         {
-            Debug.LogWarningFormat(name + " - " + msg, args);
+            Debug.LogWarningFormat(Name + " - " + msg, args);
         }
 
         protected void Error(string msg, params object[] args)
         {
-            Debug.LogErrorFormat(name + " - " + msg, args);
+            Debug.LogErrorFormat(Name + " - " + msg, args);
         }
 
         public bool IsInitialized { get { return state != State.Uninitialized; } }
@@ -172,6 +177,12 @@ namespace MeshBuilder
 
         protected bool HasTilesData { get { return tiles != null && !tiles.IsDisposed; } }
 
+        /// <summary>
+        /// Contains data for rendering a mesh piece. The matrix and indices are usually 
+        /// set earlier from a job, then later the indices are used to set the mesh.
+        /// (Since the mesh objects can't be handled inside the jobs.)
+        /// These MeshInstance struct will be combined into the final mesh.
+        /// </summary>
         protected struct MeshInstance
         {
             public CombineInstance instance;

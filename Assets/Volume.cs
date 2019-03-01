@@ -19,6 +19,12 @@ namespace MeshBuilder
 
         private int layerLength;
 
+        public Volume(Extents extents)
+            : this(extents.X, extents.Y, extents.Z)
+        {
+
+        }
+
         public Volume(int xSize, int ySize, int zSize)
         {
             XLength = Mathf.Clamp(xSize, 1, MaxSize);

@@ -11,19 +11,23 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 048446701a639a449a21c1e56229ad83, type: 3}
   m_Name: test_2d_tileset
   m_EditorClassIdentifier: 
-  themeName: test
-  type: 5
+  themeName: test2d
+  type: 2
   openTowardsThemes: []
   baseVariants:
-  - pieceConfig: 4
+  - bottomConfig: 4
+    topConfig: 0
     variants:
     - {fileID: 4300014, guid: 2c824e4845ca5d441ac9207efe643281, type: 3}
-  - pieceConfig: 5
+  - bottomConfig: 5
+    topConfig: 0
     variants:
     - {fileID: 4300012, guid: 2c824e4845ca5d441ac9207efe643281, type: 3}
-  - pieceConfig: 13
+  - bottomConfig: 13
+    topConfig: 0
     variants:
     - {fileID: 4300010, guid: 2c824e4845ca5d441ac9207efe643281, type: 3}
-  - pieceConfig: 15
+  - bottomConfig: 15
+    topConfig: 0
     variants:
     - {fileID: 4300008, guid: 2c824e4845ca5d441ac9207efe643281, type: 3}

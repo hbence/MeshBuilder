@@ -31,6 +31,32 @@ ModelImporter:
     100050: case_4_top_2_bottom
     100052: case_4_top_3_bottom
     100054: case_4_bottom_2_top
+    100056: 3d_template_00000100
+    100058: 3d_template_00001100
+    100060: 3d_template_00001101
+    100062: 3d_template_00001111
+    100064: 3d_template_00011101
+    100066: 3d_template_01000000
+    100068: 3d_template_01000100
+    100070: 3d_template_01001100
+    100072: 3d_template_01001101
+    100074: 3d_template_01001111
+    100076: 3d_template_01011101
+    100078: 3d_template_01011111
+    100080: 3d_template_11000000
+    100082: 3d_template_11000100
+    100084: 3d_template_11000101
+    100086: 3d_template_11001100
+    100088: 3d_template_11010000
+    100090: 3d_template_11010001
+    100092: 3d_template_11010100
+    100094: 3d_template_11010101
+    100096: 3d_template_11011101
+    100098: 3d_template_11011111
+    100100: 3d_template_11110000
+    100102: 3d_template_11110100
+    100104: 3d_template_11110101
+    100106: 3d_template_11111101
     400000: //RootNode
     400002: case_1_bottom
     400004: case_1_full
@@ -59,6 +85,32 @@ ModelImporter:
     400050: case_4_top_2_bottom
     400052: case_4_top_3_bottom
     400054: case_4_bottom_2_top
+    400056: 3d_template_00000100
+    400058: 3d_template_00001100
+    400060: 3d_template_00001101
+    400062: 3d_template_00001111
+    400064: 3d_template_00011101
+    400066: 3d_template_01000000
+    400068: 3d_template_01000100
+    400070: 3d_template_01001100
+    400072: 3d_template_01001101
+    400074: 3d_template_01001111
+    400076: 3d_template_01011101
+    400078: 3d_template_01011111
+    400080: 3d_template_11000000
+    400082: 3d_template_11000100
+    400084: 3d_template_11000101
+    400086: 3d_template_11001100
+    400088: 3d_template_11010000
+    400090: 3d_template_11010001
+    400092: 3d_template_11010100
+    400094: 3d_template_11010101
+    400096: 3d_template_11011101
+    400098: 3d_template_11011111
+    400100: 3d_template_11110000
+    400102: 3d_template_11110100
+    400104: 3d_template_11110101
+    400106: 3d_template_11111101
     2100000: unnamed
     2300000: case_1_bottom
     2300002: case_1_full
@@ -87,6 +139,32 @@ ModelImporter:
     2300048: case_4_top_2_bottom
     2300050: case_4_top_3_bottom
     2300052: case_4_bottom_2_top
+    2300054: 3d_template_00000100
+    2300056: 3d_template_00001100
+    2300058: 3d_template_00001101
+    2300060: 3d_template_00001111
+    2300062: 3d_template_00011101
+    2300064: 3d_template_01000000
+    2300066: 3d_template_01000100
+    2300068: 3d_template_01001100
+    2300070: 3d_template_01001101
+    2300072: 3d_template_01001111
+    2300074: 3d_template_01011101
+    2300076: 3d_template_01011111
+    2300078: 3d_template_11000000
+    2300080: 3d_template_11000100
+    2300082: 3d_template_11000101
+    2300084: 3d_template_11001100
+    2300086: 3d_template_11010000
+    2300088: 3d_template_11010001
+    2300090: 3d_template_11010100
+    2300092: 3d_template_11010101
+    2300094: 3d_template_11011101
+    2300096: 3d_template_11011111
+    2300098: 3d_template_11110000
+    2300100: 3d_template_11110100
+    2300102: 3d_template_11110101
+    2300104: 3d_template_11111101
     3300000: case_1_bottom
     3300002: case_1_full
     3300004: case_1_top
@@ -114,6 +192,32 @@ ModelImporter:
     3300048: case_4_top_2_bottom
     3300050: case_4_top_3_bottom
     3300052: case_4_bottom_2_top
+    3300054: 3d_template_00000100
+    3300056: 3d_template_00001100
+    3300058: 3d_template_00001101
+    3300060: 3d_template_00001111
+    3300062: 3d_template_00011101
+    3300064: 3d_template_01000000
+    3300066: 3d_template_01000100
+    3300068: 3d_template_01001100
+    3300070: 3d_template_01001101
+    3300072: 3d_template_01001111
+    3300074: 3d_template_01011101
+    3300076: 3d_template_01011111
+    3300078: 3d_template_11000000
+    3300080: 3d_template_11000100
+    3300082: 3d_template_11000101
+    3300084: 3d_template_11001100
+    3300086: 3d_template_11010000
+    3300088: 3d_template_11010001
+    3300090: 3d_template_11010100
+    3300092: 3d_template_11010101
+    3300094: 3d_template_11011101
+    3300096: 3d_template_11011111
+    3300098: 3d_template_11110000
+    3300100: 3d_template_11110100
+    3300102: 3d_template_11110101
+    3300104: 3d_template_11111101
     4300000: case_3_2_top_2_bottom
     4300002: case_4_top_3_bottom
     4300004: case_4_top_2_bottom
@@ -141,6 +245,32 @@ ModelImporter:
     4300048: case_1_top
     4300050: case_1_bottom
     4300052: case_4_bottom_2_top
+    4300054: 3d_template_11000101
+    4300056: 3d_template_11011111
+    4300058: 3d_template_01011111
+    4300060: 3d_template_01001111
+    4300062: 3d_template_11111101
+    4300064: 3d_template_11110101
+    4300066: 3d_template_11110100
+    4300068: 3d_template_00001111
+    4300070: 3d_template_11110000
+    4300072: 3d_template_01011101
+    4300074: 3d_template_01001101
+    4300076: 3d_template_00011101
+    4300078: 3d_template_11010101
+    4300080: 3d_template_11010100
+    4300082: 3d_template_11010001
+    4300084: 3d_template_11011101
+    4300086: 3d_template_00001101
+    4300088: 3d_template_11010000
+    4300090: 3d_template_01001100
+    4300092: 3d_template_11000100
+    4300094: 3d_template_11001100
+    4300096: 3d_template_00001100
+    4300098: 3d_template_11000000
+    4300100: 3d_template_01000100
+    4300102: 3d_template_00000100
+    4300104: 3d_template_01000000
     7400000: Default Take
     9500000: //RootNode
   externalObjects: {}
@@ -174,7 +304,7 @@ ModelImporter:
     isReadable: 1
   meshes:
     lODScreenPercentages: []
-    globalScale: 1
+    globalScale: 0.25
     meshCompression: 0
     addColliders: 0
     importVisibility: 0

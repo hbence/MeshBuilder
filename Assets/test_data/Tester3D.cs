@@ -5,24 +5,23 @@ using UnityEngine;
 using MeshBuilder;
 using DataVolume = MeshBuilder.Volume<MeshBuilder.Tile.Data>;
 
-public class Tester2D : MonoBehaviour
+public class Tester3D : MonoBehaviour
 {
     public TileThemePalette palette;
 
     public MeshFilter meshFilter;
 
     private DataVolume dataVolume;
-    private TileMesher2D mesher;
+    private TileMesher3D mesher;
 
-	void Start ()
+    void Start ()
     {
         CreateTestData();
 
-        mesher = new TileMesher2D();
-        mesher.Init(dataVolume, 0, 0, palette);
+        mesher = new TileMesher3D();
+        mesher.Init(dataVolume, 0, palette);
         mesher.StartGeneration();
-	}
-
+    }
     private void CreateTestData()
     {
         dataVolume = new DataVolume(10, 1, 10);
@@ -64,7 +63,7 @@ public class Tester2D : MonoBehaviour
     {
         dataVolume[x, 0, y] = new Tile.Data { themeIndex = 0 };
     }
-	
+
     void LateUpdate()
     {
         if (mesher.IsGenerating)
