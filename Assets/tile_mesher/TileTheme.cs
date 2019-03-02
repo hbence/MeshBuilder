@@ -105,7 +105,8 @@ namespace MeshBuilder
         private void FillConfigurations()
         {
             List<int> nullConfigs = new List<int>();
-            for (int i = 0; i < configs.Length; ++i)
+            // the first and last cases are empty (void and inside a mesh)
+            for (int i = 1; i < configs.Length - 1; ++i)
             {
                 configs[i] = TileConfigurationBuilder.Decompose((byte)i, baseVariants);
                 if (i > 0 && configs[i].Count == 0)
@@ -113,6 +114,9 @@ namespace MeshBuilder
                     nullConfigs.Add(i);
                 }
             }
+
+            configs[0] = NullTransformGroup;
+            configs[configs.Length - 1] = NullTransformGroup;
 
             if (nullConfigs.Count > 0)
             {
@@ -269,9 +273,7 @@ namespace MeshBuilder
 
             return Type3DConfigCount;
         }
-
-        public static readonly ConfigTransform NullTransform = new ConfigTransform(0, PieceTransform.None);
-
+        
         [System.Serializable]
         public class BaseMeshVariants
         {
@@ -306,18 +308,21 @@ namespace MeshBuilder
         [System.Serializable]
         public struct ConfigTransform
         {
-            private byte baseMeshIndex;
-            public byte BaseMeshIndex { get { return baseMeshIndex; } }
+            private int baseMeshIndex;
+            public int BaseMeshIndex { get { return baseMeshIndex; } }
 
             private PieceTransform pieceTransform;
             public PieceTransform PieceTransform { get { return pieceTransform; } }
 
-            public ConfigTransform(byte baseMeshIndex, PieceTransform pieceTransform)
+            public ConfigTransform(int baseMeshIndex, PieceTransform pieceTransform)
             {
                 this.baseMeshIndex = baseMeshIndex;
                 this.pieceTransform = pieceTransform;
             }
         }
+
+        public static readonly ConfigTransform NullTransform = new ConfigTransform(-1, PieceTransform.None);
+        public static readonly ConfigTransformGroup NullTransformGroup = new ConfigTransformGroup(NullTransform); 
 
         /// <summary>
         /// Multiple meshes can be used to handle a configuration. For example, the "diagonal corners" case

@@ -43,7 +43,7 @@ public class TileThemeEditor : Editor
         bool fillFromFile = false;
         fillFromFile = GUILayout.Button("Fill Variants From File");
 
-        meshAsset = EditorGUILayout.ObjectField("Mesh Asset File", meshAsset, typeof(Object), false);
+        meshAsset = EditorGUILayout.ObjectField("Mesh Asset File", meshAsset, typeof(GameObject), false);
 
         if (fillFromFile)
         {

@@ -236,8 +236,12 @@ namespace MeshBuilder
                 }
 
                 var transformGroup = configs[configuration];
-
-                tiles[index] = new TileMeshData { type = TileType.Normal, configTransformGroup = transformGroup, variant0 = 0, variant1 = 0 };
+                var type = TileType.Normal;
+                if (configuration == 0 || configuration == configs.Length - 1)
+                {
+                    type = TileType.Void;
+                }
+                tiles[index] = new TileMeshData { type = type, configTransformGroup = transformGroup, variant0 = 0, variant1 = 0 };
             }
 
             private bool IsFilled(int x, int y, int z)
@@ -246,8 +250,8 @@ namespace MeshBuilder
                 return data[index].themeIndex == themeIndex;
             }
         }
-        //TODO: uncomment when debugging is done
-     //   [BurstCompile]
+
+        [BurstCompile]
         private struct GenerateMeshDataJob : IJobParallelFor
         {
             private const byte RotationMask = (byte)(PieceTransform.Rotate90 | PieceTransform.Rotate180 | PieceTransform.Rotate270);

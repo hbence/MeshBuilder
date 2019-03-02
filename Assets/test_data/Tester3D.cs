@@ -16,7 +16,7 @@ public class Tester3D : MonoBehaviour
 
     void Start ()
     {
-        CreateTestData();
+        CreateTestData2();
 
         mesher = new TileMesher3D();
         mesher.Init(dataVolume, 0, palette);
@@ -44,10 +44,12 @@ public class Tester3D : MonoBehaviour
         Set(7, 8);
 
         Set1(7, 6);
-        Set1(7, 7);
-        Set1(7, 8);
+       // Set1(7, 7);
+        //Set1(7, 8);
         Set1(7, 9);
-        Set2(7, 9);
+        Set2(7, 8);
+        Set2(7, 7);
+        Set2(7, 6);
 
         Set(8, 9);
 
@@ -55,7 +57,12 @@ public class Tester3D : MonoBehaviour
         Set(7, 4);
         Set(7, 3);
         Set(8, 3);
-        
+
+        Set1(3, 3);
+        Set1(4, 4);
+        Set2(3, 4);
+        Set2(4, 3);
+
         /*
         Set(2, 2);
         Set(3, 2);
@@ -64,6 +71,63 @@ public class Tester3D : MonoBehaviour
         Set(2, 5);
         Set(3, 5);
         */
+    }
+
+    private void CreateTestData2()
+    {
+        dataVolume = new DataVolume(16, 16, 16);
+        for (int i = 0; i < dataVolume.Length; ++i)
+        {
+            dataVolume[i] = new Tile.Data { themeIndex = 100 };
+        }
+
+        var Filled = new Tile.Data { themeIndex = 0 };
+
+        int x = 5;
+        int z = 5;
+
+        for (x = 0; x < 16; ++x)
+        {
+            for (z = 0; z < 16; ++z)
+            {
+                dataVolume[x, 0, z] = Filled;
+                dataVolume[x, 1, z] = Filled;
+                
+                if (x < 6 || z < 6)
+                {
+                    if (x == 3 || x == 5 || z == 3 || z == 5) { }
+                    else
+                    {
+                        dataVolume[x, 2, z] = Filled;
+                    }
+                }
+
+                if (x >= 5 && z < 6)
+                {
+                    dataVolume[x, 3, z] = Filled;
+                }
+            }
+        }
+
+        x = 5;
+        z = 5;
+        dataVolume[x, 3, z] = Filled;
+        dataVolume[x, 4, z] = Filled;
+        dataVolume[x, 5, z] = Filled;
+
+        x = 7;
+        z = 5;
+        dataVolume[x, 3, z] = Filled;
+        dataVolume[x, 4, z] = Filled;
+        dataVolume[x, 5, z] = Filled;
+
+        x = 6;
+        z = 4;
+        dataVolume[x, 3, z] = Filled;
+        dataVolume[x, 4, z] = Filled;
+        dataVolume[x, 5, z] = Filled;
+        dataVolume[x, 6, z] = Filled;
+        dataVolume[x, 7, z] = Filled;
     }
 
     private void Set(int x, int y)

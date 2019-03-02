@@ -6,6 +6,8 @@ namespace MeshBuilder
 {
     abstract public class TileMesherBase<TileVariant> : IMeshBuilder where TileVariant : struct
     {
+        private static readonly Mesh NullMesh = new Mesh();
+
         protected enum State { Uninitialized, Initialized, Generating }
 
         protected enum GenerationType
@@ -154,9 +156,17 @@ namespace MeshBuilder
             for (int i = 0; i < instanceData.Length; ++i)
             {
                 var data = instanceData[i];
-                var variants = basePieces[data.basePieceIndex].Variants;
-                data.instance.mesh = variants[data.variantIndex];
-                instanceArray[i] = data.instance;
+
+                if (data.basePieceIndex >= 0)
+                {
+                    var variants = basePieces[data.basePieceIndex].Variants;
+                    data.instance.mesh = variants[data.variantIndex];
+                    instanceArray[i] = data.instance;
+                }
+                else
+                {
+                    instanceArray[i].mesh = NullMesh;
+                }
             }
 
             mesh.CombineMeshes(instanceArray, true, true);
@@ -186,7 +196,7 @@ namespace MeshBuilder
         protected struct MeshInstance
         {
             public CombineInstance instance;
-            public byte basePieceIndex;
+            public int basePieceIndex;
             public byte variantIndex;
         }
     }

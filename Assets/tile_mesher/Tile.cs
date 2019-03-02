@@ -89,6 +89,8 @@ namespace MeshBuilder
 
         public enum Type : byte
         {
+            Void,
+
             /// <summary>
             /// a single tile, which needs to be drawn (depending on the configuration)
             /// </summary>

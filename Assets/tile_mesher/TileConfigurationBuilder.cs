@@ -47,13 +47,14 @@ namespace MeshBuilder
                         if (result.Count == 1)
                         {
                             Debug.LogWarning("this shouldn't happen! complex decomposition produced 1 part piece! - " + System.Convert.ToString(config, 2).PadLeft(8,'0'));
+                            return NullTransformGroup;
                         }
 
                         return result;
                     }
                 }
                 
-                return new ConfigTransformGroup { };
+                return NullTransformGroup;
             }
 
             static private ConfigTransformGroup DecomposeComplexConfig(byte config, bool findInverse, BaseMeshVariants[] basics)
@@ -231,7 +232,7 @@ namespace MeshBuilder
                     }
                 }
 
-                // no direct match, so try to transform them
+                // no direct match, so try transforming them
                 PieceTransform transform;
                 for (byte i = 0; i < basicConfigs.Length; ++i)
                 {
@@ -239,11 +240,18 @@ namespace MeshBuilder
                     if (FindTransform(value, (byte)basic.PieceConfig, out transform))
                     {
                         configTransform = new ConfigTransform(i, transform);
-                        return true;
+
+                        // If the transformation doesn't contain an y mirror transformation then we're done,
+                        // if it does, then keep going. In most tilesets the top and bottom part look different, 
+                        // so only go with that if there is nothing else (and the theme could give warnings depending on the type)
+                        if (((byte)transform & (byte)PieceTransform.MirrorY) == 0)
+                        {
+                            return true;
+                        }
                     }
                 }
 
-                return false;
+                return configTransform.BaseMeshIndex > -1;
             }
 
             /// <summary>

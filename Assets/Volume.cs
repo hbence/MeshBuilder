@@ -70,6 +70,14 @@ namespace MeshBuilder
 
         private int IndexAt(int x, int y, int z)
         {
+            // generally the meshers use the Data directly, so this check doesn't really matter but helps in testing,
+            // an out of bounds coordinate can still be inside the data length interval, which would be a silent error,
+            // still checking for boundaries for every lookup doesn't feel right
+            if (x < 0 || x >= XLength || y < 0 || y >= YLength || z < 0 ||z >= ZLength)
+            {
+                Debug.LogErrorFormat("index coordinates out of bounds ({0}, {1}, {2})", x, y, z);
+            }
+
             return y * layerLength + z * XLength + x;
         }
 
