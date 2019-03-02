@@ -150,20 +150,62 @@ namespace MeshBuilder
                 tileMeshes = null;
             }
         }
-        
+
+        // TODO: tile generation is divided into multiple verions, based on the mesher settings
+        // so if a feature is not needed there is less branching and checking, it causes some code duplication and
+        // I'm not yet sure if it has a visible performance impact or what the most used features would be.
+        // It's possible the leaner version aren't needed, and GenerateTileDataJobFullOptions will be enough
         private JobHandle ScheduleTileGeneration(TileVolume resultTiles, DataVolume data, int batchCount, JobHandle dependOn)
         {
-            var tileGeneration = new GenerateTileDataJob
+            if (settings.skipDirections == Direction.None && 
+                settings.skipDirectionsAndBorders == Direction.None &&
+                settings.filledBoundaries == Direction.None)
             {
-                tileExtents = tileExtents,
-                dataExtents = dataExtents,
-                themeIndex = themeIndex,
-                configs = theme.Configs,
-                data = data.Data,
-                tiles = resultTiles.Data
-            };
-
-            return tileGeneration.Schedule(resultTiles.Data.Length, batchCount, dependOn);
+                var tileGeneration = new GenerateTileDataJob
+                {
+                    tileExtents = tileExtents,
+                    dataExtents = dataExtents,
+                    themeIndex = themeIndex,
+                    configs = theme.Configs,
+                    data = data.Data,
+                    tiles = resultTiles.Data
+                };
+                return tileGeneration.Schedule(resultTiles.Data.Length, batchCount, dependOn);
+            }
+            else
+            {
+                if (settings.filledBoundaries != Direction.None)
+                {
+                    var tileGeneration = new GenerateTileDataJobFullOptions
+                    {
+                        tileExtents = tileExtents,
+                        dataExtents = dataExtents,
+                        themeIndex = themeIndex,
+                        skipDirections = settings.skipDirections,
+                        skipDirectionsWithBorders = settings.skipDirectionsAndBorders,
+                        filledBoundaries = settings.filledBoundaries,
+                        configs = theme.Configs,
+                        data = data.Data,
+                        tiles = resultTiles.Data
+                    };
+                    return tileGeneration.Schedule(resultTiles.Data.Length, batchCount, dependOn);
+                }
+                else
+                {
+                    var tileGeneration = new GenerateTileDataJobWithSkipDirections
+                    {
+                        tileExtents = tileExtents,
+                        dataExtents = dataExtents,
+                        themeIndex = themeIndex,
+                        skipDirections = settings.skipDirections,
+                        skipDirectionsWithBorders = settings.skipDirectionsAndBorders,
+                        configs = theme.Configs,
+                        data = data.Data,
+                        tiles = resultTiles.Data
+                    };
+                    return tileGeneration.Schedule(resultTiles.Data.Length, batchCount, dependOn);
+                }
+            }
         }
 
         private JobHandle ScheduleMeshTileGeneration(Volume<MeshTile> resultMeshTiles, TileVolume tiles, int batchCount, JobHandle dependOn)
@@ -206,34 +248,9 @@ namespace MeshBuilder
 
             public void Execute(int index)
             {
-                byte configuration = 0;
                 int3 dc = CoordFromIndex(index, tileExtents);
 
-                bool hasLF, hasRF, hasLB, hasRB;
-                if (dc.y < dataExtents.Y)
-                {
-                    hasLF = dc.x > 0 && dc.z < dataExtents.Z && IsFilled(dc.x - 1, dc.y, dc.z);
-                    hasRF = dc.x < dataExtents.X && dc.z < dataExtents.Z && IsFilled(dc.x, dc.y, dc.z);
-                    hasLB = dc.x > 0 && dc.z > 0 && IsFilled(dc.x - 1, dc.y, dc.z - 1);
-                    hasRB = dc.x < dataExtents.X && dc.z > 0 && IsFilled(dc.x, dc.y, dc.z - 1);
-
-                    if (hasLF) configuration |= Tile.TopLeftForward;
-                    if (hasRF) configuration |= Tile.TopRightForward;
-                    if (hasLB) configuration |= Tile.TopLeftBackward;
-                    if (hasRB) configuration |= Tile.TopRightBackward;
-                }
-                if (dc.y > 0)
-                {
-                    hasLF = dc.x > 0 && dc.z < dataExtents.Z && IsFilled(dc.x - 1, dc.y - 1, dc.z);
-                    hasRF = dc.x < dataExtents.X && dc.z < dataExtents.Z && IsFilled(dc.x, dc.y - 1, dc.z);
-                    hasLB = dc.x > 0 && dc.z > 0 && IsFilled(dc.x - 1, dc.y - 1, dc.z - 1);
-                    hasRB = dc.x < dataExtents.X && dc.z > 0 && IsFilled(dc.x, dc.y - 1, dc.z - 1);
-
-                    if (hasLF) configuration |= Tile.BottomLeftForward;
-                    if (hasRF) configuration |= Tile.BottomRightForward;
-                    if (hasLB) configuration |= Tile.BottomLeftBackward;
-                    if (hasRB) configuration |= Tile.BottomRightBackward;
-                }
+                byte configuration = CreateConfiguration(themeIndex, dc, data, dataExtents);
 
                 var transformGroup = configs[configuration];
                 var type = TileType.Normal;
@@ -243,12 +260,214 @@ namespace MeshBuilder
                 }
                 tiles[index] = new TileMeshData { type = type, configTransformGroup = transformGroup, variant0 = 0, variant1 = 0 };
             }
+        }
 
-            private bool IsFilled(int x, int y, int z)
+        [BurstCompile]
+        private struct GenerateTileDataJobWithSkipDirections : IJobParallelFor
+        {
+            public Extents tileExtents;
+            public Extents dataExtents;
+            public int themeIndex;
+            public Direction skipDirections;
+            public Direction skipDirectionsWithBorders;
+
+            [ReadOnly] public NativeArray<ConfigTransformGroup> configs;
+            [ReadOnly] public NativeArray<TileData> data;
+            [WriteOnly] public NativeArray<TileMeshData> tiles;
+
+            public void Execute(int index)
+            {
+                int3 dc = CoordFromIndex(index, tileExtents);
+
+                byte configuration = CreateConfiguration(themeIndex, dc, data, dataExtents);
+
+                var transformGroup = configs[configuration];
+                var type = TileType.Normal;
+                if (configuration == 0 || configuration == configs.Length - 1)
+                {
+                    type = TileType.Void;
+                }
+
+                if (skipDirectionsWithBorders != Direction.None && IsCulledBySkipDirectionsWithBorders(configuration, skipDirectionsWithBorders))
+                {
+                    type |= TileType.Culled;
+                }
+                else
+                if (skipDirections != Direction.None && IsCulledBySkipDirections(configuration, skipDirections))
+                {
+                    type |= TileType.Culled;
+                }
+
+                tiles[index] = new TileMeshData { type = type, configTransformGroup = transformGroup, variant0 = 0, variant1 = 0 };
+            }
+        }
+
+        [BurstCompile]
+        private struct GenerateTileDataJobFullOptions : IJobParallelFor
+        {
+            public Extents tileExtents;
+            public Extents dataExtents;
+            public int themeIndex;
+            public Direction skipDirections;
+            public Direction skipDirectionsWithBorders;
+            public Direction filledBoundaries;
+
+            [ReadOnly] public NativeArray<ConfigTransformGroup> configs;
+            [ReadOnly] public NativeArray<TileData> data;
+            [WriteOnly] public NativeArray<TileMeshData> tiles;
+
+            public void Execute(int index)
+            {
+                int3 dc = CoordFromIndex(index, tileExtents);
+
+                byte configuration = CreateConfigurationWithFilledBoundaries(themeIndex, dc, data, dataExtents, filledBoundaries);
+
+                var transformGroup = configs[configuration];
+                var type = TileType.Normal;
+                if (configuration == 0 || configuration == configs.Length - 1)
+                {
+                    type = TileType.Void;
+                }
+
+                if (skipDirectionsWithBorders != Direction.None && IsCulledBySkipDirectionsWithBorders(configuration, skipDirectionsWithBorders))
+                {
+                    type |= TileType.Culled;
+                }
+                else
+                if (skipDirections != Direction.None && IsCulledBySkipDirections(configuration, skipDirections))
+                {
+                    type |= TileType.Culled;
+                }
+
+                tiles[index] = new TileMeshData { type = type, configTransformGroup = transformGroup, variant0 = 0, variant1 = 0 };
+            }
+        }
+
+        static private byte CreateConfiguration(int themeIndex, int3 dc, NativeArray<TileData> data, Extents dataExtents)
+        {
+            byte configuration = 0;
+
+            bool hasLF, hasRF, hasLB, hasRB;
+            if (dc.y < dataExtents.Y)
+            {
+                hasLF = dc.x > 0 && dc.z < dataExtents.Z && IsFilled(dc.x - 1, dc.y, dc.z);
+                hasRF = dc.x < dataExtents.X && dc.z < dataExtents.Z && IsFilled(dc.x, dc.y, dc.z);
+                hasLB = dc.x > 0 && dc.z > 0 && IsFilled(dc.x - 1, dc.y, dc.z - 1);
+                hasRB = dc.x < dataExtents.X && dc.z > 0 && IsFilled(dc.x, dc.y, dc.z - 1);
+
+                if (hasLF) configuration |= Tile.TopLeftForward;
+                if (hasRF) configuration |= Tile.TopRightForward;
+                if (hasLB) configuration |= Tile.TopLeftBackward;
+                if (hasRB) configuration |= Tile.TopRightBackward;
+            }
+            if (dc.y > 0)
+            {
+                hasLF = dc.x > 0 && dc.z < dataExtents.Z && IsFilled(dc.x - 1, dc.y - 1, dc.z);
+                hasRF = dc.x < dataExtents.X && dc.z < dataExtents.Z && IsFilled(dc.x, dc.y - 1, dc.z);
+                hasLB = dc.x > 0 && dc.z > 0 && IsFilled(dc.x - 1, dc.y - 1, dc.z - 1);
+                hasRB = dc.x < dataExtents.X && dc.z > 0 && IsFilled(dc.x, dc.y - 1, dc.z - 1);
+
+                if (hasLF) configuration |= Tile.BottomLeftForward;
+                if (hasRF) configuration |= Tile.BottomRightForward;
+                if (hasLB) configuration |= Tile.BottomLeftBackward;
+                if (hasRB) configuration |= Tile.BottomRightBackward;
+            }
+
+            bool IsFilled(int x, int y, int z)
             {
                 int index = IndexFromCoord(x, y, z, dataExtents);
                 return data[index].themeIndex == themeIndex;
             }
+
+            return configuration;
+        }
+
+        private const byte XPlusMask = 0b01010101;
+        private const byte XMinusMask = 0b10101010;
+        private const byte YPlusMask = 0b11110000;
+        private const byte YMinusMask = 0b00001111;
+        private const byte ZPlusMask = 0b11001100;
+        private const byte ZMinusMask = 0b00110011;
+
+        static private byte CreateConfigurationWithFilledBoundaries(int themeIndex, int3 dc, NativeArray<TileData> data, Extents dataExtents, Direction filledBoundaries)
+        {
+            byte configuration = CreateConfiguration(themeIndex, dc, data, dataExtents);
+
+            if (configuration != 0 && configuration != 0b11111111)
+            {
+                if (dc.x >= dataExtents.X && (filledBoundaries & Direction.XPlus) != 0)
+                {
+                    if ((configuration & Tile.TopLeftForward) != 0) configuration |= Tile.TopRightForward;
+                    if ((configuration & Tile.TopLeftBackward) != 0) configuration |= Tile.TopRightBackward;
+                    if ((configuration & Tile.BottomLeftForward) != 0) configuration |= Tile.BottomRightForward;
+                    if ((configuration & Tile.BottomLeftBackward) != 0) configuration |= Tile.BottomRightBackward;
+                }
+                if (dc.x <= 0 && (filledBoundaries & Direction.XMinus) != 0)
+                {
+                    if ((configuration & Tile.TopRightForward) != 0) configuration |= Tile.TopLeftForward;
+                    if ((configuration & Tile.TopRightBackward) != 0) configuration |= Tile.TopLeftBackward;
+                    if ((configuration & Tile.BottomRightForward) != 0) configuration |= Tile.BottomLeftForward;
+                    if ((configuration & Tile.BottomRightBackward) != 0) configuration |= Tile.BottomLeftBackward;
+                }
+
+                if (dc.y >= dataExtents.Y && (filledBoundaries & Direction.YPlus) != 0)
+                {
+                    if ((configuration & Tile.BottomLeftForward) != 0) configuration |= Tile.TopLeftForward;
+                    if ((configuration & Tile.BottomRightForward) != 0) configuration |= Tile.TopRightForward;
+                    if ((configuration & Tile.BottomLeftBackward) != 0) configuration |= Tile.TopLeftBackward;
+                    if ((configuration & Tile.BottomRightBackward) != 0) configuration |= Tile.TopRightBackward;
+                }
+                if (dc.y <= 0 && (filledBoundaries & Direction.YMinus) != 0)
+                {
+                    if ((configuration & Tile.TopLeftForward) != 0) configuration |= Tile.BottomLeftForward;
+                    if ((configuration & Tile.TopRightForward) != 0) configuration |= Tile.BottomRightForward;
+                    if ((configuration & Tile.TopLeftBackward) != 0) configuration |= Tile.BottomLeftBackward;
+                    if ((configuration & Tile.TopRightBackward) != 0) configuration |= Tile.BottomRightBackward;
+                }
+                if (dc.z >= dataExtents.Z && (filledBoundaries & Direction.ZPlus) != 0)
+                {
+                    if ((configuration & Tile.TopLeftBackward) != 0) configuration |= Tile.TopLeftForward;
+                    if ((configuration & Tile.TopRightBackward) != 0) configuration |= Tile.TopRightForward;
+                    if ((configuration & Tile.BottomLeftBackward) != 0) configuration |= Tile.BottomLeftForward;
+                    if ((configuration & Tile.BottomRightBackward) != 0) configuration |= Tile.BottomRightForward;
+                }
+                if (dc.z <= 0 && (filledBoundaries & Direction.ZMinus) != 0)
+                {
+                    if ((configuration & Tile.TopLeftForward) != 0) configuration |= Tile.TopLeftBackward;
+                    if ((configuration & Tile.TopRightForward) != 0) configuration |= Tile.TopRightBackward;
+                    if ((configuration & Tile.BottomLeftForward) != 0) configuration |= Tile.BottomLeftBackward;
+                    if ((configuration & Tile.BottomRightForward) != 0) configuration |= Tile.BottomRightBackward;
+                }
+            }
+            return configuration;
+        }
+
+        static private bool IsCulledBySkipDirections(byte configuration, Direction skipDirections)
+        {
+            if ((skipDirections & Direction.XPlus) != 0 && configuration == XMinusMask) { return true; }
+            if ((skipDirections & Direction.XMinus) != 0 && configuration == XPlusMask) { return true; }
+
+            if ((skipDirections & Direction.YPlus) != 0 && configuration == YMinusMask) { return true; }
+            if ((skipDirections & Direction.YMinus) != 0 && configuration == YPlusMask) { return true; }
+
+            if ((skipDirections & Direction.ZPlus) != 0 && configuration == ZMinusMask) { return true; }
+            if ((skipDirections & Direction.ZMinus) != 0 && configuration == ZPlusMask) { return true; }
+
+            return false;
+        }
+
+        static private bool IsCulledBySkipDirectionsWithBorders(byte configuration, Direction skipDirections)
+        {
+            if ((skipDirections & Direction.XPlus) != 0 && (configuration & XPlusMask) == 0) { return true; }
+            if ((skipDirections & Direction.XMinus) != 0 && (configuration & XMinusMask) == 0) { return true; }
+
+            if ((skipDirections & Direction.YPlus) != 0 && (configuration & YPlusMask) == 0) { return true; }
+            if ((skipDirections & Direction.YMinus) != 0 && (configuration & YMinusMask) == 0) { return true; }
+
+            if ((skipDirections & Direction.ZPlus) != 0 && (configuration & ZPlusMask) == 0) { return true; }
+            if ((skipDirections & Direction.ZMinus) != 0 && (configuration & ZMinusMask) == 0) { return true; }
+
+            return false;
         }
 
         [BurstCompile]
@@ -456,19 +675,18 @@ namespace MeshBuilder
             public Direction skipDirections = Direction.None;
 
             /// <summary>
-            /// skip every tile piece which covers a certain direction, this removes more tiles, but changes the selected tile
-            /// pieces, it is recommended if the skip directions never change (not used for dynamic culling) or for certain tile sets
-            /// where the change is not visible
+            /// skip every tile piece which covers a certain direction, this removes more tiles, borders and corners
             /// </summary>
             public Direction skipDirectionsAndBorders = Direction.None;
 
             /// <summary>
-            /// When generating the mesh, should the algorithm consider the chunk boundaries empty?
+            /// When generating the mesh, should the algorithm generate mesh at the boundaries?
             /// If the chunk represents ground for example, then the bottom and side boundaries should
-            /// be NOT empty so those sides don't get generated. If the chunk is a flying island which
-            /// needs all of its sides rendered, then the boundaries should be considered empty.
+            /// not be generated (so out of bounds cells are considered filled). 
+            /// If the chunk is a flying paltform which needs all of its sides rendered, then the boundaries 
+            /// should be generated. (and out of bounds cell are considered empty)
             /// </summary>
-            public Direction emptyBoundaries = Direction.All;
+            public Direction filledBoundaries = Direction.All;
         }
 
         /// <summary>

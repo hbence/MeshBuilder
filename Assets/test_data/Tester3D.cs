@@ -18,8 +18,11 @@ public class Tester3D : MonoBehaviour
     {
         CreateTestData2();
 
+        var settings = new TileMesher3D.Settings { };
+      //  var settings = new TileMesher3D.Settings { filledBoundaries = Tile.Direction.YMinus | Tile.Direction.XAxis | Tile.Direction.ZAxis  };
+
         mesher = new TileMesher3D();
-        mesher.Init(dataVolume, 0, palette);
+        mesher.Init(dataVolume, 0, palette, settings);
         mesher.StartGeneration();
     }
 

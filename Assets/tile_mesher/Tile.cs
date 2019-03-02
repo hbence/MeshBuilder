@@ -89,27 +89,33 @@ namespace MeshBuilder
 
         public enum Type : byte
         {
-            Void,
+            Void = 1,
 
             /// <summary>
             /// a single tile, which needs to be drawn (depending on the configuration)
             /// </summary>
-            Normal,
+            Normal = 2,
 
             /// <summary>
             /// a custom tile, possibly filling multiple cells, needs to be drawn
             /// </summary>
-            Custom,
+            Custom = 3,
 
             /// <summary>
             /// cell doesn't need to be drawn, it is overlapped by a custom tile
             /// </summary>
-            Overlapped,
+            Overlapped = 4,
 
             /// <summary>
             /// the cell is culled by something, it won't be drawn
+            /// NOTE: this is used as a flag
+            /// TODO: reconsider this?
+            /// probably not the cleanest to mix simple values with flags but this will be used for every tile, so
+            /// packing it here in a bit could save some memory/space, also a Normal tile and a Culled/Normal tile
+            /// are handled differently so it's not really wrong if their type don't match, on the other hand it can be 
+            /// error prone
             /// </summary>
-            Culled
+            Culled = 1 << 7
         }
 
         public enum Direction : byte
