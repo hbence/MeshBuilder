@@ -44,16 +44,15 @@ namespace MeshBuilder
 
                     if (!result.IsNullConfig)
                     {
-
                         if (result.Count == 1)
                         {
-                            Debug.LogWarning("this shouldn't happen! complex decomposition produced 1 part piece!");
+                            Debug.LogWarning("this shouldn't happen! complex decomposition produced 1 part piece! - " + System.Convert.ToString(config, 2).PadLeft(8,'0'));
                         }
 
                         return result;
                     }
                 }
-
+                
                 return new ConfigTransformGroup { };
             }
 
@@ -266,16 +265,17 @@ namespace MeshBuilder
                 byte value90 = RotateCW90(value);
                 byte value180 = RotateCW90(value90);
                 byte value270 = RotateCW90(value180);
-                byte valueMirY = MirrorY(value);
-                byte value90MirY = MirrorY(value90);
-                byte value180MirY = MirrorY(value180);
-                byte value270MirY = MirrorY(value270);
 
-                byte[] values = { value90, value180, value270, valueMirY, value90MirY, value180MirY, value270MirY };
+                byte valueMirX = MirrorX(value);
+                byte valueMirX90 = RotateCW90(valueMirX);
+                byte valueMirX180 = RotateCW90(valueMirX90);
+                byte valueMirX270 = RotateCW90(valueMirX180);
+                
+                byte[] values = { value90, value180, value270, valueMirX, valueMirX90, valueMirX180, valueMirX270 };
                 PieceTransform[] dirs = 
                 {
                     PieceTransform.Rotate90, PieceTransform.Rotate180, PieceTransform.Rotate270,
-                    PieceTransform.MirrorY, PieceTransform.MirrorY | PieceTransform.Rotate90, PieceTransform.MirrorY | PieceTransform.Rotate180, PieceTransform.MirrorY | PieceTransform.Rotate270,
+                    PieceTransform.MirrorX, PieceTransform.MirrorX | PieceTransform.Rotate90, PieceTransform.MirrorX | PieceTransform.Rotate180, PieceTransform.MirrorX | PieceTransform.Rotate270
                 };
 
                 for (int i = 0; i < values.Length; ++i)
@@ -283,6 +283,17 @@ namespace MeshBuilder
                     if (values[i] == target)
                     {
                         transform = dirs[i];
+                        return true;
+                    }
+                }
+
+                // this is handled separately because y mirroring will be optional,
+                // there will be tile sets where it is banned (and for 2d it wouldn't even make sense)
+                for (int i = 0; i < values.Length; ++i)
+                {
+                    if (MirrorY(values[i]) == target)
+                    {
+                        transform = dirs[i] | PieceTransform.MirrorY;
                         return true;
                     }
                 }

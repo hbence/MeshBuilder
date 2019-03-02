@@ -105,9 +105,9 @@ namespace MeshBuilder
         private void FillConfigurations()
         {
             List<int> nullConfigs = new List<int>();
-            for (byte i = 0; i < configs.Length; ++i)
+            for (int i = 0; i < configs.Length; ++i)
             {
-                configs[i] = TileConfigurationBuilder.Decompose(i, baseVariants);
+                configs[i] = TileConfigurationBuilder.Decompose((byte)i, baseVariants);
                 if (i > 0 && configs[i].Count == 0)
                 {
                     nullConfigs.Add(i);

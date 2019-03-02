@@ -15,19 +15,19 @@ MonoBehaviour:
   type: 2
   openTowardsThemes: []
   baseVariants:
-  - bottomConfig: 4
-    topConfig: 0
+  - topConfig: 0
+    bottomConfig: 4
     variants:
-    - {fileID: 4300014, guid: 2c824e4845ca5d441ac9207efe643281, type: 3}
-  - bottomConfig: 5
-    topConfig: 0
+    - {fileID: 4300022, guid: 2c824e4845ca5d441ac9207efe643281, type: 3}
+  - topConfig: 0
+    bottomConfig: 5
     variants:
-    - {fileID: 4300012, guid: 2c824e4845ca5d441ac9207efe643281, type: 3}
-  - bottomConfig: 13
-    topConfig: 0
+    - {fileID: 4300020, guid: 2c824e4845ca5d441ac9207efe643281, type: 3}
+  - topConfig: 0
+    bottomConfig: 13
     variants:
-    - {fileID: 4300010, guid: 2c824e4845ca5d441ac9207efe643281, type: 3}
-  - bottomConfig: 15
-    topConfig: 0
+    - {fileID: 4300018, guid: 2c824e4845ca5d441ac9207efe643281, type: 3}
+  - topConfig: 0
+    bottomConfig: 15
     variants:
-    - {fileID: 4300008, guid: 2c824e4845ca5d441ac9207efe643281, type: 3}
+    - {fileID: 4300016, guid: 2c824e4845ca5d441ac9207efe643281, type: 3}

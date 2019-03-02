@@ -22,16 +22,17 @@ public class Tester3D : MonoBehaviour
         mesher.Init(dataVolume, 0, palette);
         mesher.StartGeneration();
     }
+
     private void CreateTestData()
     {
-        dataVolume = new DataVolume(10, 1, 10);
+        dataVolume = new DataVolume(10, 3, 10);
 
         for (int i = 0; i < dataVolume.Length; ++i)
         {
             dataVolume[i] = new Tile.Data { themeIndex = 100 };
         }
         Set(2, 2);
-
+        
         Set(5, 6);
         Set(5, 7);
         Set(5, 8);
@@ -42,13 +43,19 @@ public class Tester3D : MonoBehaviour
         Set(7, 7);
         Set(7, 8);
 
+        Set1(7, 6);
+        Set1(7, 7);
+        Set1(7, 8);
+        Set1(7, 9);
+        Set2(7, 9);
+
         Set(8, 9);
 
         Set(6, 5);
         Set(7, 4);
         Set(7, 3);
         Set(8, 3);
-
+        
         /*
         Set(2, 2);
         Set(3, 2);
@@ -63,6 +70,17 @@ public class Tester3D : MonoBehaviour
     {
         dataVolume[x, 0, y] = new Tile.Data { themeIndex = 0 };
     }
+
+    private void Set1(int x, int y)
+    {
+        dataVolume[x, 1, y] = new Tile.Data { themeIndex = 0 };
+    }
+
+    private void Set2(int x, int y)
+    {
+        dataVolume[x, 2, y] = new Tile.Data { themeIndex = 0 };
+    }
+
 
     void LateUpdate()
     {

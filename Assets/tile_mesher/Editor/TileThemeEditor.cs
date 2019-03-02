@@ -190,6 +190,7 @@ public class TileThemeEditor : Editor
         {
             TileTheme theme = (TileTheme)target;
             theme.FillBaseVariantsFromMeshList(meshes);
+            EditorUtility.SetDirty(theme);
         }
         else
         {

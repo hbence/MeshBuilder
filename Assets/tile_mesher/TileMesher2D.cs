@@ -93,12 +93,6 @@ namespace MeshBuilder
 
         override protected void ScheduleGenerationJobs()
         {
-            if (state != State.Initialized)
-            {
-                Error("Can't start generating mesh data, the mesher is not in the Initialized state!");
-                return;
-            }
-
             if (generationType == GenerationType.FromDataUncached)
             {
                 if (HasTilesData)
@@ -252,6 +246,7 @@ namespace MeshBuilder
         [BurstCompile]
         private struct GenerateMeshDataJob : IJobParallelFor
         {
+            private const byte RotationMask = (byte)(PieceTransform.Rotate90 | PieceTransform.Rotate180 | PieceTransform.Rotate270);
             private const byte MirrorMask = (byte)PieceTransform.MirrorXYZ;
 
             public Extents tileExtents;
@@ -302,8 +297,6 @@ namespace MeshBuilder
 
             private CombineInstance CreateCombineInstance(float3 pos, PieceTransform pieceTransform)
             {
-                MatrixConverter m = new MatrixConverter { };
-
                 float4x4 transform = ToRotationMatrix(pieceTransform);
 
                 if (((byte)pieceTransform & MirrorMask) != 0)
@@ -311,6 +304,7 @@ namespace MeshBuilder
                     transform = math.mul(transform, ToScaleMatrix(pieceTransform));
                 }
 
+                MatrixConverter m = new MatrixConverter { };
                 m.float4x4 = math.mul(float4x4.translate(pos), transform);
 
                 return new CombineInstance { subMeshIndex = 0, transform = m.Matrix4x4 };
@@ -319,11 +313,10 @@ namespace MeshBuilder
             // NOTE: I wanted to use static readonly matrices instead of constructing new ones
             // but that didn't work with the Burst compiler
 
-            // NOTE: for some reason the Burst compiler gives an error without these casts,
-            // the switch cases have to be the same type
             static private float4x4 ToScaleMatrix(PieceTransform pieceTransform)
             {
-                switch ((byte)pieceTransform)
+                byte mirror = (byte)((byte)pieceTransform & MirrorMask);
+                switch (mirror)
                 {
                     case (byte)PieceTransform.MirrorX: return float4x4.scale(-1, 1, 1);
                     case (byte)PieceTransform.MirrorY: return float4x4.scale(1, -1, 1);
@@ -337,11 +330,12 @@ namespace MeshBuilder
 
             static private float4x4 ToRotationMatrix(PieceTransform pieceTransform)
             {
-                switch (pieceTransform)
+                byte rotation = (byte)((byte)pieceTransform & RotationMask);
+                switch (rotation)
                 {
-                    case PieceTransform.Rotate90: return float4x4.rotateY(math.radians(-90));
-                    case PieceTransform.Rotate180: return float4x4.rotateY(math.radians(-180));
-                    case PieceTransform.Rotate270: return float4x4.rotateY(math.radians(-270));
+                    case (byte)PieceTransform.Rotate90: return float4x4.rotateY(math.radians(-90));
+                    case (byte)PieceTransform.Rotate180: return float4x4.rotateY(math.radians(-180));
+                    case (byte)PieceTransform.Rotate270: return float4x4.rotateY(math.radians(-270));
                 }
                 return float4x4.identity;
             }

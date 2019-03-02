@@ -12,9 +12,110 @@ MonoBehaviour:
   m_Name: test_3d_tileset
   m_EditorClassIdentifier: 
   themeName: test3d
-  type: 0
+  type: 3
   openTowardsThemes: []
   baseVariants:
-  - bottomConfig: 0
-    topConfig: 0
-    variants: []
+  - topConfig: 0
+    bottomConfig: 4
+    variants:
+    - {fileID: 4300102, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 0
+    bottomConfig: 12
+    variants:
+    - {fileID: 4300096, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 0
+    bottomConfig: 13
+    variants:
+    - {fileID: 4300086, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 0
+    bottomConfig: 15
+    variants:
+    - {fileID: 4300068, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 1
+    bottomConfig: 13
+    variants:
+    - {fileID: 4300076, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 4
+    bottomConfig: 0
+    variants:
+    - {fileID: 4300104, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 4
+    bottomConfig: 4
+    variants:
+    - {fileID: 4300100, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 4
+    bottomConfig: 12
+    variants:
+    - {fileID: 4300090, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 4
+    bottomConfig: 13
+    variants:
+    - {fileID: 4300074, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 4
+    bottomConfig: 15
+    variants:
+    - {fileID: 4300060, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 5
+    bottomConfig: 13
+    variants:
+    - {fileID: 4300072, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 5
+    bottomConfig: 15
+    variants:
+    - {fileID: 4300058, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 12
+    bottomConfig: 0
+    variants:
+    - {fileID: 4300098, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 12
+    bottomConfig: 4
+    variants:
+    - {fileID: 4300092, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 12
+    bottomConfig: 5
+    variants:
+    - {fileID: 4300054, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 12
+    bottomConfig: 12
+    variants:
+    - {fileID: 4300094, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 13
+    bottomConfig: 0
+    variants:
+    - {fileID: 4300088, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 13
+    bottomConfig: 1
+    variants:
+    - {fileID: 4300082, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 13
+    bottomConfig: 4
+    variants:
+    - {fileID: 4300080, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 13
+    bottomConfig: 5
+    variants:
+    - {fileID: 4300078, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 13
+    bottomConfig: 13
+    variants:
+    - {fileID: 4300084, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 13
+    bottomConfig: 15
+    variants:
+    - {fileID: 4300056, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 15
+    bottomConfig: 0
+    variants:
+    - {fileID: 4300070, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 15
+    bottomConfig: 4
+    variants:
+    - {fileID: 4300066, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 15
+    bottomConfig: 5
+    variants:
+    - {fileID: 4300064, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
+  - topConfig: 15
+    bottomConfig: 13
+    variants:
+    - {fileID: 4300062, guid: 0374a23a0c06da340bf428cfa3867dd0, type: 3}
