@@ -4,37 +4,73 @@ namespace MeshBuilder
 {
     public class LatticeGrid : MonoBehaviour
     {
-        public GameObject proto;
+        // to avoid accidentally setting it too large,
+        // arbitrary value, not sure what's a realistic maximum value
+        private const int MaxVertexLength = 32; // per side
+
+        private const float MinCellSize = 0.1f;
+
+        // NOTE:
+        // the length and cellSize values are checked by the LatticeGridEditor during editing, 
+        // to make sure they always match the VerticesGrid size.
+        // int play mode it should be resized with the ResizeGrid()
+
+        [SerializeField]
+        private int xLength = 5;
+        public int XLength { get { return xLength; } }
+
+        [SerializeField]
+        private int yLength = 5;
+        public int YLength { get { return yLength; } }
+
+        [SerializeField]
+        private int zLength = 5;
+        public int ZLength { get { return zLength; } }
+
+        [SerializeField]
+        private Vector3 cellSize = Vector3.one;
+        public Vector3 CellSize
+        {
+            get { return cellSize; }
+            set
+            {
+                cellSize = value;
+                cellSize.x = Mathf.Max(MinCellSize, cellSize.x);
+                cellSize.y = Mathf.Max(MinCellSize, cellSize.y);
+                cellSize.z = Mathf.Max(MinCellSize, cellSize.z);
+                ResetVerticesPosition();
+            }
+        }
 
         [HideInInspector]
         [SerializeField]
         private VerticesGrid grid;
 
-        private void Awake()
-        {
-            /*
-            foreach (Vector3 pos in grid.Vertices)
-            {
-                var go = Instantiate(proto);
-                go.transform.SetParent(transform);
-                go.transform.localPosition = pos;
-            }
-            */
-        }
-
         private void Reset()
         {
-            grid = new VerticesGrid(5, 5, 5, Vector3.one);
-            grid.PlaceVertices();
+            ResizeGrid(xLength, yLength, zLength);
         }
 
-        public void GenerateVertices(int xLength, int yLength, int zLength, Vector3 cellSize)
+        public void ResizeGrid(int x, int y, int z)
         {
+            xLength = x;
+            yLength = y;
+            zLength = z;
+
+            xLength = Mathf.Clamp(xLength, 1, MaxVertexLength);
+            yLength = Mathf.Clamp(yLength, 1, MaxVertexLength);
+            zLength = Mathf.Clamp(zLength, 1, MaxVertexLength);
+
             if (grid.Vertices == null || (xLength != grid.XLength || yLength != grid.YLength || zLength != grid.ZLength))
             {
                 grid = new VerticesGrid(xLength, yLength, zLength, cellSize);
             }
 
+            grid.PlaceVertices();
+        }
+
+        public void ResetVerticesPosition()
+        {
             grid.PlaceVertices();
         }
 

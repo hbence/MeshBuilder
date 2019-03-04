@@ -37,9 +37,8 @@ namespace MeshBuilder
         private void OnSceneGUI()
         {
             var lattice = target as LatticeGrid;
-            var transform = lattice.transform;
 
-            Event guiEvent = Event.current;
+            CheckForPropertyChange(lattice);
 
             if (selectedInfo == null)
             {
@@ -47,12 +46,10 @@ namespace MeshBuilder
             }
             selectedInfo.RecordState();
 
+            Event guiEvent = Event.current;
             if (guiEvent.type == EventType.Repaint)
             {
                 Draw(lattice);
-            }
-            else if (guiEvent.type == EventType.Layout)
-            {
             }
             else
             {
@@ -70,9 +67,25 @@ namespace MeshBuilder
                 clearSelection = false;
             }
 
-            HandleSelection(lattice, transform);
+            HandleSelection(lattice, lattice.transform);
 
             HandleUtility.AddDefaultControl(GUIUtility.GetControlID(FocusType.Passive));
+        }
+
+        private void CheckForPropertyChange(LatticeGrid lattice)
+        {
+            if (lattice.XLength != lattice.Grid.XLength ||
+                lattice.YLength != lattice.Grid.YLength ||
+                lattice.ZLength != lattice.Grid.ZLength)
+            {
+                lattice.ResizeGrid(lattice.XLength, lattice.YLength, lattice.ZLength);
+            }
+            if (lattice.CellSize != lattice.Grid.CellSize)
+            {
+                // this looks strange, but the Vector3 value can be set from the editor
+                // which won't call the setter function, so force it if the cellSize changed
+                lattice.CellSize = lattice.CellSize;
+            }
         }
 
         private void HandleSelection(LatticeGrid lattice, Transform transform)
