@@ -25,6 +25,31 @@ namespace MeshBuilder
             XZ = x * z;
         }
 
+        public int3 ToCoordAt(int index)
+        {
+            return CoordFromIndex(index, XZ, X);
+        }
+
+        public int ToIndexAt(int x, int y, int z)
+        {
+            return y * XZ + z * X + x;
+        }
+
+        public int ToIndexAt(int3 c)
+        {
+            return c.y * XZ + c.z * X + c.x;
+        }
+
+        public bool IsInBounds(int x, int y, int z)
+        {
+            return x >= 0 && y >= 0 && z >= 0 && x < X && y < Y && z < Z;
+        }
+
+        public bool IsInBounds(int3 c)
+        {
+            return IsInBounds(c.x, c.y, c.z);
+        }
+
         // index - array index
         // xzLength - size of xz layer (xSize * zSize)
         // zLength - length along z axis

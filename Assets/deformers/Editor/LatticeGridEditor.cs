@@ -1,5 +1,4 @@
-﻿using System.Collections;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 
@@ -27,6 +26,8 @@ namespace MeshBuilder
         // unfortunately I didn't find a proper way of doing that, what I do here is a bit hacky but mostly works
         // TODO: revisit this later
         private bool clearSelection = false;
+
+        private bool drawOpaque = false;
 
         private void OnEnable()
         {
@@ -69,7 +70,50 @@ namespace MeshBuilder
 
             HandleSelection(lattice, lattice.transform);
 
+            DrawScreenGUI(lattice);
+
             HandleUtility.AddDefaultControl(GUIUtility.GetControlID(FocusType.Passive));
+        }
+
+        private bool menuOpen = false;
+        private void DrawScreenGUI(LatticeGrid lattice)
+        {
+            Handles.BeginGUI();
+            GUILayout.BeginArea(new Rect(5, 5, 100, 100));
+            GUILayout.BeginVertical();
+
+            if (GUILayout.Button(menuOpen ? "<<<" : "menu >>>", GUILayout.Height(20)))
+            {
+                menuOpen = !menuOpen;
+            }
+
+            if (menuOpen)
+            {
+                if (GUILayout.Button(drawOpaque ? "transparent": "opaque"))
+                {
+                    drawOpaque = !drawOpaque;
+                    needsRepaint = true;
+                }
+                if (GUILayout.Button("reset grid"))
+                {
+                    lattice.ResetVerticesPosition();
+                    needsRepaint = true;
+                }
+                if (GUILayout.Button("take snapshot"))
+                {
+                    lattice.TestSnapshot();
+                }
+                GUI.enabled = lattice.HasSnapshot;
+                if (GUILayout.Button("evaluate vertices"))
+                {
+                    lattice.UpdateSnapshotVertices();
+                }
+                GUI.enabled = false;
+            }
+
+            GUILayout.EndVertical();
+            GUILayout.EndArea();
+            Handles.EndGUI();
         }
 
         private void CheckForPropertyChange(LatticeGrid lattice)
@@ -79,6 +123,7 @@ namespace MeshBuilder
                 lattice.ZLength != lattice.Grid.ZLength)
             {
                 lattice.ResizeGrid(lattice.XLength, lattice.YLength, lattice.ZLength);
+                selectedInfo.ClearSelection();
             }
             if (lattice.CellSize != lattice.Grid.CellSize)
             {
@@ -102,7 +147,7 @@ namespace MeshBuilder
                     {
                         Undo.RecordObject(lattice, "Lattice Vertex Change");
                         Vector3 delta = newV - handlePos;
-                        delta = transform.worldToLocalMatrix * (delta);
+                        delta = transform.worldToLocalMatrix * delta;
 
                         var indices = selectedInfo.SelectedPointsIndices;
                         foreach (int i in indices)
@@ -234,7 +279,7 @@ namespace MeshBuilder
                     int right = grid.StepIndex(i, 0, 1, 0);
                     int up = grid.StepIndex(i, 1, 0, 0);
 
-                    float alpha = CalcAlpha(verts[i]);
+                    float alpha = drawOpaque ? 1 : CalcAlpha(verts[i]);
 
                     if (forward >= 0)
                     {
