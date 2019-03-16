@@ -72,12 +72,12 @@ namespace MeshBuilder
                 grid = new VerticesGrid(xLength, yLength, zLength, cellSize);
             }
 
-            grid.PlaceVertices();
+            grid.PlaceVertices(CellSize);
         }
 
         public void ResetVerticesPosition()
         {
-            grid.PlaceVertices();
+            grid.PlaceVertices(CellSize);
         }
 
         private void OnDestroy()
@@ -154,8 +154,10 @@ namespace MeshBuilder
                 this.cellSize = cellSize;
             }
 
-            public void PlaceVertices()
+            public void PlaceVertices(Vector3 cellSize)
             {
+                this.cellSize = cellSize;
+
                 Vector3 start = new Vector3(cellSize.x * -0.5f * (xLength - 1),
                                             cellSize.y * -0.5f * (yLength - 1),
                                             cellSize.z * -0.5f * (zLength - 1));
@@ -231,7 +233,7 @@ namespace MeshBuilder
 
             public SnapShotData(VerticesGrid grid, Transform gridTransform, Mesh mesh, Transform meshTransform)
             {
-// TODO: I could try the matrix conversion trick here with the vector3 -> float3 array, instead of for loop copy
+                // TODO: I could try the matrix conversion trick here with the vector3 -> float3 array, instead of for loop copy
                 gridVertices = new NativeArray<float3>(grid.Vertices.Length, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
                 CopyGridVertices(grid.Vertices);
 
@@ -339,22 +341,10 @@ namespace MeshBuilder
 
                     VertexData data = new VertexData();
                     data.cellIndex = ToCellIndex(c, gridCellExtents);
+
                     if (data.cellIndex >= 0)
                     {
                         data.coords = cells[data.cellIndex].CalcCoordinates(v, gridVertices);
-                        /*
-                        Debug.Log(v);
-                        Debug.LogFormat("{0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}",
-                            data.coords.c0,
-                            data.coords.c1,
-                            data.coords.c2,
-                            data.coords.c3,
-                            data.coords.c4,
-                            data.coords.c5,
-                            data.coords.c6,
-                            data.coords.c7
-                            );
-                            */
                     }
 
                     coordinates[i] = data;
@@ -428,13 +418,14 @@ namespace MeshBuilder
                     c0 = CalcCoordinate(d0, v0,v2,v3,   v0,v3,v1,   v0,v1,v4,   v0,v4,v2),
                     c1 = CalcCoordinate(d1, v1,v0,v3,   v1,v3,v7,   v1,v7,v5,   v1,v4,v0,   v1,v5,v4),
                     c2 = CalcCoordinate(d2, v2,v3,v0,   v2,v7,v3,   v2,v6,v7,   v2,v0,v4,   v2,v4,v6),
-                    c3 = CalcCoordinate(d3, v3,v2,v0,   v3,v1,v0,   v3,v2,v7,   v3,v7,v1),
+                    c3 = CalcCoordinate(d3, v3,v0,v2,   v3,v1,v0,   v3,v2,v7,   v3,v7,v1),
                     c4 = CalcCoordinate(d4, v4,v5,v6,   v4,v0,v1,   v4,v1,v5,   v4,v2,v0,   v4,v6,v2),
                     c5 = CalcCoordinate(d5, v5,v7,v6,   v5,v1,v7,   v5,v6,v4,   v5,v4,v1),
                     c6 = CalcCoordinate(d6, v6,v7,v2,   v6,v5,v7,   v6,v4,v5,   v6,v2,v4),
                     c7 = CalcCoordinate(d7, v7,v3,v2,   v7,v1,v3,   v7,v2,v6,   v7,v6,v5,   v7,v5,v1),
                 };
                 result.Normalize();
+
                 return result;
             }
 
@@ -442,21 +433,12 @@ namespace MeshBuilder
                                          float3 t0a, float3 t0b, float3 t0c,
                                          float3 t1a, float3 t1b, float3 t1c,
                                          float3 t2a, float3 t2b, float3 t2c,
-                                         float3 t3a, float3 t3b, float3 t3c, bool log = false)
+                                         float3 t3a, float3 t3b, float3 t3c)
             {
                 float sum = CalcLambdaFactor(t0a, t0b, t0c);
                 sum += CalcLambdaFactor(t1a, t1b, t1c);
                 sum += CalcLambdaFactor(t2a, t2b, t2c);
                 sum += CalcLambdaFactor(t3a, t3b, t3c);
-
-                if (log)
-                {
-                    Debug.LogFormat("c [ {0}, {1}, {2}, {3} c ] sum:" + sum + " dist:" + latticeDist + " res:" + sum / latticeDist,
-                        CalcLambdaFactor(t0a, t0b, t0c, true),
-                        CalcLambdaFactor(t1a, t1b, t1c, true),
-                        CalcLambdaFactor(t2a, t2b, t2c, true),
-                        CalcLambdaFactor(t3a, t3b, t3c, true));
-                }
 
                 return sum / latticeDist;
             }
@@ -496,7 +478,7 @@ namespace MeshBuilder
                 return result;
             }
             
-            static private float CalcLambdaFactor(float3 v0, float3 v1, float3 v2, bool log = false)
+            static private float CalcLambdaFactor(float3 v0, float3 v1, float3 v2)
             {
                 float a01 = AngleBetween(v0, v1);
                 float a12 = AngleBetween(v1, v2);
@@ -508,68 +490,20 @@ namespace MeshBuilder
 
                 v1c2 = math.normalize(v1c2);
 
-                if (log)
-                {
-                    Debug.LogFormat("pi v0({0}, {1}, {2}) v1({3}, {4}, {5}) v2({6}, {7}, {8}) a({9}, {10}, {11}) v0c1({12}, {13}, {14}) v1c2({15}, {16}, {17}) v0c2({18}, {19}, {20})",
-                        v0.x, v0.y, v0.z,
-                        v1.x, v1.y, v1.z,
-                        v2.x, v2.y, v2.z,
-                        a01, a12, a02,
-                        v0c1.x, v0c1.y, v0c1.z,
-                        v1c2.x, v1c2.y, v1c2.z,
-                        v0c2.x, v0c2.y, v0c2.z
-                        );
-
-                    float r0 = a12;
-                    float r1 = math.dot(v0c1, v1c2) * a01 / math.length(v0c1);
-                    float r2 = math.dot(v0c2, v1c2) * a02 / math.length(v0c2);
-                    float r3 = (a12 +
-                    math.dot(v0c1, v1c2) * a01 / math.length(v0c1) +
-                    math.dot(v0c2, v1c2) * a02 / math.length(v0c2));
-                    float r4 = math.dot(v0, v1c2);
-
-                    Debug.Log("r:"+r0+","+r1 + "," + r2 + "," + r3+"," + r4+ "res" +((a12 +
-                    math.dot(v0c1, v1c2) * a01 / math.length(v0c1) +
-                    math.dot(v0c2, v1c2) * a02 / math.length(v0c2)) /
-                    math.dot(v0, v1c2) * 2));
-                }
-
                 return (a12 + 
                     math.dot(v0c1, v1c2) * a01 / math.length(v0c1) +
                     math.dot(v0c2, v1c2) * a02 / math.length(v0c2)) / 
                     math.dot(v0, v1c2) * 2;
-
-
-                return (a12 + math.dot(v0c1, v1c2) * a01 + math.dot(v0c2, v1c2) * a02) / (math.dot(v0, v1c2) * 2f);
-            }
-
-            static private float CalcLambdaFactorDebug(float3 v0, float3 v1, float3 v2)
-            {
-                float a01 = AngleBetween(v0, v1);
-                float a12 = AngleBetween(v1, v2);
-                float a02 = AngleBetween(v0, v2);
-
-                float3 v0c1 = math.cross(v0, v1);
-                float3 v1c2 = math.cross(v1, v2);
-                float3 v0c2 = math.cross(v2, v1);
-
-                v1c2 = math.normalize(v1c2);
-
-                return (a12 +
-                    math.dot(v0c1, v1c2) * a01 / math.length(v0c1) +
-                    math.dot(v0c2, v1c2) * a02 / math.length(v0c2)) /
-                    (math.dot(v0, v1c2) * 2);
-
-
-                return (a12 + math.dot(v0c1, v1c2) * a01 + math.dot(v0c2, v1c2) * a02) / (math.dot(v0, v1c2) * 2f);
             }
 
             static private float AngleBetween(float3 a, float3 b)
             {
+                /*   
                 float theta = math.dot(a, b) / math.sqrt(math.lengthSquared(a) * math.lengthSquared(b));
                 theta = math.clamp(theta, -1, 1);
                 return math.acos(theta);
                 // a and b are normalized here, their length is 1
+                */
                 return math.acos(math.dot(a, b));
             }
         }

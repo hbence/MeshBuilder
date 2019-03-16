@@ -167,7 +167,7 @@ namespace MeshBuilder
             {
                 if (guiEvent.type == EventType.MouseDown)
                 {
-                    bool additiveSelect = (guiEvent.modifiers == EventModifiers.Control);
+                    bool additiveSelect = IsAdditiveModifier(guiEvent.modifiers);
                     HandleLeftMouseDown(additiveSelect);
                 }
                 else if (guiEvent.type == EventType.MouseUp)
@@ -182,6 +182,11 @@ namespace MeshBuilder
             }
 
             UpdateMouseOverInfo(guiEvent.mousePosition, lattice);
+        }
+
+        static bool IsAdditiveModifier(EventModifiers mod)
+        {
+            return mod == EventModifiers.Control || mod == EventModifiers.Shift;
         }
 
         void UpdateMouseOverInfo(Vector3 mousePosition, LatticeGrid lattice)

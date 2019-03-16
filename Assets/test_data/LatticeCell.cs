@@ -23,14 +23,6 @@ namespace MeshBuilder
             mesh = meshFilter.mesh;
             var meshVerts = mesh.vertices;
 
-            /*
-            var tris = mesh.triangles;
-            for (int t = 0; t < tris.Length; t += 3)
-            {
-                Debug.LogFormat("({0}, {1}, {2})", tris[t], tris[t + 1], tris[t + 2]);
-            }
-            */
-
             var verts = lattice.Grid.Vertices;
 
             var ind = new int[3 * 2 * 6];
@@ -58,12 +50,16 @@ namespace MeshBuilder
             mvc = new MeanValueCoordinates(verts, ind);
             coordinates = new List<float>[meshVerts.Length];
 
+            string msg = "";
+
             for (i = 0; i < meshVerts.Length; ++i)
             {
                 var v = meshVerts[i];
-                var vertexCoordinates = mvc.getCoordinates(v);
+                var vertexCoordinates = mvc.getCoordinates(v, ref msg);
                 coordinates[i] = vertexCoordinates;
             }
+
+            Debug.Log(msg);
         }
 
         private void Set(int[] array, int at, int a, int b, int c)
@@ -108,32 +104,39 @@ namespace MeshBuilder
 
             var verts = mesh.vertices;
 
+            string msg = "";
+
             for (int vertexIndex = 0; vertexIndex < this.coordinates.Length; vertexIndex++)
             {
                 var vertexCoordinates = coordinates[vertexIndex];
 
+                msg += "\nv:" + vertexIndex + " ";
+
                 if (vertexCoordinates != null && vertexCoordinates.Count > 0)
                 {
-                    var position = mvc.evaluate(vertexCoordinates);
+                    var position = mvc.evaluate(vertexCoordinates, ref msg);
                     verts[vertexIndex] = position;
                 }
             }
 
+            Debug.Log(msg);
+
             mesh.vertices = verts;
             mesh.RecalculateNormals();
             meshFilter.sharedMesh = mesh;
+
+            Debug.Log("evaluate");
         }
 
         class CoordinateCalculator
         {
-            public float getCoordinate(Vector3 vertex, Vector3 boundaryVertex, List<Vector3[]> triangles)
+            public float getCoordinate(Vector3 vertex, Vector3 boundaryVertex, List<Vector3[]> triangles, ref string msg)
             {
                 float wI = 0;
 
-                string msg = "c[ ";
+                msg += "\nc[ ";
                 for (int j = 0; j < triangles.Count; j++)
                 {
-                    msg += ("- " + getPiFactor(vertex, triangles[j]));
                     wI += getPiFactor(vertex, triangles[j]);
 
                     if (j == 0)
@@ -143,7 +146,6 @@ namespace MeshBuilder
                 }
 
                 msg += ("c ] sum:" + wI + " dist:" + Vector3.Distance(vertex, boundaryVertex) + " res:"  + wI / Vector3.Distance(vertex, boundaryVertex));
-                //Debug.Log(msg);
                 return wI / Vector3.Distance(vertex, boundaryVertex);
             }
 
@@ -267,30 +269,44 @@ namespace MeshBuilder
                 coordinateCalculator = new CoordinateCalculator();
             }
 
-            public List<float> getCoordinates(Vector3 vertex)
+            public List<float> getCoordinates(Vector3 vertex, ref string msg)
             {
                 var result = new List<float>();
                 float sum = 0;
 
+                msg += "\nv(" + vertex.x +", "+vertex.y+", "+vertex.z+")";
+
+                msg += "\n bef:";
+
+                string msg2 = "";
                 for (int vertexIndex = 0; vertexIndex < trianglesByVertex.length(); vertexIndex++)
                 {
                     var boundaryVertex = vertices[vertexIndex];
                     var triangles = trianglesByVertex.getTriangles(vertexIndex);
-                    var coordinate = coordinateCalculator.getCoordinate(vertex, boundaryVertex, triangles);
+                    var coordinate = coordinateCalculator.getCoordinate(vertex, boundaryVertex, triangles, ref msg2);
+
+                    msg += coordinate + ", ";
 
                     result.Add(coordinate);
                     sum += coordinate;
                 }
 
+                msg += "\n sum:" + sum;
+
+                msg += "\n aft:";
+
                 for (int i = 0; i < result.Count; i++)
                 {
                     result[i] /= sum;
+                    msg += result[i] + ", ";
                 }
+
+                msg += "\n--------------";
 
                 return result;
             }
 
-            public Vector3 evaluate(List<float> coordinates)
+            public Vector3 evaluate(List<float> coordinates, ref string msg)
             {
                 Vector3 result = new Vector3();
                 float total = 0;
@@ -301,12 +317,15 @@ namespace MeshBuilder
 
                     if (coefficient > 0)
                     {
+                        msg += coefficient + " ";
                         Vector3 boundaryVertex = vertices[vertexIndex];
 
                         result += boundaryVertex * coefficient;
                         total += coefficient;
                     }
                 }
+
+                msg += "| " + total;
 
                 result /= total;
 
