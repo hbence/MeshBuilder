@@ -297,24 +297,6 @@ namespace MeshBuilder
                 }
             }
 
-            private void DebugCell(int i, int x, int y, int z, LatticeCell cell)
-            {
-                Debug.Log("---------");
-                Debug.LogFormat("cell:{0} ({1}, {2}, {3})", i, x, y, z, cell);
-                var v0 = gridVertices[cell.iy];
-                var v1 = gridVertices[cell.ixy];
-                var v2 = gridVertices[cell.iyz];
-                var v3 = gridVertices[cell.ixyz];
-                Debug.LogFormat("top:({0}, {1}, {2}) - ({3}, {4}, {5}) - ({6}, {7}, {8}) - ({9}, {10}, {11})",
-                    v0.x, v0.y, v0.z, v1.x, v1.y, v1.z, v2.x, v2.y, v2.z, v3.x, v3.y, v3.z );
-                v0 = gridVertices[cell.i];
-                v1 = gridVertices[cell.ix];
-                v2 = gridVertices[cell.iz];
-                v3 = gridVertices[cell.ixz];
-                Debug.LogFormat("btm:({0}, {1}, {2}) - ({3}, {4}, {5}) - ({6}, {7}, {8}) - ({9}, {10}, {11})",
-                    v0.x, v0.y, v0.z, v1.x, v1.y, v1.z, v2.x, v2.y, v2.z, v3.x, v3.y, v3.z);
-            }
-
             private void GenerateCoordinates(VerticesGrid grid, Transform gridTransform, Mesh mesh, Transform meshTransform)
             {
                 if (coordinates.Length != mesh.vertexCount)
@@ -334,9 +316,9 @@ namespace MeshBuilder
 
                     int3 c = new int3
                     {
-                        x = (int)((v.x + cellOffsetX) / cellSize.x),
-                        y = (int)((v.y + cellOffsetY) / cellSize.y),
-                        z = (int)((v.z + cellOffsetZ) / cellSize.z)
+                        x = Mathf.FloorToInt((v.x + cellOffsetX) / cellSize.x),
+                        y = Mathf.FloorToInt((v.y + cellOffsetY) / cellSize.y),
+                        z = Mathf.FloorToInt((v.z + cellOffsetZ) / cellSize.z)
                     };
 
                     VertexData data = new VertexData();
@@ -351,11 +333,11 @@ namespace MeshBuilder
                 }
             }
 
-            private int ToCellIndex(int3 c, Extents extents)
+            static private int ToCellIndex(int3 c, Extents extents)
             {
                 return extents.IsInBounds(c) ? extents.ToIndexAt(c) : -1;
             }
-
+            
             public void Dispose()
             {
                 if (gridVertices.IsCreated) { gridVertices.Dispose(); }
@@ -384,8 +366,64 @@ namespace MeshBuilder
                 this.ixyz = ixyz;
             }
 
+            private const byte HasNegative  = 1 << 0;
+            private const byte HasZero      = 1 << 1;
+            private const byte HasPositive  = 1 << 2;
+            private const byte HasBothSigns = HasNegative | HasPositive;
+
+            static private void VectorSignCheck(float3 v, ref byte x, ref byte y, ref byte z)
+            {
+                x |= (v.x == 0) ? HasZero :
+                     (v.x > 0)  ? HasPositive : HasNegative;
+
+                y |= (v.y == 0) ? HasZero :
+                     (v.y > 0)  ? HasPositive : HasNegative;
+
+                z |= (v.z == 0) ? HasZero :
+                     (v.z > 0) ? HasPositive : HasNegative;
+            }
+
+            private const float OffsetEpsilon = 0.0001f;
+
+            static private bool HasFlag(byte value, byte flag)
+            {
+                return (value & flag) != 0;
+            }
+
+            static private float3 PrepareVertex(float3 v, float3 bottomLeftBack, float3 topRightForward)
+            {
+                float3 v0 = bottomLeftBack - v;
+                float3 v7 = topRightForward - v;
+
+                // if a vertex is on the grid, the evaluation won't work properly
+                // lets check for zero components in the corner vectors
+                byte xFlags = 0, yFlags = 0, zFlags = 0;
+                VectorSignCheck(v0, ref xFlags, ref yFlags, ref zFlags);
+                VectorSignCheck(v7, ref xFlags, ref yFlags, ref zFlags);
+
+                // if there are zero components, that means the vertex was on the grid
+                // lets offset it towards the center of the cell
+                if (HasFlag(xFlags, HasZero))
+                {
+                    v.x += HasFlag(xFlags, HasPositive) ? -OffsetEpsilon : OffsetEpsilon;
+                }
+                if (HasFlag(yFlags, HasZero))
+                {
+                    v.y += HasFlag(yFlags, HasPositive) ? -OffsetEpsilon : OffsetEpsilon;
+                }
+                if (HasFlag(zFlags, HasZero))
+                {
+                    v.z += HasFlag(zFlags, HasPositive) ? -OffsetEpsilon : OffsetEpsilon;
+                }
+
+                return v;
+            }
+
             public VertexCoordinates CalcCoordinates(float3 v, NativeArray<float3> gridVerts)
             {
+                // offset the vertex a bit if it is on the grid
+                v = PrepareVertex(v, gridVerts[i], gridVerts[ixyz]);
+
                 float3 v0 = gridVerts[i] - v;
                 float3 v1 = gridVerts[ix] - v;
                 float3 v2 = gridVerts[iz] - v;
@@ -394,7 +432,7 @@ namespace MeshBuilder
                 float3 v5 = gridVerts[ixy] - v;
                 float3 v6 = gridVerts[iyz] - v;
                 float3 v7 = gridVerts[ixyz] - v;
-
+                
                 float d0 = math.length(v0);
                 float d1 = math.length(v1);
                 float d2 = math.length(v2);

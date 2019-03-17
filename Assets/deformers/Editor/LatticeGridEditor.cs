@@ -79,7 +79,7 @@ namespace MeshBuilder
         private void DrawScreenGUI(LatticeGrid lattice)
         {
             Handles.BeginGUI();
-            GUILayout.BeginArea(new Rect(5, 5, 100, 100));
+            GUILayout.BeginArea(new Rect(5, 5, 140, 140));
             GUILayout.BeginVertical();
 
             if (GUILayout.Button(menuOpen ? "<<<" : "menu >>>", GUILayout.Height(20)))
@@ -99,16 +99,19 @@ namespace MeshBuilder
                     lattice.ResetVerticesPosition();
                     needsRepaint = true;
                 }
-                if (GUILayout.Button("take snapshot"))
+                GUI.enabled = lattice.target != null;
+                string label = GUI.enabled ? "take snapshot" : "take snapshot (no target)";
+                if (GUILayout.Button(label))
                 {
                     lattice.TestSnapshot();
                 }
                 GUI.enabled = lattice.HasSnapshot;
-                if (GUILayout.Button("evaluate vertices"))
+                label = GUI.enabled ? "evaluate vertices" : "evaluate vertices (no snapshot)";
+                if (GUILayout.Button(label))
                 {
                     lattice.UpdateSnapshotVertices();
                 }
-                GUI.enabled = false;
+                GUI.enabled = true;
             }
 
             GUILayout.EndVertical();
