@@ -4,6 +4,7 @@ using Unity.Mathematics;
 
 namespace MeshBuilder
 {
+    [ExecuteInEditMode]
     public class LatticeGrid : MonoBehaviour
     {
         // to avoid accidentally setting it too large,
@@ -46,7 +47,7 @@ namespace MeshBuilder
 
         [HideInInspector]
         [SerializeField]
-        private VerticesGrid grid;
+        private VertexGrid grid;
 
         public MeshFilter target;
         private SnapShotData snapShot;
@@ -69,7 +70,7 @@ namespace MeshBuilder
 
             if (grid.Vertices == null || (xLength != grid.XLength || yLength != grid.YLength || zLength != grid.ZLength))
             {
-                grid = new VerticesGrid(xLength, yLength, zLength, cellSize);
+                grid = new VertexGrid(xLength, yLength, zLength, cellSize);
             }
 
             grid.PlaceVertices(CellSize);
@@ -85,27 +86,59 @@ namespace MeshBuilder
             ClearSnapshot();
         }
 
-        public void TestSnapshot()
+        private void OnDisable()
         {
-            TakeSnapshot(target.sharedMesh, target.transform);
+            ClearSnapshot();
         }
 
-        public void UpdateSnapshotVertices()
+        private void OnEnable()
         {
+            if (snapShot != null && snapShot.IsDisposed)
+            {
+                ClearSnapshot();
+            }
+        }
+
+        public void TakeTargetSnapshot()
+        {
+            if (target != null)
+            {
+                TakeSnapshot(target.sharedMesh, target.transform);
+            }
+            else
+            {
+                Debug.LogError("There is no target mesh set!");
+            }
+        }
+
+        public void UpdateTargetSnapshotVertices()
+        {
+            if (target == null)
+            {
+                Debug.LogError("There is no target mesh set!");
+                return;
+            }
+
+            if (snapShot == null || snapShot.IsDisposed)
+            {
+                Debug.LogError("There is no current snapshot!");
+                return;
+            }
+
             var verts = target.mesh.vertices;
-            snapShot.Evaluate(verts, grid.Vertices);
+            snapShot.Evaluate(grid, transform, verts, target.transform);
             target.sharedMesh.vertices = verts;
             target.sharedMesh.RecalculateNormals();
 
-            Debug.Log("evaluate");
+            Debug.Log("lattice: evaluated");
         }
 
         public void TakeSnapshot(Mesh mesh, Transform meshTransform)
         {
             ClearSnapshot();
-
             snapShot = new SnapShotData(grid, transform, mesh, meshTransform);
-            Debug.Log("take snapshot");
+
+            Debug.Log("lattice: snapshot taken");
         }
 
         public void ClearSnapshot()
@@ -117,11 +150,11 @@ namespace MeshBuilder
             snapShot = null;
         }
 
-        public VerticesGrid Grid { get { return grid; } }
+        public VertexGrid Grid { get { return grid; } }
         public bool HasSnapshot { get { return snapShot != null; } }
         
         [System.Serializable]
-        public struct VerticesGrid
+        public struct VertexGrid
         {
             [SerializeField]
             private Vector3[] vertices;
@@ -141,7 +174,7 @@ namespace MeshBuilder
             private Vector3 cellSize;
             public Vector3 CellSize { get { return cellSize; } }
 
-            public VerticesGrid(int x, int y, int z, Vector3 cellSize)
+            public VertexGrid(int x, int y, int z, Vector3 cellSize)
             {
                 x = Mathf.Clamp(x, 2, MaxVertexLength);
                 y = Mathf.Clamp(y, 2, MaxVertexLength);
@@ -231,11 +264,12 @@ namespace MeshBuilder
             private NativeArray<LatticeCell> cells;
             private NativeArray<VertexData> coordinates;
 
-            public SnapShotData(VerticesGrid grid, Transform gridTransform, Mesh mesh, Transform meshTransform)
+            public SnapShotData(VertexGrid grid, Transform gridTransform, Mesh mesh, Transform meshTransform)
             {
                 // TODO: I could try the matrix conversion trick here with the vector3 -> float3 array, instead of for loop copy
                 gridVertices = new NativeArray<float3>(grid.Vertices.Length, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-                CopyGridVertices(grid.Vertices);
+                var m = meshTransform.worldToLocalMatrix * gridTransform.localToWorldMatrix;
+                CopyVertices(grid.Vertices, gridVertices);
 
                 int cellCount = (grid.XLength - 1) * (grid.YLength - 1) * (grid.ZLength - 1);
                 cells = new NativeArray<LatticeCell>(cellCount, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
@@ -245,20 +279,21 @@ namespace MeshBuilder
                 GenerateCoordinates(grid, gridTransform, mesh, meshTransform);
             }
 
-            public void Evaluate(Vector3[] meshVerts, Vector3[] gridVerts)
+            public void Evaluate(VertexGrid grid, Transform gridTransform, Vector3[] meshVerts, Transform meshTransform)
             {
                 if (meshVerts.Length != coordinates.Length)
                 {
                     Debug.LogError("mesh vertex count doesn't match coordinates!");
                     return;
                 }
-                if (gridVerts.Length != gridVertices.Length)
+                if (grid.Vertices.Length != gridVertices.Length)
                 {
                     Debug.LogError("grid vertex count doesn't match set grid vertices!");
                     return;
                 }
 
-                CopyGridVertices(gridVerts);
+                var m = meshTransform.worldToLocalMatrix * gridTransform.localToWorldMatrix;
+                CopyVerticesTransformed(grid.Vertices, gridVertices, m);
 
                 for (int i = 0; i < meshVerts.Length; ++i)
                 {
@@ -270,15 +305,23 @@ namespace MeshBuilder
                 }
             }
 
-            private void CopyGridVertices(Vector3[] source)
+            static private void CopyVertices(Vector3[] source, NativeArray<float3> dest)
             {
                 for (int i = 0; i < source.Length; ++i)
                 {
-                    gridVertices[i] = source[i];
+                    dest[i] = source[i];
                 }
             }
 
-            private void GenerateCells(VerticesGrid grid)
+            static private void CopyVerticesTransformed(Vector3[] source, NativeArray<float3> dest, Matrix4x4 m)
+            {
+                for (int i = 0; i < source.Length; ++i)
+                {
+                    dest[i] = m.MultiplyPoint3x4(source[i]);
+                }
+            }
+
+            private void GenerateCells(VertexGrid grid)
             {
                 gridCellExtents = new Extents(grid.XLength - 1, grid.YLength - 1, grid.ZLength - 1);
 
@@ -290,20 +333,23 @@ namespace MeshBuilder
                         {
                             // TODO: the indices could be calculated with simple addition
                             int index = gridCellExtents.ToIndexAt(x, y, z);
-                            cells[index] = new LatticeCell(grid.ToIndex(x, y, z), grid.ToIndex(x + 1, y, z), grid.ToIndex(x, y + 1, z), grid.ToIndex(x, y, z + 1), 
+                            cells[index] = new LatticeCell(
+                                grid.ToIndex(x, y, z), grid.ToIndex(x + 1, y, z), grid.ToIndex(x, y + 1, z), grid.ToIndex(x, y, z + 1), 
                                 grid.ToIndex(x + 1, y + 1, z), grid.ToIndex(x + 1, y, z + 1), grid.ToIndex(x, y + 1, z + 1), grid.ToIndex(x + 1, y + 1, z + 1));
                         }
                     }
                 }
             }
 
-            private void GenerateCoordinates(VerticesGrid grid, Transform gridTransform, Mesh mesh, Transform meshTransform)
+            private void GenerateCoordinates(VertexGrid grid, Transform gridTransform, Mesh mesh, Transform meshTransform)
             {
                 if (coordinates.Length != mesh.vertexCount)
                 {
                     Debug.LogError("coordinate length doesn't match mesh size");
                     return;
                 }
+
+                var m = gridTransform.worldToLocalMatrix * meshTransform.localToWorldMatrix;
 
                 float3 cellSize = grid.CellSize; 
                 float cellOffsetX = 0.5f * cellSize.x * (grid.XLength - 1);
@@ -314,6 +360,8 @@ namespace MeshBuilder
                 {
                     float3 v = mesh.vertices[i];
 
+                    v = m.MultiplyPoint3x4(v);
+
                     int3 c = new int3
                     {
                         x = Mathf.FloorToInt((v.x + cellOffsetX) / cellSize.x),
@@ -323,7 +371,6 @@ namespace MeshBuilder
 
                     VertexData data = new VertexData();
                     data.cellIndex = ToCellIndex(c, gridCellExtents);
-
                     if (data.cellIndex >= 0)
                     {
                         data.coords = cells[data.cellIndex].CalcCoordinates(v, gridVertices);
@@ -336,6 +383,14 @@ namespace MeshBuilder
             static private int ToCellIndex(int3 c, Extents extents)
             {
                 return extents.IsInBounds(c) ? extents.ToIndexAt(c) : -1;
+            }
+
+            public bool IsDisposed
+            {
+                get
+                {
+                    return !(gridVertices.IsCreated && cells.IsCreated && coordinates.IsCreated);
+                }
             }
             
             public void Dispose()

@@ -27,6 +27,11 @@ namespace MeshBuilder
         // TODO: revisit this later
         private bool clearSelection = false;
 
+        [SerializeField]
+        private bool menuOpen = false;
+        [SerializeField]
+        private bool allowSelection = false;
+        [SerializeField]
         private bool drawOpaque = false;
 
         private void OnEnable()
@@ -54,7 +59,10 @@ namespace MeshBuilder
             }
             else
             {
-                HandleInput(guiEvent, lattice);
+                if (allowSelection)
+                {
+                    HandleInput(guiEvent, lattice);
+                }
 
                 if (needsRepaint || !selectedInfo.DoesMatchRecordedState)
                 {
@@ -75,7 +83,6 @@ namespace MeshBuilder
             HandleUtility.AddDefaultControl(GUIUtility.GetControlID(FocusType.Passive));
         }
 
-        private bool menuOpen = false;
         private void DrawScreenGUI(LatticeGrid lattice)
         {
             Handles.BeginGUI();
@@ -94,6 +101,12 @@ namespace MeshBuilder
                     drawOpaque = !drawOpaque;
                     needsRepaint = true;
                 }
+                if (GUILayout.Button(allowSelection ? "disallow selection" : "allow selection"))
+                {
+                    allowSelection = !allowSelection;
+                    selectedInfo.ClearSelection();
+                    needsRepaint = true;
+                }
                 if (GUILayout.Button("reset grid"))
                 {
                     lattice.ResetVerticesPosition();
@@ -103,13 +116,16 @@ namespace MeshBuilder
                 string label = GUI.enabled ? "take snapshot" : "take snapshot (no target)";
                 if (GUILayout.Button(label))
                 {
-                    lattice.TestSnapshot();
+                    lattice.TakeTargetSnapshot();
                 }
+
+                GUILayout.Space(10);
+
                 GUI.enabled = lattice.HasSnapshot;
                 label = GUI.enabled ? "evaluate vertices" : "evaluate vertices (no snapshot)";
                 if (GUILayout.Button(label))
                 {
-                    lattice.UpdateSnapshotVertices();
+                    lattice.UpdateTargetSnapshotVertices();
                 }
                 GUI.enabled = true;
             }
@@ -288,7 +304,6 @@ namespace MeshBuilder
                     int up = grid.StepIndex(i, 1, 0, 0);
 
                     float alpha = drawOpaque ? 1 : CalcAlpha(verts[i]);
-
                     if (forward >= 0)
                     {
                         DrawLine(i, forward, verts, alpha);
@@ -345,7 +360,8 @@ namespace MeshBuilder
                 color = SelectedPointColor;
             }
             Handles.color = color;
-            Handles.DrawSolidDisc(p, normal, PointRadius);
+            float radius = allowSelection ? PointRadius : PointRadius * 0.5f;
+            Handles.DrawSolidDisc(p, normal, radius);
         }
 
         private Vector3 CalcSelectionCenter(LatticeGrid lattice)
