@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using Unity.Collections;
 using Unity.Mathematics;
+using UnityEditor;
 
 namespace MeshBuilder
 {
@@ -150,11 +151,44 @@ namespace MeshBuilder
             snapShot = null;
         }
 
+        public void SaveGrid(string path)
+        {
+            var asset = ScriptableObject.CreateInstance<VertexGridAsset>();
+            asset.Grid = new VertexGrid(grid);
+            AssetDatabase.CreateAsset(asset, path);
+            Debug.Log("lattice: grid saved as:" + path);
+        }
+
+        public void LoadGrid(string path)
+        {
+            int index = path.IndexOf("/Assets/") + 1;
+            path = path.Substring(index);
+            
+            var gridAsset = AssetDatabase.LoadAssetAtPath<VertexGridAsset>(path);
+            if (gridAsset != null)
+            {
+                CopyFrom(gridAsset.Grid);
+            }
+            else
+            {
+                Debug.LogError("lattice: couldn't load grid from: " + path);
+            }
+        }
+
+        public void CopyFrom(VertexGrid sourceGrid)
+        {
+            xLength = sourceGrid.XLength;
+            yLength = sourceGrid.YLength;
+            zLength = sourceGrid.ZLength;
+            cellSize = sourceGrid.CellSize;
+            grid = new VertexGrid(sourceGrid);
+        }
+
         public VertexGrid Grid { get { return grid; } }
-        public bool HasSnapshot { get { return snapShot != null; } }
-        
+        public bool HasSnapshot { get { return snapShot != null && !snapShot.IsDisposed; } }
+
         [System.Serializable]
-        public struct VertexGrid
+        public class VertexGrid
         {
             [SerializeField]
             private Vector3[] vertices;
@@ -185,6 +219,17 @@ namespace MeshBuilder
                 yLength = y;
                 zLength = z;
                 this.cellSize = cellSize;
+            }
+
+            public VertexGrid(VertexGrid from)
+                : this(from.xLength, from.yLength, from.zLength, from.cellSize)
+            {
+                if (from.vertices.Length != vertices.Length)
+                {
+                    Debug.LogError("source vertices length mismatch!");
+                }
+
+                System.Array.Copy(from.vertices, vertices, vertices.Length);
             }
 
             public void PlaceVertices(Vector3 cellSize)

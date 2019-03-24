@@ -77,14 +77,9 @@ namespace MeshBuilder
             return (((int)top) << 4) | (int)bottom;
         }
 
-        /// <summary>
-        /// The data used to identify the piece. The index means the index of a theme in 
-        /// a palette of themes, while the variant means the variant of a certain piece.
-        /// </summary>
         public struct Data
         {
             public byte themeIndex;
-            public byte variant;
         }
 
         public enum Type : byte

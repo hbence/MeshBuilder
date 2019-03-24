@@ -18,8 +18,6 @@ public class TileThemeEditor : Editor
 
     private bool showBaseVariants;
 
-    private Object meshAsset;
-
     private void OnEnable()
     {
         themeNameProp = serializedObject.FindProperty("themeName");
@@ -40,15 +38,17 @@ public class TileThemeEditor : Editor
         EditorGUILayout.LabelField("Base Pieces", EditorStyles.boldLabel);
         EditorGUILayout.Separator();
 
-        bool fillFromFile = false;
-        fillFromFile = GUILayout.Button("Fill Variants From File");
-
-        meshAsset = EditorGUILayout.ObjectField("Mesh Asset File", meshAsset, typeof(GameObject), false);
-
-        if (fillFromFile)
+        if (GUILayout.Button("Fill Variants From File"))
         {
-            FillFromFile(meshAsset);
-            meshAsset = null;
+            var path = EditorUtility.OpenFilePanel("Mesh file", "", "");
+            if (path != null && path.Length > 0)
+            {
+                int index = path.IndexOf("/Assets/") + 1;
+                path = path.Substring(index);
+
+                var meshAsset = AssetDatabase.LoadAssetAtPath<Object>(path);
+                FillFromFile(meshAsset);
+            }
         }
 
         EditorGUILayout.Separator();

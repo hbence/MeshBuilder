@@ -33,11 +33,60 @@ namespace MeshBuilder
         private bool allowSelection = false;
         [SerializeField]
         private bool drawOpaque = false;
+        [SerializeField]
+        private bool liveEvaluation = false;
+
+        // lattice 
+        private SerializedProperty xLengthProp;
+        private SerializedProperty yLengthProp;
+        private SerializedProperty zLengthProp;
+        private SerializedProperty cellSizeProp;
+        private SerializedProperty targetProp;
 
         private void OnEnable()
         {
             selectedInfo = new SelectedInfo();
             clearSelection = false;
+
+            xLengthProp = serializedObject.FindProperty("xLength");
+            yLengthProp = serializedObject.FindProperty("yLength");
+            zLengthProp = serializedObject.FindProperty("zLength");
+            cellSizeProp = serializedObject.FindProperty("cellSize");
+            targetProp = serializedObject.FindProperty("target");
+        }
+
+        public override void OnInspectorGUI()
+        {
+            serializedObject.Update();
+
+            EditorGUILayout.PropertyField(xLengthProp);
+            EditorGUILayout.PropertyField(yLengthProp);
+            EditorGUILayout.PropertyField(zLengthProp);
+            EditorGUILayout.PropertyField(cellSizeProp);
+            EditorGUILayout.PropertyField(targetProp);
+
+            EditorGUILayout.Separator();
+
+            var lattice = target as LatticeGrid;
+            if (GUILayout.Button("Import Grid"))
+            {
+                var path = EditorUtility.OpenFilePanel("Open Grid", "", "asset");
+                if (path != null && path.Length > 0)
+                {
+                    lattice.LoadGrid(path);
+                }
+            }
+
+            if (GUILayout.Button("Export Grid"))
+            {
+                var path = EditorUtility.SaveFilePanelInProject("Save Grid", "vertex_grid", "asset", "Save vertex grid.");
+                if (path != null && path.Length > 0)
+                {
+                    lattice.SaveGrid(path);
+                }
+            }
+
+            serializedObject.ApplyModifiedProperties();
         }
 
         private void OnSceneGUI()
@@ -86,7 +135,8 @@ namespace MeshBuilder
         private void DrawScreenGUI(LatticeGrid lattice)
         {
             Handles.BeginGUI();
-            GUILayout.BeginArea(new Rect(5, 5, 140, 140));
+            int menuWidth = menuOpen ? 140 : 80;
+            GUILayout.BeginArea(new Rect(5, 5, menuWidth, 160));
             GUILayout.BeginVertical();
 
             if (GUILayout.Button(menuOpen ? "<<<" : "menu >>>", GUILayout.Height(20)))
@@ -121,8 +171,20 @@ namespace MeshBuilder
 
                 GUILayout.Space(10);
 
-                GUI.enabled = lattice.HasSnapshot;
-                label = GUI.enabled ? "evaluate vertices" : "evaluate vertices (no snapshot)";
+                GUI.enabled = true;
+                label = "live evaluation:" + (liveEvaluation ? "on" : "off");
+                if (GUILayout.Button(label))
+                {
+                    liveEvaluation = !liveEvaluation;
+                }
+
+                GUI.enabled = true;
+                label = "evaluate vertices";
+                if (!lattice.HasSnapshot)
+                {
+                    GUI.enabled = false;
+                    label = "evaluate vertices (no snapshot)";
+                }
                 if (GUILayout.Button(label))
                 {
                     lattice.UpdateTargetSnapshotVertices();
@@ -172,6 +234,14 @@ namespace MeshBuilder
                         foreach (int i in indices)
                         {
                             lattice.Grid.Vertices[i] += delta;
+                        }
+
+                        if (liveEvaluation)
+                        {
+                            if (lattice.HasSnapshot)
+                            {
+                                lattice.UpdateTargetSnapshotVertices();
+                            }
                         }
                     }
                 }
