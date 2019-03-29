@@ -37,7 +37,7 @@ public class Tester2D : MonoBehaviour
         Set(5, 7);
         Set(5, 8);
         Set(6, 6);
-        //Set(6, 7);
+        Set(6, 7);
         Set(6, 8);
         Set(7, 6);
         Set(7, 7);

@@ -5,35 +5,17 @@ namespace MeshBuilder
     [CreateAssetMenu(fileName = "theme_palette", menuName = "Custom/ThemePalette", order = 1)]
     public class TileThemePalette : ScriptableObject
     {
-        public TileTheme[] themes;
+        [SerializeField]
+        private TileTheme[] themes;
 
         private int[] openFlags;
 
-        private int usedByCount = 0;
-
-        public void BeginUse()
+        public void Init()
         {
-            ++usedByCount;
-            if (usedByCount == 1)
+            FillOpenFlagsArray();
+            foreach (var theme in themes)
             {
-                FillOpenFlagsArray();
-                foreach (var theme in themes)
-                {
-                    theme.Init();
-                }
-            }
-        }
-
-        public void EndUse()
-        {
-            --usedByCount;
-            if (usedByCount <= 0)
-            {
-                usedByCount = 0;
-                foreach (var theme in themes)
-                {
-                    theme.Destroy();
-                }
+                theme.Init();
             }
         }
         
@@ -48,6 +30,11 @@ namespace MeshBuilder
             if (themes.Length > 32)
             {
                 Debug.LogError("you have to either use less than 33 themes in this palette or reimplement the openFlags array IsFilled() check!");
+                return;
+            }
+
+            if (openFlags != null && openFlags.Length == themes.Length)
+            {
                 return;
             }
 
@@ -92,6 +79,8 @@ namespace MeshBuilder
         {
             return themes[index];
         }
+
+        public int ThemeCount { get { return themes != null ? themes.Length : 0; } }
 
         public bool IsFilled(byte themeIndex, byte otherIndex)
         {

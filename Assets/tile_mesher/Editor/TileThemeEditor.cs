@@ -16,6 +16,8 @@ public class TileThemeEditor : Editor
     private SerializedProperty openTowardsThemesProp;
     private SerializedProperty baseVariantsProp;
 
+    private AutoFillOptions fillOptions;
+
     private bool showBaseVariants;
 
     private void OnEnable()
@@ -24,6 +26,8 @@ public class TileThemeEditor : Editor
         typeProp = serializedObject.FindProperty("type");
         openTowardsThemesProp = serializedObject.FindProperty("openTowardsThemes");
         baseVariantsProp = serializedObject.FindProperty("baseVariants");
+
+        fillOptions = new AutoFillOptions();
     }
 
     public override void OnInspectorGUI()
@@ -50,6 +54,8 @@ public class TileThemeEditor : Editor
                 FillFromFile(meshAsset);
             }
         }
+
+        fillOptions.Show();
 
         EditorGUILayout.Separator();
         showBaseVariants = EditorGUILayout.Foldout(showBaseVariants, "Base Variants Array");
@@ -189,12 +195,41 @@ public class TileThemeEditor : Editor
         if (meshes.Count > 0)
         {
             TileTheme theme = (TileTheme)target;
-            theme.FillBaseVariantsFromMeshList(meshes);
+            if (fillOptions.UseOptions)
+            {
+                theme.FillBaseVariantsFromMeshList(meshes, fillOptions.filter, fillOptions.configPrefix);
+            }
+            else
+            {
+                theme.FillBaseVariantsFromMeshList(meshes, null, null);
+            }
             EditorUtility.SetDirty(theme);
         }
         else
         {
             Debug.LogError("Couldn't find any Mesh sub-asset in given Mesh Asset file:" + path);
         }
+    }
+
+    [System.Serializable]
+    public class AutoFillOptions
+    {
+        public string filter = "";
+        public string configPrefix = "";
+
+        private bool toggle = false;
+
+        public void Show()
+        {
+            toggle = EditorGUILayout.BeginToggleGroup("Use Auto Fill Options", toggle);
+            if (toggle)
+            {
+                filter = EditorGUILayout.TextField("Filter", filter);
+                configPrefix = EditorGUILayout.TextField("ConfigPrefix", configPrefix);
+            }
+            EditorGUILayout.EndToggleGroup();
+        }
+
+        public bool UseOptions { get { return toggle; } }
     }
 }

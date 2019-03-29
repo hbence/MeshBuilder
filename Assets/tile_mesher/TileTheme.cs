@@ -23,7 +23,7 @@ namespace MeshBuilder
     // center of a face) pay attention to it when making custom meshes
     [System.Serializable]
     [CreateAssetMenu(fileName = "tile_theme", menuName = "Custom/TileTheme", order = 1)]
-    public sealed partial class TileTheme : ScriptableObject
+    public sealed partial class TileTheme : ScriptableObject, System.IDisposable
     {
         public const int Type2DConfigCount = 16;
         public const int Type3DConfigCount = 256;
@@ -56,6 +56,8 @@ namespace MeshBuilder
         private NativeArray<ConfigTransformGroup> configs;
         public NativeArray<ConfigTransformGroup> Configs { get { return configs; } }
 
+        private int refCount = 0;
+
         public void Init()
         {
             VerifyBaseVariants();
@@ -68,11 +70,43 @@ namespace MeshBuilder
             }
         }
 
-        public void Destroy()
+        public void Dispose()
         {
             if (configs.IsCreated)
             {
                 configs.Dispose();
+            }
+
+            refCount = 0;
+        }
+
+        private void OnEnable()
+        {
+            refCount = 0;
+        }
+
+        private void OnDisable()
+        {
+            Dispose();
+        }
+
+        public void Retain()
+        {
+            if (!configs.IsCreated)
+            {
+                Init();
+            }
+
+            ++refCount;
+        }
+
+        public void Release()
+        {
+            --refCount;
+
+            if (refCount <= 0)
+            {
+                Dispose();
             }
         }
 
@@ -80,7 +114,7 @@ namespace MeshBuilder
         {
             if (baseVariants == null || baseVariants.Length == 0)
             {
-                Debug.LogWarning(themeName + " theme has no base mesh pieces!");
+                LogWarning("theme has no base mesh pieces!");
                 return;
             }
 
@@ -89,14 +123,14 @@ namespace MeshBuilder
                 var baseVar = BaseVariants[i];
                 if (baseVar.Variants == null || baseVar.Variants.Length == 0)
                 {
-                    Debug.LogWarning(themeName + " theme has base variant with zero meshes!");
+                    LogWarning("theme has base variant with zero meshes!");
                 }
 
                 for (int j = i + 1; j < baseVariants.Length; ++j)
                 {
                     if (baseVar.PieceConfig == baseVariants[j].PieceConfig)
                     {
-                        Debug.LogWarning(themeName + " theme has multiple base variants with matching configuration!");
+                        LogWarning("theme has multiple base variants with matching configuration!");
                     }
                 }
             }
@@ -106,7 +140,7 @@ namespace MeshBuilder
         {
             List<int> nullConfigs = new List<int>();
             // the first and last cases are empty (void and inside a mesh)
-            for (int i = 1; i < configs.Length - 1; ++i)
+            for (int i = 1; i < configs.Length; ++i)
             {
                 configs[i] = TileConfigurationBuilder.Decompose((byte)i, baseVariants);
                 if (i > 0 && configs[i].Count == 0)
@@ -116,11 +150,10 @@ namespace MeshBuilder
             }
 
             configs[0] = NullTransformGroup;
-            configs[configs.Length - 1] = NullTransformGroup;
 
             if (nullConfigs.Count > 0)
             {
-                Debug.LogWarning("There are uncovered configurations!");
+                LogWarning("There are uncovered configurations!");
                 foreach (var c in nullConfigs)
                 {
                     Debug.LogWarning("config: " + c);
@@ -130,7 +163,7 @@ namespace MeshBuilder
 
         private void OnDestroy()
         {
-            Destroy();
+            Dispose();
         }
         
         public ConfigTransformGroup GetConfigTransform(int config)
@@ -138,66 +171,103 @@ namespace MeshBuilder
             return configs[config];
         }
 
-        public void FillBaseVariantsFromMeshList(List<Mesh> meshes)
+        public void FillBaseVariantsFromMeshList(List<Mesh> meshes, string filter, string configPrefix)
         {
-            List<BaseMeshVariants> results = new List<BaseMeshVariants>();
+            List<VariantInfo> results = new List<VariantInfo>();
             for (int i = 0; i < meshes.Count; ++i)
             {
                 var mesh = meshes[i];
+
+                if (filter != null && filter.Length > 0 && !mesh.name.Contains(filter))
+                {
+                    continue;
+                }
+
                 byte top = 0;
                 byte bottom = 0;
-                if (FindConfigFromMeshName(mesh.name, out top, out bottom))
+                if (FindConfigFromMeshName(mesh.name, out top, out bottom, configPrefix))
                 {
-                    List<Mesh> variants = new List<Mesh>();
-                    variants.Add(mesh);
-                    for (int j = meshes.Count - 1; j > i; --j)
-                    {
-                        var variant = meshes[j];
-                        byte otherTop = 0;
-                        byte otherBottom = 0;
-                        if (FindConfigFromMeshName(variant.name, out otherTop, out otherBottom))
-                        {
-                            if (top == otherTop && bottom == otherBottom)
-                            {
-                                variants.Add(variant);
-                                meshes.RemoveAt(j);
-                            }
-                        }
-                    }
+                    bool added = false;
                     top = (byte)(top >> 4);
                     Piece topPiece = Tile.ToPiece(top);
                     Piece bottomPiece = Tile.ToPiece(bottom);
-                    results.Add(new BaseMeshVariants(topPiece, bottomPiece, variants.ToArray()));
+                    foreach (var info in results)
+                    {
+                        if (info.IsVariant(topPiece, bottomPiece))
+                        {
+                            info.Add(mesh);
+                            added = true;
+                            break;
+                        }
+                    }
+
+                    if (!added)
+                    {
+                        results.Add(new VariantInfo(topPiece, bottomPiece, mesh));
+                    }
                 }
                 else
                 {
-                    Debug.LogWarning("Couldn't find configuration in mesh name:" + mesh.name);
+                    LogWarning("Couldn't find configuration in mesh name:" + mesh.name);
                 }
             }
 
             if (results.Count > 0)
             {
-                baseVariants = results.ToArray();
+                baseVariants = new BaseMeshVariants[results.Count];
+
+                for (int i = 0; i < baseVariants.Length; ++i)
+                {
+                    baseVariants[i] = results[i].ToBaseMeshVariants();
+                }
+
                 VerifyBaseVariants();
             }
             else
             {
-                Debug.LogWarning("Couldn't find any mesh variants!");
+                LogWarning("Couldn't find any mesh variants!");
             }
         }
 
-        private byte TopMask = 0b11110000;
-        private byte BottomMask = 0b00001111;
+        private void LogWarning(string msg)
+        {
+            Debug.LogWarning(themeName + ": " + msg);
+        }
+
+        public bool Is2DTheme { get { return Is2DType(type); } }
+        public bool Is3DTheme { get { return !Is2DType(type); } }
+
+        private class VariantInfo
+        {
+            public Piece Top { get; private set; } 
+            public Piece Bottom { get; private set; } 
+            public List<Mesh> Meshes { get; private set; }
+
+            public VariantInfo(Piece top, Piece bottom, Mesh mesh)
+            {
+                Top = top;
+                Bottom = bottom;
+                Meshes = new List<Mesh>();
+                Meshes.Add(mesh);
+            }
+
+            public bool IsVariant(Piece top, Piece bottom) { return Top == top && Bottom == bottom; }
+            public void Add(Mesh mesh) { Meshes.Add(mesh); }
+            public BaseMeshVariants ToBaseMeshVariants() { return new BaseMeshVariants(Top, Bottom, Meshes.ToArray()); }
+        }
+
+        private const byte TopMask = 0b11110000;
+        private const byte BottomMask = 0b00001111;
 
         /// <summary>
         /// Find the configuration of a piece based on the mesh name.
         /// The configuration in the name has to be an uninterrupted substring of 1s and 0s,
-        /// 4 or 8 character long. If there are multiple substrings like that, the last will be used.
+        /// 4 or 8 character long. If there are multiple substrings like that, the first will be used.
         /// </summary>
         /// <param name="name">The name of the mesh where it is checking.</param>
         /// <param name="config">The configuration it found.</param>
         /// <returns>true if found a valid configuration</returns>
-        private bool FindConfigFromMeshName(string name, out byte top, out byte bottom)
+        static private bool FindConfigFromMeshName(string name, out byte top, out byte bottom, string prefix)
         {
             bool found = false;
             top = 0;
@@ -206,7 +276,8 @@ namespace MeshBuilder
             byte current = 0;
             int count = 0;
 
-            for (int i = 0; i < name.Length; ++i)
+            int startIndex = (prefix == null || prefix.Length == 0) ? 0 : name.IndexOf(prefix) + prefix.Length;
+            for (int i = startIndex; i < name.Length; ++i)
             {
                 var c = name[i];
                 if (c == '0')
@@ -234,8 +305,11 @@ namespace MeshBuilder
                         bottom = (byte)(current & BottomMask);
                         found = true;
                     }
-                    current = 0;
-                    count = 0;
+
+                    if (count >= 8)
+                    {
+                        break;
+                    }
                 }
             }
 
@@ -257,23 +331,23 @@ namespace MeshBuilder
 
         static public int GetTypeConfigCount(Type type)
         {
+            return Is2DType(type) ? Type2DConfigCount : Type3DConfigCount;
+        }
+
+        static public bool Is2DType(Type type)
+        {
             switch (type)
             {
-                case Type.Type2DFull: return Type2DConfigCount;
-                case Type.Type2DSimple: return Type2DConfigCount;
-                case Type.Type2DCustom: return Type2DConfigCount;
+                case Type.Type2DFull: return true;
+                case Type.Type2DSimple: return true;
+                case Type.Type2DCustom: return true;
 
-                case Type.Type3DFull: return Type3DConfigCount;
-                default:
-                    {
-                        Debug.LogError("Type:" + type + " has no piece count set!");
-                        break;
-                    }
+                case Type.Type3DFull: return false;
             }
-
-            return Type3DConfigCount;
+            Debug.LogWarning("case not handled!");
+            return false;
         }
-        
+
         [System.Serializable]
         public class BaseMeshVariants
         {

@@ -715,5 +715,21 @@ namespace MeshBuilder
             public MeshInstance mesh2;
             public MeshInstance mesh3;
         }
+
+        /// <summary>
+        /// variant data in a variant volume, this contains all the possible variants for every mesher
+        /// (if 8 different themes touch corners, 8 meshers will draw at that position)
+        /// </summary>
+        public struct VariantData
+        {
+            byte variant0;
+            byte variant1;
+            byte variant2;
+            byte variant3;
+            byte variant4;
+            byte variant5;
+            byte variant6;
+            byte variant7;
+        }
     }
 }

@@ -17,21 +17,21 @@ using Direction = MeshBuilder.Tile.Direction;
 
 namespace MeshBuilder
 {
-    public class TileMesher2D : TileMesherBase<TileMesher2D.TileMeshData>
+    public class TileMesher2D : TileMesherBase<TileMesher2D.TileMeshData>, System.IDisposable
     {
         private const string DefaultName = "tile_mesh_2d";
         static private readonly Settings DefaultSettings = new Settings { };
 
         // INITIAL DATA
-        private TileTheme theme;
-        private DataVolume data;
-        private Settings settings;
+        public TileTheme Theme { get; private set; }
+        public DataVolume Data { get; private set; }
+        public Settings MesherSettings { get; private set; }
 
         // in the data volume we're generating the mesh
         // for this value
-        private int themeIndex;
+        public int ThemeIndex { get; private set; }
 
-        private int yLevel;
+        public int YLevel { get; private set; }
 
         private Extents dataExtents;
         private Extents tileExtents;
@@ -54,21 +54,37 @@ namespace MeshBuilder
 
         public void Init(DataVolume dataVolume, int yLevel, int themeIndex, TileThemePalette themePalette)
         {
-            Init(dataVolume, yLevel, themeIndex, themePalette, DefaultSettings);
+            var theme = themePalette.Get(themeIndex);
+            Init(dataVolume, yLevel, themeIndex, theme, themePalette, DefaultSettings);
         }
 
-        public void Init(DataVolume dataVolume, int yLevel, int themeIndex, TileThemePalette themePalette, Settings settings)
+        public void Init(DataVolume dataVolume, int yLevel, int themeIndex, TileTheme theme, Settings settings = null)
+        {
+            Init(dataVolume, yLevel, themeIndex, theme, null, settings);
+        }
+
+        public void Init(DataVolume dataVolume, int yLevel, int themeIndex, TileTheme theme, TileThemePalette themePalette, Settings settings = null)
         {
             Dispose();
 
-            this.data = dataVolume;
-            this.ThemePalette = themePalette;
-            this.theme = themePalette.Get(themeIndex);
-            this.yLevel = Mathf.Clamp(yLevel, 0, dataVolume.YLength - 1);
-            this.themeIndex = themeIndex;
-            this.settings = settings;
+            Data = dataVolume;
+            ThemePalette = themePalette;
+            YLevel = Mathf.Clamp(yLevel, 0, dataVolume.YLength - 1);
+            ThemeIndex = themeIndex;
+            MesherSettings = settings != null ? settings : new Settings();
 
-            if (this.yLevel != yLevel)
+            if (Theme != theme)
+            {
+                if (Theme != null)
+                {
+                    Theme.Release();
+                }
+
+                Theme = theme;
+                Theme.Retain();
+            }
+
+            if (YLevel != yLevel)
             {
                 Error("yLevel is out of bounds:" + yLevel + " it is clamped!");
             }
@@ -80,9 +96,9 @@ namespace MeshBuilder
                 return;
             }
 
-            int x = data.XLength;
-            int y = data.YLength;
-            int z = data.ZLength;
+            int x = Data.XLength;
+            int y = Data.YLength;
+            int z = Data.ZLength;
             dataExtents = new Extents(x, y, z);
             tileExtents = new Extents(x + 1, 1, z + 1);
 
@@ -108,7 +124,7 @@ namespace MeshBuilder
 
                 tileMeshes = new Volume<MeshTile>(tileExtents);
 
-                lastHandle = ScheduleTileGeneration(tiles, data, 64, lastHandle);
+                lastHandle = ScheduleTileGeneration(tiles, Data, 64, lastHandle);
             }
 
             if (HasTilesData && HasTileMeshes)
@@ -129,7 +145,7 @@ namespace MeshBuilder
         {
             if (tempInstanceList.IsCreated)
             {
-                CombineMeshes(Mesh, tempInstanceList, theme);
+                CombineMeshes(Mesh, tempInstanceList, Theme);
             }
 
             if (state == State.Generating)
@@ -157,6 +173,12 @@ namespace MeshBuilder
                 tileMeshes.Dispose();
                 tileMeshes = null;
             }
+
+            if (Theme != null)
+            {
+                Theme.Release();
+                Theme = null;
+            }
         }
 
         private JobHandle ScheduleTileGeneration(TileVolume resultTiles, DataVolume data, int batchCount, JobHandle dependOn)
@@ -165,9 +187,9 @@ namespace MeshBuilder
             {
                 tileExtents = tileExtents,
                 dataExtents = dataExtents,
-                themeIndex = themeIndex,
-                yLevel = yLevel,
-                configs = theme.Configs,
+                themeIndex = ThemeIndex,
+                yLevel = YLevel,
+                configs = Theme.Configs,
                 data = data.Data,
                 tiles = resultTiles.Data
             };
@@ -456,6 +478,18 @@ namespace MeshBuilder
 
             public MeshInstance mesh0;
             public MeshInstance mesh1;
+        }
+
+        /// <summary>
+        /// variant data in a variant volume, this contains all the possible variants for every mesher
+        /// (if four different themes touch corners, four meshers will draw at that position)
+        /// </summary>
+        public struct VariantData
+        {
+            byte variant0;
+            byte variant1;
+            byte variant2;
+            byte variant3;
         }
     }
 }
