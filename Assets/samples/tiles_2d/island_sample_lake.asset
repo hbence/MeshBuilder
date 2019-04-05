@@ -16,17 +16,17 @@ MonoBehaviour:
   openTowardsThemes: []
   baseVariants:
   - topConfig: 0
-    bottomConfig: 4
+    bottomConfig: 2
     variants:
-    - {fileID: 4300050, guid: 4aca70af02bd9634c9ab29390caddea8, type: 3}
+    - {fileID: 4300056, guid: 4aca70af02bd9634c9ab29390caddea8, type: 3}
   - topConfig: 0
-    bottomConfig: 5
+    bottomConfig: 10
     variants:
-    - {fileID: 4300052, guid: 4aca70af02bd9634c9ab29390caddea8, type: 3}
+    - {fileID: 4300058, guid: 4aca70af02bd9634c9ab29390caddea8, type: 3}
   - topConfig: 0
-    bottomConfig: 13
+    bottomConfig: 11
     variants:
-    - {fileID: 4300054, guid: 4aca70af02bd9634c9ab29390caddea8, type: 3}
+    - {fileID: 4300060, guid: 4aca70af02bd9634c9ab29390caddea8, type: 3}
   - topConfig: 0
     bottomConfig: 15
     variants:

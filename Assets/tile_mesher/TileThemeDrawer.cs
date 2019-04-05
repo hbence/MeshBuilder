@@ -162,7 +162,10 @@ namespace MeshBuilder
                         int smIndex = Mathf.Min(i, subMeshInfo.Length - 1);
                         var smInfo = subMeshInfo[smIndex];
 
-                        Graphics.DrawMesh(mesh, transform.localToWorldMatrix, smInfo.Material, layer, cam, i, prop, smInfo.CastShadows, smInfo.RecieveShadows);
+                        if (smInfo.Material != null)
+                        {
+                            Graphics.DrawMesh(mesh, transform.localToWorldMatrix, smInfo.Material, layer, cam, i, prop, smInfo.CastShadows, smInfo.RecieveShadows);
+                        }
                     }
                 }
             }

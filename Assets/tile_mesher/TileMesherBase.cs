@@ -147,6 +147,7 @@ namespace MeshBuilder
 
         /// <summary>
         /// Combines the mesh instance array int a single mesh, using the base pieces from the theme.
+        /// It merges the submeshes properly (a submesh in the piece will be in the same submesh in the result mesh).
         /// </summary>
         /// <param name="mesh">The result will be generated into this</param>
         /// <param name="instanceData">Input data. NOTE: the MeshInstance structs have to be initialized, except for the mesh field of the CombineInstance struct, this will be set from the theme.</param>
@@ -154,24 +155,57 @@ namespace MeshBuilder
         static protected void CombineMeshes(Mesh mesh, NativeArray<MeshInstance> instanceData, TileTheme theme)
         {
             var basePieces = theme.BaseVariants;
-            var instanceArray = new CombineInstance[instanceData.Length];
-            for (int i = 0; i < instanceData.Length; ++i)
+            using (var combineList = new NativeList<CombineInstance>(instanceData.Length, Allocator.Temp))
+            using (var currentList = new NativeList<CombineInstance>(instanceData.Length, Allocator.Temp))
             {
-                var data = instanceData[i];
+                int maxSubMeshCount = 0;
+                for (int i = 0; i < instanceData.Length; ++i)
+                {
+                    var data = instanceData[i];
 
-                if (data.basePieceIndex >= 0)
-                {
-                    var variants = basePieces[data.basePieceIndex].Variants;
-                    data.instance.mesh = variants[data.variantIndex];
-                    instanceArray[i] = data.instance;
+                    if (data.basePieceIndex >= 0)
+                    {
+                        var variants = basePieces[data.basePieceIndex].Variants;
+                        var variantMesh = variants[data.variantIndex];
+
+                        if (variantMesh != null)
+                        {
+                            maxSubMeshCount = Mathf.Max(maxSubMeshCount, variantMesh.subMeshCount);
+                            for (int subIndex = 0; subIndex < variantMesh.subMeshCount; ++subIndex)
+                            {
+                                var combineInstance = data.instance;
+                                combineInstance.mesh = variantMesh;
+                                combineInstance.subMeshIndex = subIndex;
+                                combineList.Add(combineInstance);
+                            }
+                        }
+                    }
                 }
-                else
+
+                CombineInstance[] submeshInstArray = new CombineInstance[maxSubMeshCount];
+
+                int currentSubIndex = 0;
+                while (combineList.Length > 0 && currentSubIndex < maxSubMeshCount)
                 {
-                    instanceArray[i].mesh = NullMesh;
+                    currentList.Clear();
+                    for (int i = combineList.Length - 1; i >= 0 ; --i)
+                    {
+                        if (combineList[i].subMeshIndex == currentSubIndex)
+                        {
+                            currentList.Add(combineList[i]);
+                            combineList.RemoveAtSwapBack(i);
+                        }
+                    }
+
+                    var subMesh = new Mesh();
+                    subMesh.CombineMeshes(currentList.ToArray(), true, true);
+                    submeshInstArray[currentSubIndex] = new CombineInstance { mesh = subMesh };
+
+                    ++currentSubIndex;
                 }
+
+                mesh.CombineMeshes(submeshInstArray, false, false);
             }
-
-            mesh.CombineMeshes(instanceArray, true, true);
         }
 
         protected void Warning(string msg, params object[] args)

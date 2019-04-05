@@ -32,6 +32,9 @@ ModelImporter:
     100052: lake_0101
     100054: lake_1101
     100056: lake_1111
+    100058: lake_0010
+    100060: lake_1010
+    100062: lake_1011
     400000: 2d_template_case_0100
     400002: 2d_template_case_0101
     400004: 2d_template_case_1101
@@ -61,6 +64,9 @@ ModelImporter:
     400052: lake_0101
     400054: lake_1101
     400056: lake_1111
+    400058: lake_0010
+    400060: lake_1010
+    400062: lake_1011
     2100000: Material__island_tex_psd
     2100002: None__island_tex_psd
     2100004: unnamed
@@ -95,6 +101,9 @@ ModelImporter:
     2300050: lake_0101
     2300052: lake_1101
     2300054: lake_1111
+    2300056: lake_0010
+    2300058: lake_1010
+    2300060: lake_1011
     3300000: 2d_template_case_0100
     3300002: 2d_template_case_0101
     3300004: 2d_template_case_1101
@@ -123,6 +132,9 @@ ModelImporter:
     3300050: lake_0101
     3300052: lake_1101
     3300054: lake_1111
+    3300056: lake_0010
+    3300058: lake_1010
+    3300060: lake_1011
     4300000: water_0100
     4300002: water_0101
     4300004: water_1101
@@ -151,6 +163,9 @@ ModelImporter:
     4300050: lake_0100
     4300052: lake_0101
     4300054: lake_1101
+    4300056: lake_0010
+    4300058: lake_1010
+    4300060: lake_1011
     7400000: Default Take
     9500000: //RootNode
   externalObjects: {}
@@ -208,7 +223,7 @@ ModelImporter:
     hasPreviousCalculatedGlobalScale: 1
   tangentSpace:
     normalSmoothAngle: 60
-    normalImportMode: 0
+    normalImportMode: 1
     tangentImportMode: 3
     normalCalculationMode: 4
   importAnimation: 0
