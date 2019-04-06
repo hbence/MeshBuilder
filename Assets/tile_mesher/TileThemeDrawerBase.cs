@@ -5,33 +5,29 @@ namespace MeshBuilder
     /// <summary>
     /// component for drawing a tile data volume with a single theme
     /// </summary>
-    public class TileThemeDrawer : MonoBehaviour, System.IDisposable
+    public abstract class TileThemeDrawerBase : MonoBehaviour, System.IDisposable
     {
         [SerializeField]
-        private TileDataAsset tileData;
+        protected TileDataAsset tileData;
         public TileDataAsset TileData { get { return tileData; } set { tileData = value; NeedsToRebuild(); } }
-        
+
         [SerializeField]
-        private TileTheme theme;
+        protected TileTheme theme;
         public TileTheme Theme { get { return theme; } set { theme = value; NeedsToRebuild(); } }
 
         [SerializeField]
-        private int themeIndex;
+        protected int themeIndex;
         public int ThemeIndex { get { return themeIndex; } set { themeIndex = value; NeedsToRebuild(); } }
 
         [SerializeField]
-        private int yLevel;
-        public int YLevel { get { return yLevel; } set { yLevel = value; NeedsToRebuild(); } }
-
-        [SerializeField]
-        private ThemeRenderInfo themeRender;
+        protected ThemeRenderInfo themeRender;
         public ThemeRenderInfo ThemeRender { get { return themeRender; } }
-        
-        private IMeshBuilder mesher;
+
+        protected IMeshBuilder mesher;
 
         private bool needsToRebuild = true;
 
-        private void Update()
+        virtual protected void Update()
         {
             if (needsToRebuild)
             {
@@ -41,49 +37,7 @@ namespace MeshBuilder
             }
         }
 
-        private void InitMesher()
-        {
-            if (mesher != null)
-            {
-                if (mesher is TileMesher2D && theme.Is3DTheme)
-                {
-                    (mesher as TileMesher2D).Dispose();
-                    mesher = null;
-                }
-                if (mesher is TileMesher3D && theme.Is2DTheme)
-                {
-                    (mesher as TileMesher3D).Dispose();
-                    mesher = null;
-                }
-            }
-
-            if (mesher == null)
-            {
-                if (theme.Is2DTheme)
-                {
-                    mesher = new TileMesher2D(theme.ThemeName + "_mesher");
-                }
-                else if (theme.Is3DTheme)
-                {
-                    mesher = new TileMesher3D(theme.ThemeName + "_mesher");
-                }
-            }
-
-            if (tileData.CachedTileData == null)
-            {
-                tileData.InitCache();
-            }
-
-            if (mesher is TileMesher2D)
-            {
-                (mesher as TileMesher2D).Init(tileData.CachedTileData, yLevel, themeIndex, theme);
-            }
-            else if (mesher is TileMesher3D)
-            {
-                //TODO: implement it!
-                Debug.LogError("NOT IMPLEMENTED!");
-            }
-        }
+        abstract protected void InitMesher();
 
         private void LateUpdate()
         {
@@ -124,8 +78,7 @@ namespace MeshBuilder
         {
             if (mesher != null)
             {
-                if (mesher is TileMesher2D) (mesher as TileMesher2D).Dispose();
-                if (mesher is TileMesher3D) (mesher as TileMesher3D).Dispose();
+                mesher.Dispose();
                 mesher = null;
             }
 
@@ -139,6 +92,9 @@ namespace MeshBuilder
         {
             needsToRebuild = true;
         }
+
+        public bool IsGenerating { get { return mesher != null && mesher.IsGenerating; } }
+        public Mesh Mesh { get { return mesher != null ? mesher.Mesh : null; } }
 
         [System.Serializable]
         public class ThemeRenderInfo

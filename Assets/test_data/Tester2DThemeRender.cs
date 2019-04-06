@@ -7,7 +7,7 @@ using MeshBuilder;
 public class Tester2DThemeRender : MonoBehaviour
 {
     private TileDataAsset data;
-    public TileThemeDrawer drawer;
+    public TileThemeDrawer2D drawer;
 
 	void Awake()
     {

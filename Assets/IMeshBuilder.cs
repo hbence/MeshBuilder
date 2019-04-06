@@ -1,7 +1,7 @@
 ﻿
 using UnityEngine;
 
-public interface IMeshBuilder
+public interface IMeshBuilder : System.IDisposable
 {
     Mesh Mesh { get; }
 
