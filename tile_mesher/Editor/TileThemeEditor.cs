@@ -3,233 +3,235 @@
 using UnityEditor;
 using UnityEngine;
 
-using Piece = MeshBuilder.Tile.Piece;
-using TileTheme = MeshBuilder.TileTheme;
-
-[CustomEditor(typeof(MeshBuilder.TileTheme))]
-public class TileThemeEditor : Editor
+namespace MeshBuilder
 {
-    private const bool ExpandChildren = true;
+    using Piece = Tile.Piece;
 
-    private SerializedProperty themeNameProp;
-    private SerializedProperty typeProp;
-    private SerializedProperty openTowardsThemesProp;
-    private SerializedProperty baseVariantsProp;
-
-    private AutoFillOptions fillOptions;
-
-    private bool showBaseVariants;
-
-    private void OnEnable()
+    [CustomEditor(typeof(TileTheme))]
+    public class TileThemeEditor : Editor
     {
-        themeNameProp = serializedObject.FindProperty("themeName");
-        typeProp = serializedObject.FindProperty("type");
-        openTowardsThemesProp = serializedObject.FindProperty("openTowardsThemes");
-        baseVariantsProp = serializedObject.FindProperty("baseVariants");
+        private const bool ExpandChildren = true;
 
-        fillOptions = new AutoFillOptions();
-    }
+        private SerializedProperty themeNameProp;
+        private SerializedProperty typeProp;
+        private SerializedProperty openTowardsThemesProp;
+        private SerializedProperty baseVariantsProp;
 
-    public override void OnInspectorGUI()
-    {
-        serializedObject.Update();
+        private AutoFillOptions fillOptions;
 
-        EditorGUILayout.PropertyField(themeNameProp);
-        EditorGUILayout.PropertyField(typeProp);
-        EditorGUILayout.PropertyField(openTowardsThemesProp, true);
+        private bool showBaseVariants;
 
-        EditorGUILayout.Separator();
-        EditorGUILayout.LabelField("Base Pieces", EditorStyles.boldLabel);
-        EditorGUILayout.Separator();
-
-        if (GUILayout.Button("Fill Variants From File"))
+        private void OnEnable()
         {
-            var path = EditorUtility.OpenFilePanel("Mesh file", "", "");
-            if (path != null && path.Length > 0)
-            {
-                int index = path.IndexOf("/Assets/") + 1;
-                path = path.Substring(index);
+            themeNameProp = serializedObject.FindProperty("themeName");
+            typeProp = serializedObject.FindProperty("type");
+            openTowardsThemesProp = serializedObject.FindProperty("openTowardsThemes");
+            baseVariantsProp = serializedObject.FindProperty("baseVariants");
 
-                var meshAsset = AssetDatabase.LoadAssetAtPath<Object>(path);
-                FillFromFile(meshAsset);
-            }
+            fillOptions = new AutoFillOptions();
         }
 
-        fillOptions.Show();
-
-        EditorGUILayout.Separator();
-        showBaseVariants = EditorGUILayout.Foldout(showBaseVariants, "Base Variants Array");
-        if (showBaseVariants)
+        public override void OnInspectorGUI()
         {
-            DisplayBaseVariantsArray();
+            serializedObject.Update();
 
-            if (GUILayout.Button("Add New Piece"))
-            {
-                ++baseVariantsProp.arraySize;
-            }
-        }
-
-        serializedObject.ApplyModifiedProperties();
-    }
-
-    private void DisplayBaseVariantsArray()
-    {
-        for (int i = 0; i < baseVariantsProp.arraySize; ++i)
-        {
-            bool remove = false;
-            var child = baseVariantsProp.GetArrayElementAtIndex(i);
-            DisplayBaseVariant(child, out remove);
-
-            if (remove)
-            {
-                baseVariantsProp.DeleteArrayElementAtIndex(i);
-                break;
-            }
-        }
-    }
-
-    private void DisplayBaseVariant(SerializedProperty prop, out bool remove)
-    {
-        remove = false;
-
-        bool has = prop.NextVisible(ExpandChildren);
-        if (has)
-        {
-            EditorGUI.indentLevel += 1;
-
-            var topProp = prop.Copy();
-            prop.NextVisible(ExpandChildren);
-            var bottomProp = prop.Copy();
-            prop.NextVisible(ExpandChildren);
-            var arrayProp = prop;
-
-            // name and remove button
-            EditorGUILayout.BeginHorizontal();
-            string labelName = CreatePieceName(topProp, bottomProp, arrayProp);
-            GUILayout.Label(labelName,  EditorStyles.boldLabel);
-
-            if (GUILayout.Button("X", GUILayout.Width(20)))
-            {
-                remove = true;
-            }
-            
-            EditorGUILayout.EndHorizontal();
-
-            // configurations
-            EditorGUILayout.BeginHorizontal();
-
-            DisplayPieceProp("top", 40, topProp);
-            GUILayout.Space(-15);
-            DisplayPieceProp("bottom", 60, bottomProp);            
-
-            EditorGUILayout.EndHorizontal();
-
-            // variant mesh array
-            EditorGUI.indentLevel += 1;
-            EditorGUILayout.PropertyField(arrayProp, ExpandChildren);
-            EditorGUI.indentLevel -= 1;
-            EditorGUI.indentLevel -= 1;
+            EditorGUILayout.PropertyField(themeNameProp);
+            EditorGUILayout.PropertyField(typeProp);
+            EditorGUILayout.PropertyField(openTowardsThemesProp, true);
 
             EditorGUILayout.Separator();
-        }
-    }
+            EditorGUILayout.LabelField("Base Pieces", EditorStyles.boldLabel);
+            EditorGUILayout.Separator();
 
-    private void DisplayPieceProp(string label, int labelWidth, SerializedProperty prop)
-    {
-        EditorGUILayout.LabelField(label, GUILayout.Width(labelWidth));
-
-        GUILayout.Space(-15);
-
-        var value = EditorGUILayout.EnumPopup((Piece)prop.enumValueIndex);
-        prop.enumValueIndex = System.Convert.ToByte(value);
-    }
-
-    private string CreatePieceName(SerializedProperty top, SerializedProperty bottom, SerializedProperty array)
-    {
-        var pieceValues = System.Enum.GetValues(typeof(Piece));
-
-        Piece topPiece = (Piece) pieceValues.GetValue(top.enumValueIndex);
-        Piece bottomPiece = (Piece) pieceValues.GetValue(bottom.enumValueIndex);
-
-        return "Piece " + ToString(topPiece) + "_" + ToString(bottomPiece) + " variants:" + array.arraySize;
-    }
-    
-    private string ToString(Piece piece)
-    {
-        string result = "";
-        byte value = (byte)piece;
-
-        int index = 3;
-
-        result += (value & (1 << index)) > 0 ? "1" : "0";
-        --index;
-        result += (value & (1 << index)) > 0 ? "1" : "0";
-        --index;
-        result += (value & (1 << index)) > 0 ? "1" : "0";
-        --index;
-        result += (value & (1 << index)) > 0 ? "1" : "0";
-
-        return result;
-    }
-
-    private void FillFromFile(Object obj)
-    {
-        if (obj == null)
-        {
-            Debug.LogError("Set a Mesh Asset File first!");
-            return;
-        }
-
-        List<Mesh> meshes = new List<Mesh>();
-
-        string path = AssetDatabase.GetAssetPath(obj);
-        var assets = AssetDatabase.LoadAllAssetRepresentationsAtPath(path);
-        foreach (var asset in assets)
-        {
-            if (asset is Mesh)
+            if (GUILayout.Button("Fill Variants From File"))
             {
-                meshes.Add(asset as Mesh);
+                var path = EditorUtility.OpenFilePanel("Mesh file", "", "");
+                if (path != null && path.Length > 0)
+                {
+                    int index = path.IndexOf("/Assets/") + 1;
+                    path = path.Substring(index);
+
+                    var meshAsset = AssetDatabase.LoadAssetAtPath<Object>(path);
+                    FillFromFile(meshAsset);
+                }
+            }
+
+            fillOptions.Show();
+
+            EditorGUILayout.Separator();
+            showBaseVariants = EditorGUILayout.Foldout(showBaseVariants, "Base Variants Array");
+            if (showBaseVariants)
+            {
+                DisplayBaseVariantsArray();
+
+                if (GUILayout.Button("Add New Piece"))
+                {
+                    ++baseVariantsProp.arraySize;
+                }
+            }
+
+            serializedObject.ApplyModifiedProperties();
+        }
+
+        private void DisplayBaseVariantsArray()
+        {
+            for (int i = 0; i < baseVariantsProp.arraySize; ++i)
+            {
+                bool remove = false;
+                var child = baseVariantsProp.GetArrayElementAtIndex(i);
+                DisplayBaseVariant(child, out remove);
+
+                if (remove)
+                {
+                    baseVariantsProp.DeleteArrayElementAtIndex(i);
+                    break;
+                }
             }
         }
 
-        if (meshes.Count > 0)
+        private void DisplayBaseVariant(SerializedProperty prop, out bool remove)
         {
-            TileTheme theme = (TileTheme)target;
-            if (fillOptions.UseOptions)
+            remove = false;
+
+            bool has = prop.NextVisible(ExpandChildren);
+            if (has)
             {
-                theme.FillBaseVariantsFromMeshList(meshes, fillOptions.filter, fillOptions.configPrefix);
+                EditorGUI.indentLevel += 1;
+
+                var topProp = prop.Copy();
+                prop.NextVisible(ExpandChildren);
+                var bottomProp = prop.Copy();
+                prop.NextVisible(ExpandChildren);
+                var arrayProp = prop;
+
+                // name and remove button
+                EditorGUILayout.BeginHorizontal();
+                string labelName = CreatePieceName(topProp, bottomProp, arrayProp);
+                GUILayout.Label(labelName, EditorStyles.boldLabel);
+
+                if (GUILayout.Button("X", GUILayout.Width(20)))
+                {
+                    remove = true;
+                }
+
+                EditorGUILayout.EndHorizontal();
+
+                // configurations
+                EditorGUILayout.BeginHorizontal();
+
+                DisplayPieceProp("top", 40, topProp);
+                GUILayout.Space(-15);
+                DisplayPieceProp("bottom", 60, bottomProp);
+
+                EditorGUILayout.EndHorizontal();
+
+                // variant mesh array
+                EditorGUI.indentLevel += 1;
+                EditorGUILayout.PropertyField(arrayProp, ExpandChildren);
+                EditorGUI.indentLevel -= 1;
+                EditorGUI.indentLevel -= 1;
+
+                EditorGUILayout.Separator();
+            }
+        }
+
+        private void DisplayPieceProp(string label, int labelWidth, SerializedProperty prop)
+        {
+            EditorGUILayout.LabelField(label, GUILayout.Width(labelWidth));
+
+            GUILayout.Space(-15);
+
+            var value = EditorGUILayout.EnumPopup((Piece)prop.enumValueIndex);
+            prop.enumValueIndex = System.Convert.ToByte(value);
+        }
+
+        private string CreatePieceName(SerializedProperty top, SerializedProperty bottom, SerializedProperty array)
+        {
+            var pieceValues = System.Enum.GetValues(typeof(Piece));
+
+            Piece topPiece = (Piece)pieceValues.GetValue(top.enumValueIndex);
+            Piece bottomPiece = (Piece)pieceValues.GetValue(bottom.enumValueIndex);
+
+            return "Piece " + ToString(topPiece) + "_" + ToString(bottomPiece) + " variants:" + array.arraySize;
+        }
+
+        private string ToString(Piece piece)
+        {
+            string result = "";
+            byte value = (byte)piece;
+
+            int index = 3;
+
+            result += (value & (1 << index)) > 0 ? "1" : "0";
+            --index;
+            result += (value & (1 << index)) > 0 ? "1" : "0";
+            --index;
+            result += (value & (1 << index)) > 0 ? "1" : "0";
+            --index;
+            result += (value & (1 << index)) > 0 ? "1" : "0";
+
+            return result;
+        }
+
+        private void FillFromFile(Object obj)
+        {
+            if (obj == null)
+            {
+                Debug.LogError("Set a Mesh Asset File first!");
+                return;
+            }
+
+            List<Mesh> meshes = new List<Mesh>();
+
+            string path = AssetDatabase.GetAssetPath(obj);
+            var assets = AssetDatabase.LoadAllAssetRepresentationsAtPath(path);
+            foreach (var asset in assets)
+            {
+                if (asset is Mesh)
+                {
+                    meshes.Add(asset as Mesh);
+                }
+            }
+
+            if (meshes.Count > 0)
+            {
+                TileTheme theme = (TileTheme)target;
+                if (fillOptions.UseOptions)
+                {
+                    theme.FillBaseVariantsFromMeshList(meshes, fillOptions.filter, fillOptions.configPrefix);
+                }
+                else
+                {
+                    theme.FillBaseVariantsFromMeshList(meshes, null, null);
+                }
+                EditorUtility.SetDirty(theme);
             }
             else
             {
-                theme.FillBaseVariantsFromMeshList(meshes, null, null);
+                Debug.LogError("Couldn't find any Mesh sub-asset in given Mesh Asset file:" + path);
             }
-            EditorUtility.SetDirty(theme);
         }
-        else
+
+        [System.Serializable]
+        public class AutoFillOptions
         {
-            Debug.LogError("Couldn't find any Mesh sub-asset in given Mesh Asset file:" + path);
-        }
-    }
+            public string filter = "";
+            public string configPrefix = "";
 
-    [System.Serializable]
-    public class AutoFillOptions
-    {
-        public string filter = "";
-        public string configPrefix = "";
+            private bool toggle = false;
 
-        private bool toggle = false;
-
-        public void Show()
-        {
-            toggle = EditorGUILayout.BeginToggleGroup("Use Auto Fill Options", toggle);
-            if (toggle)
+            public void Show()
             {
-                filter = EditorGUILayout.TextField("Filter", filter);
-                configPrefix = EditorGUILayout.TextField("ConfigPrefix", configPrefix);
+                toggle = EditorGUILayout.BeginToggleGroup("Use Auto Fill Options", toggle);
+                if (toggle)
+                {
+                    filter = EditorGUILayout.TextField("Filter", filter);
+                    configPrefix = EditorGUILayout.TextField("ConfigPrefix", configPrefix);
+                }
+                EditorGUILayout.EndToggleGroup();
             }
-            EditorGUILayout.EndToggleGroup();
-        }
 
-        public bool UseOptions { get { return toggle; } }
+            public bool UseOptions { get { return toggle; } }
+        }
     }
 }
