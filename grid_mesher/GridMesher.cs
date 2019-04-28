@@ -49,7 +49,7 @@ namespace MeshBuilder
         private int filledValue;
         private Extents dataExtents;
         private int resolution;
-        private float cellSize;
+        private float3 cellSize;
         private UVMode uvMode;
         private float3 positionOffset;
 
@@ -74,7 +74,7 @@ namespace MeshBuilder
             mesh = new Mesh();
         }
 
-        public void Init(DataVolume data, int filledValue, float cellSize, int cellResolution, UVMode uvMode = UVMode.NoScaling, float3 posOffset = default(float3))
+        public void Init(DataVolume data, int filledValue, float3 cellSize, int cellResolution, UVMode uvMode = UVMode.NoScaling, float3 posOffset = default(float3))
         {
             this.data = data;
             dataExtents = new Extents(data.XLength, data.YLength, data.ZLength);
@@ -88,9 +88,9 @@ namespace MeshBuilder
             }
 
             this.cellSize = cellSize;
-            if (this.cellSize <= 0f)
+            if (this.cellSize.x <= 0f || this.cellSize.y <= 0f || this.cellSize.z <= 0f)
             {
-                this.cellSize = 0.1f;
+                this.cellSize = new float3(1, 1, 1);
                 Debug.LogWarning("Cell size must be greater than zero!");
             }
 
@@ -203,8 +203,8 @@ namespace MeshBuilder
                 // cell properties
                 cellResolution = resolution,
                 cellSize = cellSize,
-                stepX = cellSize / resolution,
-                stepZ = cellSize / resolution,
+                stepX = cellSize.x / resolution,
+                stepZ = cellSize.z / resolution,
                 stepU = 1f / resolution,
                 stepV = 1f / resolution,
                 stepTriangle = resolution * resolution * 2 *3,
@@ -502,7 +502,7 @@ namespace MeshBuilder
 
             // cell properties
             public int cellResolution;
-            public float cellSize;
+            public float3 cellSize;
             public float stepX;
             public float stepZ;
             public float stepU;
@@ -533,9 +533,9 @@ namespace MeshBuilder
 
             private void GenerateGrid(int3 coord, Range left, Range bottom, Range right, Range top, int vertexIndex, int triangleIndex)
             {
-                float startX = coord.x * cellSize;
-                float startY = (coord.y + 0.5f) * cellSize;
-                float startZ = coord.z * cellSize;
+                float startX = coord.x * cellSize.x;
+                float startY = (coord.y + 1f) * cellSize.y;
+                float startZ = coord.z * cellSize.z;
 
                 float startU = coord.x;
                 float startV = coord.z;

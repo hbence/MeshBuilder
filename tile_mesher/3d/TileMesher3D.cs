@@ -27,6 +27,8 @@ namespace MeshBuilder
         private DataVolume data;
         private Settings settings;
 
+        private float3 cellSize;
+
         // GENERATED DATA
         private Volume<MeshTile> tileMeshes;
 
@@ -43,18 +45,18 @@ namespace MeshBuilder
 
         }
 
-        public void Init(DataVolume dataVolume, int themeIndex, TileThemePalette themePalette)
+        public void Init(DataVolume dataVolume, int themeIndex, TileThemePalette themePalette, float3 cellSize = default)
         {
             var theme = themePalette.Get(themeIndex);
-            Init(dataVolume, themeIndex, theme, themePalette, DefaultSettings);
+            Init(dataVolume, themeIndex, theme, themePalette, cellSize, DefaultSettings);
         }
 
-        public void Init(DataVolume dataVolume, int themeIndex, TileTheme theme, Settings settings = null)
+        public void Init(DataVolume dataVolume, int themeIndex, TileTheme theme, float3 cellSize = default, Settings settings = null)
         {
-            Init(dataVolume, themeIndex, theme, null, settings);
+            Init(dataVolume, themeIndex, theme, null, cellSize, settings);
         }
 
-        public void Init(DataVolume dataVolume, int themeIndex, TileTheme theme, TileThemePalette themePalette, Settings settings = null)
+        public void Init(DataVolume dataVolume, int themeIndex, TileTheme theme, TileThemePalette themePalette, float3 cellSize = default, Settings settings = null)
         {
             Dispose();
             
@@ -71,6 +73,12 @@ namespace MeshBuilder
                 Debug.LogError("The theme has less than the required number of configurations! " + theme.Configs.Length);
                 state = State.Uninitialized;
                 return;
+            }
+
+            this.cellSize = cellSize;
+            if (this.cellSize.x == 0 || this.cellSize.y == 0 || this.cellSize.z == 0)
+            {
+                this.cellSize = new float3(1, 1, 1);
             }
 
             int x = data.XLength;
@@ -214,6 +222,7 @@ namespace MeshBuilder
             var tileGeneration = new GenerateMeshDataJob
             {
                 tileExtents = tileExtents,
+                cellSize = cellSize,
                 tiles = tiles.Data,
                 meshTiles = resultMeshTiles.Data
             };
@@ -478,6 +487,7 @@ namespace MeshBuilder
             private const byte MirrorMask = (byte)PieceTransform.MirrorXYZ;
 
             public Extents tileExtents;
+            public float3 cellSize;
             [ReadOnly] public NativeArray<TileMeshData> tiles;
             [WriteOnly] public NativeArray<MeshTile> meshTiles;
 
@@ -498,7 +508,10 @@ namespace MeshBuilder
 
             private MeshTile CreateMeshTile(float3 pos, ConfigTransformGroup group, TileMeshData tile)
             {
-                switch(group.Count)
+                pos.x *= cellSize.x;
+                pos.y *= cellSize.y;
+                pos.z *= cellSize.z;
+                switch (group.Count)
                 {
                     case 1:
                         return new MeshTile

@@ -13,15 +13,19 @@ namespace MeshBuilder
         private Volume<Tile.Data> cachedTileData;
 
         [SerializeField]
-        protected TileTheme theme;
+        protected TileTheme theme = null;
         public TileTheme Theme { get { return theme; } set { theme = value; NeedsToRebuild(); } }
 
         [SerializeField]
-        protected int themeIndex;
+        protected int themeIndex = 1;
         public int ThemeIndex { get { return themeIndex; } set { themeIndex = value; NeedsToRebuild(); } }
 
         [SerializeField]
-        private int yLayer;
+        private Vector3 cellSize = Vector3.one;
+        public Vector3 CellSize { get { return cellSize; } set { cellSize = value; NeedsToRebuild(); } }
+
+        [SerializeField]
+        private int yLayer = 0;
         public int YLayer { get { return yLayer; } set { yLayer = value; NeedsToRebuild(); } }
 
         [SerializeField]
@@ -97,7 +101,7 @@ namespace MeshBuilder
                 TileMesher3D mesher3D = mesher as TileMesher3D;
                 if (mesher3D != null)
                 {
-                    mesher3D.Init(tileData, themeIndex, theme);
+                    mesher3D.Init(tileData, themeIndex, theme, cellSize);
                 }
             }
             else
