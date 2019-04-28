@@ -27,13 +27,6 @@ namespace MeshBuilder
         private DataVolume data;
         private Settings settings;
 
-        // in the data volume we're generating the mesh
-        // for this value
-        private int themeIndex;
-
-        private Extents dataExtents;
-        private Extents tileExtents;
-
         // GENERATED DATA
         private Volume<MeshTile> tileMeshes;
 
@@ -52,22 +45,30 @@ namespace MeshBuilder
 
         public void Init(DataVolume dataVolume, int themeIndex, TileThemePalette themePalette)
         {
-            Init(dataVolume, themeIndex, themePalette, DefaultSettings);
+            var theme = themePalette.Get(themeIndex);
+            Init(dataVolume, themeIndex, theme, themePalette, DefaultSettings);
         }
 
-        public void Init(DataVolume dataVolume, int themeIndex, TileThemePalette themePalette, Settings settings)
+        public void Init(DataVolume dataVolume, int themeIndex, TileTheme theme, Settings settings = null)
+        {
+            Init(dataVolume, themeIndex, theme, null, settings);
+        }
+
+        public void Init(DataVolume dataVolume, int themeIndex, TileTheme theme, TileThemePalette themePalette, Settings settings = null)
         {
             Dispose();
             
             this.data = dataVolume;
             this.ThemePalette = themePalette;
-            this.theme = themePalette.Get(themeIndex);
-            this.themeIndex = themeIndex;
-            this.settings = settings;
+            this.theme = theme;
+            this.ThemeIndex = themeIndex;
+            this.settings = settings == null ? DefaultSettings : settings;
+
+            this.theme.Init();
 
             if (theme.Configs.Length < TileTheme.Type3DConfigCount)
             {
-                Error("The theme has less than the required number of configurations! " + theme.Configs.Length);
+                Debug.LogError("The theme has less than the required number of configurations! " + theme.Configs.Length);
                 state = State.Uninitialized;
                 return;
             }
@@ -112,8 +113,8 @@ namespace MeshBuilder
             }
             else
             {
-                if (!HasTilesData) Error("no tiles data!");
-                if (!HasTileMeshes) Error("no mesh tiles data!");
+                if (!HasTilesData) Debug.LogError(Name+ " no tiles data!");
+                if (!HasTileMeshes) Debug.LogError(Name + " no mesh tiles data!");
             }
         }
 
@@ -165,7 +166,7 @@ namespace MeshBuilder
                 {
                     tileExtents = tileExtents,
                     dataExtents = dataExtents,
-                    themeIndex = themeIndex,
+                    themeIndex = ThemeIndex,
                     configs = theme.Configs,
                     data = data.Data,
                     tiles = resultTiles.Data
@@ -180,7 +181,7 @@ namespace MeshBuilder
                     {
                         tileExtents = tileExtents,
                         dataExtents = dataExtents,
-                        themeIndex = themeIndex,
+                        themeIndex = ThemeIndex,
                         skipDirections = settings.skipDirections,
                         skipDirectionsWithBorders = settings.skipDirectionsAndBorders,
                         filledBoundaries = settings.filledBoundaries,
@@ -196,7 +197,7 @@ namespace MeshBuilder
                     {
                         tileExtents = tileExtents,
                         dataExtents = dataExtents,
-                        themeIndex = themeIndex,
+                        themeIndex = ThemeIndex,
                         skipDirections = settings.skipDirections,
                         skipDirectionsWithBorders = settings.skipDirectionsAndBorders,
                         configs = theme.Configs,

@@ -344,6 +344,7 @@ namespace MeshBuilder
                 case Type.Type2DCustom: return true;
 
                 case Type.Type3DFull: return false;
+                case Type.Type3DCustom: return false;
             }
             Debug.LogWarning("case not handled!");
             return false;

@@ -4,16 +4,17 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Mathematics;
 
-using DataVolume = MeshBuilder.Volume<byte>;
-
 namespace MeshBuilder
 {
+    using TileData = Tile.Data;
+    using DataVolume = Volume<MeshBuilder.Tile.Data>;
+
     /// <summary>
     /// GridMesher
     /// Generates a grid mesh based on 3d volume data (top part for now)
     /// 
     /// TODO:
-    /// - it only generates a top part it should be able to handle any direction
+    /// - it only generates a top part, it should be able to handle any direction
     /// - it should be able to handle multiple materials
     /// - it would be nice if it could generate heightmap lerp values 
     /// so the sides would be always at 0 and scale towards the heightmap value
@@ -27,13 +28,15 @@ namespace MeshBuilder
     /// </summary>
     public class GridMesher : IMeshBuilder
     {
-        public const bool NoScaling = false;
-        public const bool NormalizeUVs = true;
+        //public const bool NoScaling = false;
+        //public const bool NormalizeUVs = true;
 
-        public const bool Temporary = true;
-        public const bool Persistent = false;
+        //public const bool Temporary = true;
+        //public const bool Persistent = false;
+        public enum UVMode { Normalized, NoScaling }
 
-        private const int Filled = 1;
+        private enum State { Uninitialized, Initialized, Generating }
+        private State state = State.Uninitialized;
 
         private const int VertexLengthIndex = 0;
         private const int TriangleLengthIndex = 1;
@@ -42,14 +45,12 @@ namespace MeshBuilder
         private const int MinResolution = 1;
         private const int MaxResolution = 10;
 
-        private bool inited = false;
-        private bool isGenerating = false;
-
         private DataVolume data;
+        private int filledValue;
         private Extents dataExtents;
         private int resolution;
         private float cellSize;
-        private bool normalizeUvs;
+        private UVMode uvMode;
         private float3 positionOffset;
 
         private Texture2D heightmap;
@@ -73,10 +74,12 @@ namespace MeshBuilder
             mesh = new Mesh();
         }
 
-        public void Init(DataVolume data, float cellSize, int cellResolution, bool normalizeUvs = NoScaling, float3 posOffset = default(float3))
+        public void Init(DataVolume data, int filledValue, float cellSize, int cellResolution, UVMode uvMode = UVMode.NoScaling, float3 posOffset = default(float3))
         {
             this.data = data;
             dataExtents = new Extents(data.XLength, data.YLength, data.ZLength);
+
+            this.filledValue = filledValue;
 
             resolution = Mathf.Clamp(cellResolution, MinResolution, MaxResolution);
             if (resolution != cellResolution)
@@ -91,7 +94,7 @@ namespace MeshBuilder
                 Debug.LogWarning("Cell size must be greater than zero!");
             }
 
-            this.normalizeUvs = normalizeUvs;
+            this.uvMode = uvMode;
             this.positionOffset = posOffset;
 
             if (meshArrayLengths.IsCreated)
@@ -106,12 +109,12 @@ namespace MeshBuilder
             this.heightmap = null;
             this.maxHeight = 0;
 
-            inited = true;
+            state = State.Initialized;
         }
 
-        public void Init(DataVolume data, float cellSize, int resolution, Texture2D heightmap, float maxHeight, byte colorLevelOffset = 0, bool normalizeUV = true, float3 posOffset = default(float3))
+        public void Init(DataVolume data, int filledValue, float cellSize, int resolution, Texture2D heightmap, float maxHeight, byte colorLevelOffset = 0, UVMode uvMode = UVMode.NoScaling, float3 posOffset = default)
         {
-            Init(data, cellSize, resolution, normalizeUV, posOffset);
+            Init(data, filledValue, cellSize, resolution, uvMode, posOffset);
 
             this.heightmap = heightmap;
             this.maxHeight = maxHeight;
@@ -122,11 +125,10 @@ namespace MeshBuilder
         {
             lastHandle.Complete();
 
-            inited = false;
-            isGenerating = false;
-
             DisposeTemp();
             if (meshArrayLengths.IsCreated) meshArrayLengths.Dispose();
+
+            state = State.Uninitialized;
         }
 
         private void DisposeTemp()
@@ -153,36 +155,37 @@ namespace MeshBuilder
                 meshData = null;
             }
         }
-
+        
         public void StartGeneration()
         {
-            if (!inited)
+            if (state == State.Uninitialized)
             {
                 Debug.LogError("mesher was not inited!");
                 return;
             }
 
-            if (isGenerating)
+            if (state == State.Generating)
             {
                 Debug.LogError("mesher is already generating!");
                 return;
             }
 
-            isGenerating = true;
+            state = State.Generating;
 
             DisposeTemp();
             lastHandle.Complete();
 
-            gridCells = new NativeList<GridCell>(Allocator.Temp);
-            borderIndices = new NativeList<int>(2*resolution*dataExtents.XZ, Allocator.Temp);
+            gridCells = new NativeList<GridCell>(Allocator.TempJob);
+            borderIndices = new NativeList<int>(2*resolution*dataExtents.XZ, Allocator.TempJob);
             meshData = new GridMeshData();
-            tempRowBuffer = new NativeArray<int>(dataExtents.X, Allocator.Temp, NativeArrayOptions.UninitializedMemory);
+            tempRowBuffer = new NativeArray<int>(dataExtents.X, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
 
             var generateGroundGridCells = new GenerateMeshGridCells
             {
                 resolution = resolution,
                 volumeExtent = dataExtents,
                 data = data.Data,
+                filledValue = filledValue,
                 cells = gridCells,
                 bottomRowBuffer = tempRowBuffer,
                 borderIndices = borderIndices,
@@ -193,7 +196,7 @@ namespace MeshBuilder
 
             lastHandle.Complete();
 
-            meshData.CreateMeshBuffers(meshArrayLengths[VertexLengthIndex], meshArrayLengths[TriangleLengthIndex], Temporary);
+            meshData.CreateMeshBuffers(meshArrayLengths[VertexLengthIndex], meshArrayLengths[TriangleLengthIndex]);
 
             var generateMeshData = new GenerateMeshData
             {
@@ -219,7 +222,7 @@ namespace MeshBuilder
 
             lastHandle = generateMeshData.Schedule(gridCells.Length, 32, lastHandle);
 
-            if (normalizeUvs)
+            if (uvMode == UVMode.Normalized)
             {
                 var scaleJob = new UVScaleJob
                 {
@@ -251,6 +254,7 @@ namespace MeshBuilder
 
                 heightMapColors = new NativeArray<Color32>(heightmap.GetPixels32(), Allocator.Temp);
 
+                bool normalizedUV = uvMode == UVMode.Normalized;
                 var applyHeightmapJob = new ApplyHeightMapJob
                 {
                     heightmapWidth = heightmap.width,
@@ -258,8 +262,8 @@ namespace MeshBuilder
                     colors = heightMapColors,
                     heightStep = maxHeight / 255f,
                     heightOffset = -(maxHeight / 255f) * colorLevelOffset,
-                    uScale = normalizeUvs ? 1f : 1f / data.XLength,
-                    vScale = normalizeUvs ? 1f : 1f / data.ZLength,
+                    uScale = normalizedUV ? 1f : 1f / data.XLength,
+                    vScale = normalizedUV ? 1f : 1f / data.ZLength,
                     uvs = meshData.UVs,
                     vertices = meshData.Vertices
                 };
@@ -272,18 +276,18 @@ namespace MeshBuilder
 
         public void EndGeneration()
         {
-            if (!isGenerating)
+            if (state != State.Generating)
             {
                 Debug.LogWarning("mesher wasn't generating!");
                 return;
             }
 
             lastHandle.Complete();
-            isGenerating = false;
-
+            
             meshData.UpdateMesh(mesh);
 
             DisposeTemp();
+            state = State.Initialized;
         }
 
         private void ClearMeshArrayLengths()
@@ -306,7 +310,8 @@ namespace MeshBuilder
             // input
             public int resolution;
             public Extents volumeExtent;
-            [ReadOnly] public NativeArray<byte> data;
+            public int filledValue;
+            [ReadOnly] public NativeArray<TileData> data;
 
             // temp buffer
             public NativeArray<int> bottomRowBuffer;
@@ -343,7 +348,7 @@ namespace MeshBuilder
                         int left = -1;
                         for (int x = 0; x < volumeExtent.X; ++x)
                         {
-                            if (data[dataIndex] == Filled && (y == volumeExtent.Y - 1 || data[dataIndex + volumeExtent.XZ] != Filled))
+                            if (data[dataIndex].themeIndex == filledValue && (y == volumeExtent.Y - 1 || data[dataIndex + volumeExtent.XZ].themeIndex != filledValue))
                             {
                                 var right = new Range { start = boundaryIndex, end = boundaryIndex + resolution };
                                 boundaryIndex += resolution + 1;
@@ -663,7 +668,8 @@ namespace MeshBuilder
         }
 
         public Mesh Mesh { get { return mesh; } }
-        public bool IsGenerating { get { return isGenerating; } }
+        public bool IsInitialized { get { return state != State.Uninitialized; } }
+        public bool IsGenerating { get { return state == State.Generating; } }
 
         internal class GridMeshData
         {
@@ -671,17 +677,12 @@ namespace MeshBuilder
             public NativeArray<float3> Vertices { get; private set; }
             public NativeArray<int> Tris { get; private set; }
             public NativeArray<float2> UVs { get; private set; }
-
-            public GridMeshData()
-            {
-
-            }
-
-            public void CreateMeshBuffers(int vertexCount, int triangleCount, bool temporary)
+            
+            public void CreateMeshBuffers(int vertexCount, int triangleCount)
             {
                 Dispose();
 
-                var allocation = temporary ? Allocator.Temp : Allocator.Persistent;
+                var allocation = Allocator.TempJob;
 
                 Vertices = new NativeArray<float3>(vertexCount, allocation, NativeArrayOptions.UninitializedMemory);
                 UVs = new NativeArray<float2>(vertexCount, allocation, NativeArrayOptions.UninitializedMemory);
@@ -731,5 +732,22 @@ namespace MeshBuilder
             public bool IsValid { get { return start != end; } }
             public int At(int index, NativeArray<int> indices) { return indices[start + index]; }
         }
+
+        static private void SafeDispose<T>(NativeArray<T> collection) where T : struct
+        {
+            if (collection.IsCreated)
+            {
+                collection.Dispose();
+            }
+        }
+
+        static private void SafeDispose<T>(NativeList<T> collection) where T : struct
+        {
+            if (collection.IsCreated)
+            {
+                collection.Dispose();
+            }
+        }
+
     }
 }

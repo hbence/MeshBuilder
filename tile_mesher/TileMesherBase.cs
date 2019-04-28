@@ -38,6 +38,32 @@ namespace MeshBuilder
             FromTiles
         }
 
+        private TileTheme theme;
+        public TileTheme Theme
+        {
+            get { return theme; }
+            protected set
+            {
+                if (theme != value)
+                {
+                    if (theme != null)
+                    {
+                        theme.Release();
+                    }
+
+                    theme = value;
+                    theme.Retain();
+                }
+            }
+        }
+
+        // in the data volume we're generating the mesh
+        // for this value
+        public int ThemeIndex { get; protected set; }
+
+        protected Extents dataExtents;
+        protected Extents tileExtents;
+
         public string Name { get; private set; }
         protected State state = State.Uninitialized;
         protected GenerationType generationType = GenerationType.FromDataUncached;
@@ -77,13 +103,13 @@ namespace MeshBuilder
         {
             if (!IsInitialized)
             {
-                Error("not initialized!");
+                Debug.LogError(Name + " not initialized!");
                 return;
             }
 
             if (IsGenerating)
             {
-                Error("is already generating!");
+                Debug.LogError(Name + " is already generating!");
                 return;
             }
 
@@ -103,7 +129,7 @@ namespace MeshBuilder
         {
             if (!IsGenerating)
             {
-                Warning("is not generating! nothing to stop");
+                Debug.LogWarning(Name + " is not generating! nothing to stop");
                 return;
             }
 
@@ -137,6 +163,12 @@ namespace MeshBuilder
             {
                 tiles.Dispose();
                 tiles = null;
+            }
+
+            if (Theme != null)
+            {
+                Theme.Release();
+                Theme = null;
             }
 
             ThemePalette = null;
@@ -208,16 +240,6 @@ namespace MeshBuilder
 
                 mesh.CombineMeshes(submeshInstArray, false, false);
             }
-        }
-
-        protected void Warning(string msg, params object[] args)
-        {
-            Debug.LogWarningFormat(Name + " - " + msg, args);
-        }
-
-        protected void Error(string msg, params object[] args)
-        {
-            Debug.LogErrorFormat(Name + " - " + msg, args);
         }
 
         public bool IsInitialized { get { return state != State.Uninitialized; } }

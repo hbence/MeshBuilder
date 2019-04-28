@@ -23,18 +23,10 @@ namespace MeshBuilder
         static private readonly Settings DefaultSettings = new Settings { };
 
         // INITIAL DATA
-        public TileTheme Theme { get; private set; }
         public DataVolume Data { get; private set; }
         public Settings MesherSettings { get; private set; }
 
-        // in the data volume we're generating the mesh
-        // for this value
-        public int ThemeIndex { get; private set; }
-
         public int YLevel { get; private set; }
-
-        private Extents dataExtents;
-        private Extents tileExtents;
 
         // GENERATED DATA
         private Volume<MeshTile> tileMeshes;
@@ -73,25 +65,16 @@ namespace MeshBuilder
             ThemeIndex = themeIndex;
             MesherSettings = settings != null ? settings : new Settings();
 
-            if (Theme != theme)
-            {
-                if (Theme != null)
-                {
-                    Theme.Release();
-                }
-
-                Theme = theme;
-                Theme.Retain();
-            }
+            Theme = theme;
 
             if (YLevel != yLevel)
             {
-                Error("yLevel is out of bounds:" + yLevel + " it is clamped!");
+                Debug.LogError(Name + " yLevel is out of bounds:" + yLevel + " it is clamped!");
             }
 
             if (theme.Configs.Length < TileTheme.Type2DConfigCount)
             {
-                Error("The theme has less than the required number of configurations!");
+                Debug.LogError(Name + " - The theme has less than the required number of configurations!");
                 state = State.Uninitialized;
                 return;
             }
@@ -136,8 +119,8 @@ namespace MeshBuilder
             }
             else
             {
-                if (!HasTilesData) Error("no tiles data!");
-                if (!HasTileMeshes) Error("no mesh tiles data!");
+                if (!HasTilesData) Debug.LogError(Name + " no tiles data!");
+                if (!HasTileMeshes) Debug.LogError(Name + " no mesh tiles data!");
             }
         }
 
@@ -172,12 +155,6 @@ namespace MeshBuilder
             {
                 tileMeshes.Dispose();
                 tileMeshes = null;
-            }
-
-            if (Theme != null)
-            {
-                Theme.Release();
-                Theme = null;
             }
         }
 

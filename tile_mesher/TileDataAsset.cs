@@ -10,7 +10,7 @@ namespace MeshBuilder
     /// wrapper class to handle asset import/export
     /// </summary>
     [System.Serializable]
-    public class TileDataAsset : ScriptableObject, System.IDisposable
+    public class TileDataAsset : ScriptableObject
     {
         [SerializeField]
         [HideInInspector]
@@ -24,76 +24,34 @@ namespace MeshBuilder
         [HideInInspector]
         private VolumeContainer<VariantData3D> variantData3D;
 
-        private Volume<TileData> cachedTileData;
-        public Volume<TileData> CachedTileData { get { return cachedTileData; } }
-
-        private Volume<VariantData2D> cachedVariant2DData;
-        public Volume<VariantData2D> CachedVariant2DData { get { return cachedVariant2DData; } }
-
-        private Volume<VariantData3D> cachedVariant3DData;
-        public Volume<VariantData3D> CachedVariant3DData { get { return cachedVariant3DData; } }
-
-        public void InitCache()
-        {
-            Dispose();
-
-            if (tileData != null)
-            {
-                cachedTileData = tileData.CreateVolume();
-            }
-            if (variantData2D != null)
-            {
-                cachedVariant2DData = variantData2D.CreateVolume();
-            }
-            if (variantData3D != null)
-            {
-                cachedVariant3DData = variantData3D.CreateVolume();
-            }
-        }
-
         public void SetData(Volume<TileData> tiles)
         {
-            SetData(tiles, ref tileData, ref cachedTileData);
+            tileData = new VolumeContainer<TileData>(tiles);
         }
 
         public void SetData(Volume<VariantData2D> variants)
         {
-            SetData(variants, ref variantData2D, ref cachedVariant2DData);
+            variantData2D = new VolumeContainer<VariantData2D>(variants);
         }
 
         public void SetData(Volume<VariantData3D> variants)
         {
-            SetData(variants, ref variantData3D, ref cachedVariant3DData);
+            variantData3D = new VolumeContainer<VariantData3D>(variants);
         }
 
-        private void SetData<T>(Volume<T> source, ref VolumeContainer<T> container, ref Volume<T> cached) where T : struct
+        public Volume<TileData> CreateTileDataVolume()
         {
-            container = new VolumeContainer<T>(source);
-
-            if (cached != null)
-            {
-                cached.Dispose();
-                cached = container.CreateVolume();
-            }
+            return tileData.CreateVolume();
         }
 
-        public void Dispose()
+        public Volume<VariantData2D> CreateVariantData2D()
         {
-            if (cachedTileData != null)
-            {
-                cachedTileData.Dispose();
-                cachedTileData = null;
-            }
-            if (cachedVariant2DData != null)
-            {
-                cachedVariant2DData.Dispose();
-                cachedVariant2DData = null;
-            }
-            if (cachedVariant3DData != null)
-            {
-                cachedVariant3DData.Dispose();
-                cachedVariant3DData = null;
-            }
+            return variantData2D.CreateVolume();
+        }
+
+        public Volume<VariantData3D> CreateVariantData3D()
+        {
+            return variantData3D.CreateVolume();
         }
 
         private bool HasVolumeData<T>(VolumeContainer<T> container) where T : struct { return container != null && container.HasData; }
@@ -146,7 +104,6 @@ namespace MeshBuilder
             }
 
             public bool HasData { get { return data != null; } }
-
         }
     }
 }
