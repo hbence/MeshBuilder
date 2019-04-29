@@ -98,16 +98,31 @@ namespace MeshBuilder
             {
                 if (HasTilesData)
                 {
-                    tiles.Dispose();
+                    if (!tiles.DoExtentsMatch(tileExtents))
+                    {
+                        tiles.Dispose();
+                        tiles = null;
+                    }
                 }
-                tiles = new TileVolume(tileExtents);
+
+                if (!HasTilesData)
+                {
+                    tiles = new TileVolume(tileExtents);
+                }
 
                 if (HasTileMeshes)
                 {
-                    tileMeshes.Dispose();
+                    if (!tileMeshes.DoExtentsMatch(tileExtents))
+                    {
+                        tileMeshes.Dispose();
+                        tileMeshes = null;
+                    }
                 }
 
-                tileMeshes = new Volume<MeshTile>(tileExtents);
+                if (!HasTileMeshes)
+                {
+                    tileMeshes = new Volume<MeshTile>(tileExtents);
+                }
 
                 lastHandle = ScheduleTileGeneration(tiles, data, 64, lastHandle);
             }

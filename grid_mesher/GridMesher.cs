@@ -112,7 +112,7 @@ namespace MeshBuilder
             state = State.Initialized;
         }
 
-        public void Init(DataVolume data, int filledValue, float cellSize, int resolution, Texture2D heightmap, float maxHeight, byte colorLevelOffset = 0, UVMode uvMode = UVMode.NoScaling, float3 posOffset = default)
+        public void Init(DataVolume data, int filledValue, float3 cellSize, int resolution, Texture2D heightmap, float maxHeight, byte colorLevelOffset = 0, UVMode uvMode = UVMode.NoScaling, float3 posOffset = default)
         {
             Init(data, filledValue, cellSize, resolution, uvMode, posOffset);
 
@@ -125,30 +125,20 @@ namespace MeshBuilder
         {
             lastHandle.Complete();
 
-            DisposeTemp();
-            if (meshArrayLengths.IsCreated) meshArrayLengths.Dispose();
+          //  DisposeTemp();
+
+            SafeDispose(meshArrayLengths);
 
             state = State.Uninitialized;
         }
 
         private void DisposeTemp()
         {
-            if (gridCells.IsCreated)
-            {
-                gridCells.Dispose();
-            }
-            if (borderIndices.IsCreated)
-            {
-                borderIndices.Dispose();
-            }
-            if (heightMapColors.IsCreated)
-            {
-                heightMapColors.Dispose();
-            }
-            if (tempRowBuffer.IsCreated)
-            {
-                tempRowBuffer.Dispose();
-            }
+            SafeDispose(gridCells);
+            SafeDispose(borderIndices);
+            SafeDispose(heightMapColors);
+            SafeDispose(tempRowBuffer);
+
             if (meshData != null)
             {
                 meshData.Dispose();
@@ -247,12 +237,7 @@ namespace MeshBuilder
 
             if (heightmap)
             {
-                if (heightMapColors.IsCreated)
-                {
-                    heightMapColors.Dispose();
-                }
-
-                heightMapColors = new NativeArray<Color32>(heightmap.GetPixels32(), Allocator.Temp);
+                heightMapColors = new NativeArray<Color32>(heightmap.GetPixels32(), Allocator.TempJob);
 
                 bool normalizedUV = uvMode == UVMode.Normalized;
                 var applyHeightmapJob = new ApplyHeightMapJob
@@ -748,6 +733,5 @@ namespace MeshBuilder
                 collection.Dispose();
             }
         }
-
     }
 }

@@ -50,6 +50,16 @@ namespace MeshBuilder
             return IsInBounds(c.x, c.y, c.z);
         }
 
+        static public bool operator==(Extents a, Extents b)
+        {
+            return a.X == b.X && a.Y == b.Y && a.Z == b.Z;
+        }
+
+        static public bool operator!=(Extents a, Extents b)
+        {
+            return a.X != b.X || a.Y != b.Y || a.Z != b.Z;
+        }
+
         // index - array index
         // xzLength - size of xz layer (xSize * zSize)
         // zLength - length along z axis

@@ -81,6 +81,11 @@ namespace MeshBuilder
             return y * layerLength + z * XLength + x;
         }
 
+        public bool DoExtentsMatch(Extents e)
+        {
+            return XLength == e.X && YLength == e.Y && ZLength == e.Z;
+        }
+
         public NativeArray<T> Data { get { return data; } }
         public bool IsDisposed { get { return disposed; } }
         public int Length { get { return data.Length; } }

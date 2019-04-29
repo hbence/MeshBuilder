@@ -32,6 +32,9 @@ namespace MeshBuilder
         private MeshBuilderDrawer.RenderInfo renderInfo = null;
         private MeshBuilderDrawer drawer;
 
+        private TileMesher3D.Settings settings3D;
+        public TileMesher3D.Settings Settings3D { get { return settings3D; } set { settings3D = value; NeedsToRebuild(); } }
+
         protected Volume<Tile.Data> tileData;
         public Volume<Tile.Data> TileData { get { return tileData; } set { tileData = value; NeedsToRebuild(); } }
 
@@ -70,7 +73,7 @@ namespace MeshBuilder
             }
         }
 
-        private void InitTileData()
+        public void InitTileData()
         {
             if (tileData == null)
             {
@@ -83,7 +86,7 @@ namespace MeshBuilder
             }
         }
 
-        private void InitMesher()
+        public void InitMesher()
         {
             if (theme == null)
             {
@@ -101,7 +104,7 @@ namespace MeshBuilder
                 TileMesher3D mesher3D = mesher as TileMesher3D;
                 if (mesher3D != null)
                 {
-                    mesher3D.Init(tileData, themeIndex, theme, cellSize);
+                    mesher3D.Init(tileData, themeIndex, theme, cellSize, Settings3D);
                 }
             }
             else
@@ -119,6 +122,14 @@ namespace MeshBuilder
             }
 
             drawer.Mesher = mesher;
+        }
+
+        public void StartGeneration()
+        {
+            if (mesher != null)
+            {
+                mesher.StartGeneration();
+            }
         }
 
         public void NeedsToRebuild()
