@@ -53,19 +53,40 @@ namespace MeshBuilder
         private UVMode uvMode;
         private float3 positionOffset;
 
-        private Texture2D heightmap;
-        private float maxHeight;
-        private byte colorLevelOffset;
+        private HeightMapData heightMapData;
+        private HeightMapData HeightMap
+        {
+            get { return heightMapData; }
+            set
+            {
+                if (heightMapData != null)
+                {
+                    heightMapData.Dispose();
+                }
+                heightMapData = value;
+            }
+        }
 
         private Mesh mesh;
         private NativeArray<int> meshArrayLengths;
 
         private NativeList<GridCell> gridCells;
         private GridMeshData meshData;
+        private GridMeshData MeshData
+        {
+            get { return meshData; }
+            set
+            {
+                if (meshData != null)
+                {
+                    meshData.Dispose();
+                }
+                meshData = value;
+            }
+        }
         private NativeList<int> borderIndices;
 
         private NativeArray<int> tempRowBuffer;
-        private NativeArray<Color32> heightMapColors;
 
         private JobHandle lastHandle;
 
@@ -106,28 +127,41 @@ namespace MeshBuilder
                 meshArrayLengths = new NativeArray<int>(ArrayLengthsCount, Allocator.Persistent);
             }
 
-            this.heightmap = null;
-            this.maxHeight = 0;
+            HeightMap = null;
 
             state = State.Initialized;
         }
 
-        public void Init(DataVolume data, int filledValue, float3 cellSize, int resolution, Texture2D heightmap, float maxHeight, byte colorLevelOffset = 0, UVMode uvMode = UVMode.NoScaling, float3 posOffset = default)
+        public void InitHeightMap(Texture2D heightMap, float valueScale, float valueOffset = 0)
         {
-            Init(data, filledValue, cellSize, resolution, uvMode, posOffset);
-
-            this.heightmap = heightmap;
-            this.maxHeight = maxHeight;
-            this.colorLevelOffset = colorLevelOffset;
+            HeightMap = HeightMapData.CreateWithManualInfo(heightMap, valueScale, valueOffset);
         }
+
+        public void InitHeightMapScaleFromHeight(Texture2D heightMap, float maxHeight, float valueOffset = 0)
+        {
+            HeightMap = HeightMapData.CreateWithScaleFromTexInterval(heightMap, maxHeight, valueOffset);
+        }
+
+        public void InitHeightMapScaleFromHeightAvgOffset(Texture2D heightMap, float maxHeight)
+        {
+            HeightMap = HeightMapData.CreateWithScaleFromTexIntervalAvgOffset(heightMap, maxHeight);
+        }
+
+        public void InitHeightMapScaleFromHeightMinOffset(Texture2D heightMap, float maxHeight)
+        {
+            HeightMap = HeightMapData.CreateWithScaleFromTexIntervalMinOffset(heightMap, maxHeight);
+        }
+
 
         public void Dispose()
         {
             lastHandle.Complete();
 
-          //  DisposeTemp();
+         //   DisposeTemp();
 
             SafeDispose(meshArrayLengths);
+
+            HeightMap = null;
 
             state = State.Uninitialized;
         }
@@ -136,14 +170,9 @@ namespace MeshBuilder
         {
             SafeDispose(gridCells);
             SafeDispose(borderIndices);
-            SafeDispose(heightMapColors);
             SafeDispose(tempRowBuffer);
 
-            if (meshData != null)
-            {
-                meshData.Dispose();
-                meshData = null;
-            }
+            MeshData = null;
         }
         
         public void StartGeneration()
@@ -162,12 +191,11 @@ namespace MeshBuilder
 
             state = State.Generating;
 
-            DisposeTemp();
             lastHandle.Complete();
+            DisposeTemp();
 
             gridCells = new NativeList<GridCell>(Allocator.TempJob);
             borderIndices = new NativeList<int>(2*resolution*dataExtents.XZ, Allocator.TempJob);
-            meshData = new GridMeshData();
             tempRowBuffer = new NativeArray<int>(dataExtents.X, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
 
             var generateGroundGridCells = new GenerateMeshGridCells
@@ -186,7 +214,7 @@ namespace MeshBuilder
 
             lastHandle.Complete();
 
-            meshData.CreateMeshBuffers(meshArrayLengths[VertexLengthIndex], meshArrayLengths[TriangleLengthIndex]);
+            MeshData = new GridMeshData(meshArrayLengths[VertexLengthIndex], meshArrayLengths[TriangleLengthIndex]);
 
             var generateMeshData = new GenerateMeshData
             {
@@ -205,9 +233,9 @@ namespace MeshBuilder
                 borderIndices = borderIndices,
 
                 // output data
-                meshVertices = meshData.Vertices,
-                meshUVs = meshData.UVs,
-                meshTriangles = meshData.Tris
+                meshVertices = MeshData.Vertices,
+                meshUVs = MeshData.UVs,
+                meshTriangles = MeshData.Tris
             };
 
             lastHandle = generateMeshData.Schedule(gridCells.Length, 32, lastHandle);
@@ -217,10 +245,10 @@ namespace MeshBuilder
                 var scaleJob = new UVScaleJob
                 {
                     scale = new float2(1f / data.XLength, 1f / data.ZLength),
-                    uvs = meshData.UVs
+                    uvs = MeshData.UVs
                 };
 
-                lastHandle = scaleJob.Schedule(meshData.UVs.Length, 128, lastHandle);
+                lastHandle = scaleJob.Schedule(MeshData.UVs.Length, 128, lastHandle);
             }
 
             if (positionOffset.x != 0 || positionOffset.y != 0 || positionOffset.z != 0)
@@ -228,32 +256,18 @@ namespace MeshBuilder
                 var offsetJob = new VertexOffsetJob
                 {
                     offset = positionOffset,
-                    vertices = meshData.Vertices
+                    vertices = MeshData.Vertices
                 };
 
-
-                lastHandle = offsetJob.Schedule(meshData.Vertices.Length, 128, lastHandle);
+                lastHandle = offsetJob.Schedule(MeshData.Vertices.Length, 128, lastHandle);
             }
 
-            if (heightmap)
+            if (HeightMap != null)
             {
-                heightMapColors = new NativeArray<Color32>(heightmap.GetPixels32(), Allocator.TempJob);
-
                 bool normalizedUV = uvMode == UVMode.Normalized;
-                var applyHeightmapJob = new ApplyHeightMapJob
-                {
-                    heightmapWidth = heightmap.width,
-                    heightmapHeight = heightmap.height,
-                    colors = heightMapColors,
-                    heightStep = maxHeight / 255f,
-                    heightOffset = -(maxHeight / 255f) * colorLevelOffset,
-                    uScale = normalizedUV ? 1f : 1f / data.XLength,
-                    vScale = normalizedUV ? 1f : 1f / data.ZLength,
-                    uvs = meshData.UVs,
-                    vertices = meshData.Vertices
-                };
-
-                lastHandle = applyHeightmapJob.Schedule(meshData.Vertices.Length, 128, lastHandle);
+                float uScale = normalizedUV ? 1f : 1f / data.XLength;
+                float vScale = normalizedUV ? 1f : 1f / data.ZLength;
+                lastHandle = HeightMap.StartGeneration(MeshData, uScale, vScale, lastHandle);
             }
 
             JobHandle.ScheduleBatchedJobs();
@@ -268,8 +282,13 @@ namespace MeshBuilder
             }
 
             lastHandle.Complete();
+
+            if (HeightMap != null)
+            {
+                HeightMap.EndGeneration();
+            }
             
-            meshData.UpdateMesh(mesh);
+            MeshData.UpdateMesh(mesh);
 
             DisposeTemp();
             state = State.Initialized;
@@ -626,32 +645,7 @@ namespace MeshBuilder
                 meshTriangles[index + 5] = c1;
             }
         }
-
-        [BurstCompile]
-        public struct ApplyHeightMapJob : IJobParallelFor
-        {
-            public int heightmapWidth;
-            public int heightmapHeight;
-            public float heightStep;
-            public float heightOffset;
-            public float uScale;
-            public float vScale;
-
-            [ReadOnly] public NativeArray<Color32> colors;
-            [ReadOnly] public NativeArray<float2> uvs;
-            public NativeArray<float3> vertices;
-
-            public void Execute(int index)
-            {
-                int x = (int)(heightmapWidth * uvs[index].x * uScale) % heightmapWidth;
-                int y = (int)(heightmapHeight * uvs[index].y * vScale) % heightmapHeight;
-
-                int colorIndex = y * heightmapWidth + x;
-                Color32 color = colors[colorIndex];
-                vertices[index] += new float3(0, (heightStep * color.r) + heightOffset, 0);
-            }
-        }
-
+        
         public Mesh Mesh { get { return mesh; } }
         public bool IsInitialized { get { return state != State.Uninitialized; } }
         public bool IsGenerating { get { return state == State.Generating; } }
@@ -663,15 +657,13 @@ namespace MeshBuilder
             public NativeArray<int> Tris { get; private set; }
             public NativeArray<float2> UVs { get; private set; }
             
-            public void CreateMeshBuffers(int vertexCount, int triangleCount)
+            public GridMeshData(int vertexCount, int triangleCount)
             {
                 Dispose();
 
-                var allocation = Allocator.TempJob;
-
-                Vertices = new NativeArray<float3>(vertexCount, allocation, NativeArrayOptions.UninitializedMemory);
-                UVs = new NativeArray<float2>(vertexCount, allocation, NativeArrayOptions.UninitializedMemory);
-                Tris = new NativeArray<int>(triangleCount, allocation, NativeArrayOptions.UninitializedMemory);
+                Vertices = new NativeArray<float3>(vertexCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+                UVs = new NativeArray<float2>(vertexCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+                Tris = new NativeArray<int>(triangleCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
             }
 
             public void Dispose()
@@ -683,7 +675,7 @@ namespace MeshBuilder
 
             public void UpdateMesh(Mesh mesh)
             {
-                MeshData.UpdateMesh(mesh, Vertices, Tris, UVs);
+                MeshBuilder.MeshData.UpdateMesh(mesh, Vertices, Tris, UVs);
             }
         }
 
@@ -731,6 +723,257 @@ namespace MeshBuilder
             if (collection.IsCreated)
             {
                 collection.Dispose();
+            }
+        }
+
+        [System.Serializable]
+        internal class HeightMapData
+        {
+            public const int ValueScaleIndex = 0;
+            public const int ValueOffsetIndex = 1;
+
+            internal enum ScaleMode { Manual, FromTexInterval }
+            internal enum OffsetMode { Manual, FromTexAverage, FromTexMin }
+
+            public Texture2D HeightMap { get; private set; }
+            private float maxHeight;
+
+            private ScaleMode scaleMode;
+            private float valueScale;
+
+            private OffsetMode offsetMode;
+            private float valueOffset;
+            
+            private NativeArray<byte> tempHeightMapMin;
+            private NativeArray<byte> tempHeightMapAvg;
+            private NativeArray<byte> tempHeightMapMax;
+
+            private NativeArray<Color32> tempHeightMapColors;
+
+            private NativeArray<float> values;
+
+            private HeightMapData(Texture2D heightMap, float maxHeight, float valueScale, ScaleMode scaleMode, float valueOffset, OffsetMode offsetMode)
+            {
+                HeightMap = heightMap;
+                this.maxHeight = maxHeight;
+                this.valueScale = valueScale;
+                this.scaleMode = scaleMode;
+                this.valueOffset = valueOffset;
+                this.offsetMode = offsetMode;
+
+                values = new NativeArray<float>(2, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+                values[ValueScaleIndex] = valueScale;
+                values[ValueOffsetIndex] = valueOffset;
+            }
+
+            public void Dispose()
+            {
+            //    DisposeTemps();
+                if (values.IsCreated)
+                {
+                    values.Dispose();
+                }
+            }
+
+            public JobHandle StartGeneration(GridMeshData meshData, float uScale, float vScale, JobHandle lastHandle)
+            {
+                if (HeightMap != null && (scaleMode != ScaleMode.Manual || offsetMode != OffsetMode.Manual))
+                {
+                    int imgWidth = HeightMap.width;
+                    int imgHeight = HeightMap.height;
+
+                    tempHeightMapColors = new NativeArray<Color32>(HeightMap.GetPixels32(), Allocator.TempJob);
+
+                    tempHeightMapMin = new NativeArray<byte>(imgHeight, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+                    tempHeightMapAvg = new NativeArray<byte>(imgHeight, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+                    tempHeightMapMax = new NativeArray<byte>(imgHeight, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+
+                    var heightMapJob = new CalcHeightMapInfoJob
+                    {
+                        heightmapWidth = imgWidth,
+                        colors = tempHeightMapColors,
+                        minValues = tempHeightMapMin,
+                        avgValues = tempHeightMapAvg,
+                        maxValues = tempHeightMapMax
+                    };
+
+                    lastHandle = heightMapJob.Schedule(imgHeight, 128, lastHandle);
+
+                    var fillHeightMapInfo = new FillHeightMapInfoJob
+                    {
+                        scaleMode = scaleMode,
+                        offsetMode = offsetMode,
+                        maxHeight = maxHeight,
+                        valueScale = valueScale,
+                        valueOffset = valueOffset,
+                        minValues = tempHeightMapMin,
+                        avgValues = tempHeightMapAvg,
+                        maxValues = tempHeightMapMax,
+                        outValues = values
+                    };
+
+                    lastHandle = fillHeightMapInfo.Schedule(lastHandle);
+                    
+                    var applyHeightmapJob = new ApplyHeightMapJob
+                    {
+                        heightmapWidth = HeightMap.width,
+                        heightmapHeight = HeightMap.height,
+                        uScale = uScale,
+                        vScale = vScale,
+                        colors = tempHeightMapColors,
+                        heightValues = values,
+                        uvs = meshData.UVs,
+                        vertices = meshData.Vertices
+                    };
+
+                    lastHandle = applyHeightmapJob.Schedule(meshData.Vertices.Length, 128, lastHandle);
+                }
+
+                return lastHandle;
+            }
+
+            public void EndGeneration()
+            {
+                DisposeTemps();
+            }
+
+            private void DisposeTemps()
+            {
+                SafeDispose(tempHeightMapMin);
+                SafeDispose(tempHeightMapAvg);
+                SafeDispose(tempHeightMapMax);
+                SafeDispose(tempHeightMapColors);
+            }
+
+            static public HeightMapData CreateWithManualInfo(Texture2D heightMap, float valueScale, float valueOffset)
+            {
+                return new HeightMapData(heightMap, valueScale * 255f, valueScale, ScaleMode.Manual, valueOffset, OffsetMode.Manual);
+            }
+
+            static public HeightMapData CreateWithScaleFromTexInterval(Texture2D heightMap, float maxHeight, float valueOffset)
+            {
+                return new HeightMapData(heightMap, maxHeight, maxHeight / 255f, ScaleMode.FromTexInterval, valueOffset, OffsetMode.Manual);
+            }
+
+            static public HeightMapData CreateWithScaleFromTexIntervalMinOffset(Texture2D heightMap, float maxHeight)
+            {
+                return new HeightMapData(heightMap, maxHeight, maxHeight / 255f, ScaleMode.FromTexInterval, 0, OffsetMode.FromTexMin);
+            }
+
+            static public HeightMapData CreateWithScaleFromTexIntervalAvgOffset(Texture2D heightMap, float maxHeight)
+            {
+                return new HeightMapData(heightMap, maxHeight, maxHeight / 255f, ScaleMode.FromTexInterval, 0, OffsetMode.FromTexAverage);
+            }
+
+            [BurstCompile]
+            public struct CalcHeightMapInfoJob : IJobParallelFor
+            {
+                public int heightmapWidth;
+
+                [ReadOnly] public NativeArray<Color32> colors;
+                [WriteOnly] public NativeArray<byte> minValues;
+                [WriteOnly] public NativeArray<byte> avgValues;
+                [WriteOnly] public NativeArray<byte> maxValues;
+
+                public void Execute(int index)
+                {
+                    byte min = 255;
+                    byte max = 0;
+                    int sum = 0;
+                    int start = index * heightmapWidth;
+                    int end = start + heightmapWidth;
+                    for (int i = start; i < end; ++i)
+                    {
+                        int color = colors[i].r;
+                        min = (byte)math.min(min, color);
+                        max = (byte)math.max(max, color);
+                        sum += color;
+                    }
+                    minValues[index] = min;
+                    maxValues[index] = max;
+                    avgValues[index] = (byte)(sum / heightmapWidth);
+                }
+            }
+
+            [BurstCompile]
+            public struct FillHeightMapInfoJob : IJob
+            {
+                public ScaleMode scaleMode;
+                public OffsetMode offsetMode;
+
+                public float maxHeight;
+                public float valueScale;
+                public float valueOffset;
+
+                [ReadOnly] public NativeArray<byte> minValues;
+                [ReadOnly] public NativeArray<byte> avgValues;
+                [ReadOnly] public NativeArray<byte> maxValues;
+
+                [WriteOnly] public NativeArray<float> outValues;
+
+                public void Execute()
+                {
+                    if (scaleMode == ScaleMode.FromTexInterval)
+                    {
+                        byte min = 255;
+                        byte max = 0;
+                        for (int i = 0; i < minValues.Length; ++i)
+                        {
+                            min = (byte)math.min((int)min, minValues[i]);
+                            max = (byte)math.max((int)max, maxValues[i]);
+                        }
+                        float diff = math.max(max - min, 1);
+                        valueScale = maxHeight / diff;
+                    }
+
+                    if (offsetMode == OffsetMode.FromTexMin)
+                    {
+                        byte min = 255;
+                        for (int i = 0; i < minValues.Length; ++i)
+                        {
+                            min = (byte)math.min((int)min, minValues[i]);
+                        }
+                        valueOffset = -min * valueScale;
+                    }
+                    else if (offsetMode == OffsetMode.FromTexAverage)
+                    {
+                        int sum = 0;
+                        for (int i = 0; i < avgValues.Length; ++i)
+                        {
+                            sum += avgValues[i];
+                        }
+                        float avg = sum / avgValues.Length;
+                        valueOffset = -avg * valueScale;
+                    }
+
+                    outValues[ValueScaleIndex] = valueScale;
+                    outValues[ValueOffsetIndex] = valueOffset;
+                }
+            }
+
+            [BurstCompile]
+            public struct ApplyHeightMapJob : IJobParallelFor
+            {
+                public int heightmapWidth;
+                public int heightmapHeight;
+                public float uScale;
+                public float vScale;
+
+                [ReadOnly] public NativeArray<float> heightValues;
+
+                [ReadOnly] public NativeArray<Color32> colors;
+                [ReadOnly] public NativeArray<float2> uvs;
+                public NativeArray<float3> vertices;
+
+                public void Execute(int index)
+                {
+                    int x = (int)(heightmapWidth * uvs[index].x * uScale) % heightmapWidth;
+                    int y = (int)(heightmapHeight * uvs[index].y * vScale) % heightmapHeight;
+
+                    int colorIndex = y * heightmapWidth + x;
+                    Color32 color = colors[colorIndex];
+                   vertices[index] += new float3(0, heightValues[ValueScaleIndex] * color.r + heightValues[ValueOffsetIndex], 0);
+                }
             }
         }
     }

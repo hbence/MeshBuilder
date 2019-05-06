@@ -60,6 +60,16 @@ namespace MeshBuilder
             return a.X != b.X || a.Y != b.Y || a.Z != b.Z;
         }
 
+        public override bool Equals(object obj)
+        {
+            return base.Equals(obj);
+        }
+
+        public override int GetHashCode()
+        {
+            return base.GetHashCode();
+        }
+
         // index - array index
         // xzLength - size of xz layer (xSize * zSize)
         // zLength - length along z axis

@@ -38,7 +38,7 @@ namespace MeshBuilder
         protected Volume<Tile.Data> tileData;
         public Volume<Tile.Data> TileData { get { return tileData; } set { tileData = value; NeedsToRebuild(); } }
 
-        protected IMeshBuilder mesher;
+        protected IMeshBuilder Mesher { get; set; }
 
         // this is serialized so it can be triggered from the editor
         [SerializeField]
@@ -58,18 +58,18 @@ namespace MeshBuilder
 
                 InitTileData();
                 InitMesher();
-                if (mesher != null)
+                if (Mesher != null)
                 {
-                    mesher.StartGeneration();
+                    Mesher.StartGeneration();
                 }
             }
         }
 
         private void LateUpdate()
         {
-            if (mesher != null && mesher.IsGenerating)
+            if (Mesher != null && Mesher.IsGenerating)
             {
-                mesher.EndGeneration();
+                Mesher.EndGeneration();
             }
         }
 
@@ -96,12 +96,12 @@ namespace MeshBuilder
 
             if (theme.Is3DTheme)
             {
-                if (mesher == null)
+                if (Mesher == null)
                 {
-                    mesher = new TileMesher3D(theme.ThemeName + "_mesher");
+                    Mesher = new TileMesher3D(theme.ThemeName + "_mesher");
                 }
 
-                TileMesher3D mesher3D = mesher as TileMesher3D;
+                TileMesher3D mesher3D = Mesher as TileMesher3D;
                 if (mesher3D != null)
                 {
                     mesher3D.Init(tileData, themeIndex, theme, cellSize, Settings3D);
@@ -109,26 +109,26 @@ namespace MeshBuilder
             }
             else
             {
-                if (mesher == null)
+                if (Mesher == null)
                 {
-                    mesher = new TileMesher2D(theme.ThemeName + "_mesher");
+                    Mesher = new TileMesher2D(theme.ThemeName + "_mesher");
                 }
 
-                TileMesher2D mesher2D = mesher as TileMesher2D;
+                TileMesher2D mesher2D = Mesher as TileMesher2D;
                 if (mesher2D != null)
                 {
                     mesher2D.Init(tileData, yLayer, themeIndex, theme);
                 }
             }
 
-            drawer.Mesher = mesher;
+            drawer.Mesher = Mesher;
         }
 
         public void StartGeneration()
         {
-            if (mesher != null)
+            if (Mesher != null)
             {
-                mesher.StartGeneration();
+                Mesher.StartGeneration();
             }
         }
 
@@ -139,10 +139,10 @@ namespace MeshBuilder
 
         public void Dispose()
         {
-            if (mesher != null)
+            if (Mesher != null)
             {
-                mesher.Dispose();
-                mesher = null;
+                Mesher.Dispose();
+                Mesher = null;
             }
 
             if (cachedTileData != null)
@@ -159,7 +159,7 @@ namespace MeshBuilder
             Dispose();
         }
 
-        public bool IsGenerating { get { return mesher != null && mesher.IsGenerating; } }
-        public Mesh Mesh { get { return mesher != null ? mesher.Mesh : null; } }
+        public bool IsGenerating { get { return Mesher != null && Mesher.IsGenerating; } }
+        public Mesh Mesh { get { return Mesher != null ? Mesher.Mesh : null; } }
     }
 }

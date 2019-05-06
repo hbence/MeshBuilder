@@ -12,30 +12,30 @@ namespace MeshBuilder
         public Mesh Mesh { get; private set; }
         public bool IsGenerating { get; private set; }
 
+        private float cellSize = MinCellSize;
+
         private NativeHashMap<int3, NormalCell> normalCells;
         private NativeArray<Vector3> vertices;
         private NativeArray<Vector3> normals;
 
         private JobHandle lastHandle;
 
-        public void Init(Mesh mesh)
+        public void Init(Mesh mesh, float alignCellSize)
         {
             IsGenerating = false;
             Mesh = mesh;
+
+            cellSize = Mathf.Max(alignCellSize, MinCellSize);
         }
 
         public void StartGeneration()
         {
             IsGenerating = true;
 
-            vertices = new NativeArray<Vector3>(Mesh.vertices, Allocator.Temp);
-            normals = new NativeArray<Vector3>(Mesh.normals, Allocator.Temp);
-            normalCells = new NativeHashMap<int3, NormalCell>(Mesh.vertexCount, Allocator.Temp);
-
-            var extents = Mesh.bounds.extents;
-            float cellSize = Mathf.Max(extents.x * 2, extents.y * 2, extents.z * 2) / (1 << 16);
-            cellSize = Mathf.Max(cellSize, MinCellSize);
-
+            vertices = new NativeArray<Vector3>(Mesh.vertices, Allocator.TempJob);
+            normals = new NativeArray<Vector3>(Mesh.normals, Allocator.TempJob);
+            normalCells = new NativeHashMap<int3, NormalCell>(Mesh.vertexCount, Allocator.TempJob);
+            
             var generateNormals = new GenerateNewNormals
             {
                 cellSize = cellSize,
