@@ -7,10 +7,14 @@ namespace MeshBuilder
 {
     public class AlignNormals : IMeshBuilder
     {
+        private enum State { Uninitialized, Initialized, Generating };
+
+        private State state = State.Uninitialized;
+
         private const float MinCellSize = 0.001f;
 
         public Mesh Mesh { get; private set; }
-        public bool IsGenerating { get; private set; }
+        public bool IsGenerating { get { return state == State.Generating; } }
 
         private float cellSize = MinCellSize;
 
@@ -22,7 +26,7 @@ namespace MeshBuilder
 
         public void Init(Mesh mesh, float alignCellSize)
         {
-            IsGenerating = false;
+            state = State.Initialized;
             Mesh = mesh;
 
             cellSize = Mathf.Max(alignCellSize, MinCellSize);
@@ -30,7 +34,23 @@ namespace MeshBuilder
 
         public void StartGeneration()
         {
-            IsGenerating = true;
+            if (state == State.Initialized)
+            {
+                state = State.Generating;
+            }
+            else
+            {
+                if (state == State.Uninitialized)
+                {
+                    Debug.LogError("AlignNormals is not initialized!");
+                }
+                else if (state == State.Generating)
+                {
+                    Debug.LogError("AlignNormals is already generating!");
+                }
+
+                return;
+            }
 
             vertices = new NativeArray<Vector3>(Mesh.vertices, Allocator.TempJob);
             normals = new NativeArray<Vector3>(Mesh.normals, Allocator.TempJob);
@@ -57,7 +77,7 @@ namespace MeshBuilder
 
         public void EndGeneration()
         {
-            IsGenerating = false;
+            state = State.Initialized;
 
             lastHandle.Complete();
 
