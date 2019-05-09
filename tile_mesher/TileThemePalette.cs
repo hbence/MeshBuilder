@@ -1,4 +1,5 @@
-﻿using UnityEngine;
+﻿using System.Collections.Generic;
+using UnityEngine;
 
 namespace MeshBuilder
 {
@@ -7,63 +8,38 @@ namespace MeshBuilder
     {
         [SerializeField]
         private TileTheme[] themes = null;
-
-        private int[] openFlags;
-
+        
         public void Init()
         {
-            FillOpenFlagsArray();
-            foreach (var theme in themes)
+            if (themes != null)
             {
-                theme.Init();
+                foreach (var theme in themes)
+                {
+                    theme.Init();
+                }
             }
         }
-        
-        private void FillOpenFlagsArray()
+     
+        private List<int> CollectOpenThemeIndices(TileTheme theme)
         {
-            if (themes == null)
-            {
-                Debug.LogError("no themes");
-                return;
-            }
+            List<int> results = new List<int>();
 
-            if (themes.Length > 32)
+            if (theme.OpenTowardsThemes != null && theme.OpenTowardsThemes.Length > 0)
             {
-                Debug.LogError("you have to either use less than 33 themes in this palette or reimplement the openFlags array IsFilled() check!");
-                return;
-            }
-
-            if (openFlags != null && openFlags.Length == themes.Length)
-            {
-                return;
-            }
-
-            openFlags = new int[themes.Length];
-            for (int i = 0; i < themes.Length; ++i)
-            {
-                int flags = 0;
-                var theme = themes[i];
-                var openThemes = theme.OpenTowardsThemes;
-                if (openThemes != null && openThemes.Length > 0)
+                foreach (var openTheme in theme.OpenTowardsThemes)
                 {
-                    for (int j = 0; j < openThemes.Length; ++j)
+                    int index = FindThemeIndex(openTheme);
+                    if (index >= 0)
                     {
-                        int themeIndex = FindThemeIndex(openThemes[j]);
-                        if (themeIndex >= 0)
-                        {
-                            flags |= (1 << themeIndex);
-                        }
-                        else
-                        {
-                            Debug.LogWarning("can't find theme:" + openThemes[j]);
-                        }
+                        results.Add(index);
                     }
                 }
-                openFlags[i] = flags;
             }
-        }
 
-        private int FindThemeIndex(string name)
+            return results;
+        }
+        
+        public int FindThemeIndex(string name)
         {
             for (int i = 0; i < themes.Length; ++i)
             {
@@ -81,15 +57,5 @@ namespace MeshBuilder
         }
 
         public int ThemeCount { get { return themes != null ? themes.Length : 0; } }
-
-        public bool IsFilled(byte themeIndex, byte otherIndex)
-        {
-            return themeIndex == otherIndex || (openFlags != null && openFlags[themeIndex] != 0 && DoesCollide(openFlags[themeIndex], otherIndex));
-        }
-
-        static private bool DoesCollide(int value, byte flagNumber)
-        {
-            return (value & (1 << flagNumber)) != 0;
-        }
     }
 }
