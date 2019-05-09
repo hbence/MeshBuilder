@@ -46,6 +46,7 @@ namespace MeshBuilder
             if (!disposed)
             {
                 data.Dispose();
+                data = default;
             }
             disposed = true;
         }
