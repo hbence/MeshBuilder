@@ -1,10 +1,11 @@
-﻿using UnityEngine;
+﻿using System.Collections.Generic;
+using UnityEngine;
 
 namespace MeshBuilder
 {
     public class MeshBuilderDrawerComponent : MonoBehaviour
     {
-        private MeshBuilderDrawer[] drawers;
+        private List<MeshBuilderDrawer> drawers;
 
         private void OnEnable()
         {
@@ -19,67 +20,40 @@ namespace MeshBuilder
 
         public void AddDrawer(MeshBuilderDrawer drawer)
         {
-            if (!DoesContain(drawer))
+            if (drawers == null)
             {
-                int oldLength = drawers == null ? 0 : drawers.Length;
-                var newDrawers = new MeshBuilderDrawer[oldLength + 1];
-                if (oldLength > 0)
+                drawers = new List<MeshBuilderDrawer>();
+                drawers.Add(drawer);
+            }
+            else
+            {
+                if (!DoesContain(drawer))
                 {
-                    System.Array.Copy(drawers, newDrawers, drawers.Length);
+                    drawers.Add(drawer);
                 }
-                newDrawers[newDrawers.Length - 1] = drawer;
-                drawers = newDrawers;
             }
         }
 
         public void RemoveDrawer(MeshBuilderDrawer drawer)
         {
-            if (drawers != null && drawers.Length > 0)
+            if (drawers != null)
             {
-                if (drawers.Length == 1)
-                {
-                    if (drawers[0] == drawer)
-                    {
-                        drawers = null;
-                        return;
-                    }
-                }
-                else
-                {
-                    var newDrawers = new MeshBuilderDrawer[drawers.Length - 1];
-                    int sourceIndex = 0;
-                    for (int i = 0; i < newDrawers.Length; ++i)
-                    {
-                        if (drawers[sourceIndex] == drawer)
-                        {
-                            ++sourceIndex;
-                        }
-
-                        newDrawers[i] = drawers[sourceIndex];
-                        ++sourceIndex;
-                    }
-                }
+                drawers.Remove(drawer);
             }
         }
 
         public bool DoesContain(MeshBuilderDrawer drawer)
         {
-            if (drawers != null && drawers.Length > 0)
+            if (drawers != null)
             {
-                foreach(var elem in drawers)
-                {
-                    if (elem == drawer)
-                    {
-                        return true;
-                    }
-                }
+                return drawers.Contains(drawer);
             }
             return false;
         }
 
         private void DrawWithCamera(Camera camera)
         {
-            if (camera && drawers != null && drawers.Length > 0)
+            if (camera && drawers != null)
             {
                 foreach(var drawer in drawers)
                 {
