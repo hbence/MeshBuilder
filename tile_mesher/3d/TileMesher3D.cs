@@ -29,6 +29,8 @@ namespace MeshBuilder
 
         private float3 cellSize;
 
+        private AdjacentVolumes adjacents;
+
         // GENERATED DATA
         private Volume<MeshTile> tileMeshes;
 
@@ -42,7 +44,7 @@ namespace MeshBuilder
         public TileMesher3D(string name = DefaultName)
             : base(name)
         {
-
+            adjacents = new AdjacentVolumes();
         }
 
         public void Init(DataVolume dataVolume, int themeIndex, TileThemePalette themePalette, float3 cellSize = default)
@@ -92,6 +94,11 @@ namespace MeshBuilder
             state = State.Initialized;
         }
 
+        public void SetAdjacent(DataVolume data, byte direction)
+        {
+            adjacents.SetAdjacent(data, direction);
+        }
+
         override protected void ScheduleGenerationJobs()
         {
             if (generationType == GenerationType.FromDataUncached)
@@ -100,8 +107,7 @@ namespace MeshBuilder
                 {
                     if (!tiles.DoExtentsMatch(tileExtents))
                     {
-                        tiles.Dispose();
-                        tiles = null;
+                        SafeDispose(ref tiles);
                     }
                 }
 
@@ -114,8 +120,7 @@ namespace MeshBuilder
                 {
                     if (!tileMeshes.DoExtentsMatch(tileExtents))
                     {
-                        tileMeshes.Dispose();
-                        tileMeshes = null;
+                        SafeDispose(ref tileMeshes);
                     }
                 }
 
@@ -125,6 +130,8 @@ namespace MeshBuilder
                 }
 
                 lastHandle = ScheduleTileGeneration(tiles, data, 64, lastHandle);
+
+                lastHandle = adjacents.ScheduleJobs(ThemeIndex, data, tiles, theme.Configs, settings.skipDirections, settings.skipDirectionsAndBorders, lastHandle);
             }
             
             if (HasTilesData && HasTileMeshes)
@@ -158,21 +165,15 @@ namespace MeshBuilder
         {
             base.DisposeTemp();
 
-            if (tempInstanceList.IsCreated)
-            {
-                tempInstanceList.Dispose();
-            }
+            adjacents.DisposeTemp();
+            SafeDispose(ref tempInstanceList);
         }
 
         public override void Dispose()
         {
             base.Dispose();
 
-            if (tileMeshes != null)
-            {
-                tileMeshes.Dispose();
-                tileMeshes = null;
-            }
+            SafeDispose(ref tileMeshes);
         }
 
         // TODO: tile generation is divided into multiple verions, based on the mesher settings
@@ -283,7 +284,7 @@ namespace MeshBuilder
                 {
                     type = TileType.Void;
                 }
-                tiles[index] = new TileMeshData { type = type, configTransformGroup = transformGroup, variant0 = 0, variant1 = 0 };
+                tiles[index] = new TileMeshData { type = type, configTransformGroup = transformGroup };
             }
         }
 
@@ -368,6 +369,93 @@ namespace MeshBuilder
             }
         }
 
+        [BurstCompile]
+        private struct UpdateBoundaryJob : IJob
+        {
+            public Extents tileExtents;
+            public Extents dataExtents;
+            public int themeIndex;
+
+            public LayerIndexStep indexStep;
+
+            public Direction skipDirections;
+            public Direction skipDirectionsWithBorders;
+
+            [ReadOnly] public NativeArray<ConfigTransformGroup> configs;
+            [ReadOnly] public NativeArray<TileData> data;
+            
+            [ReadOnly] public NativeArray<TileData> adjXM;
+            [ReadOnly] public NativeArray<TileData> adjXP;
+            [ReadOnly] public NativeArray<TileData> adjZM;
+            [ReadOnly] public NativeArray<TileData> adjZP;
+
+            [ReadOnly] public NativeArray<TileData> adjXMZM;
+            [ReadOnly] public NativeArray<TileData> adjXMZP;
+            [ReadOnly] public NativeArray<TileData> adjXPZM;
+            [ReadOnly] public NativeArray<TileData> adjXPZP;
+
+            public NativeArray<TileMeshData> tiles;
+
+            public void Execute()
+            {
+                for (int row = 0; row < indexStep.rowNum; ++row)
+                {
+                    int index = indexStep.StartRow(row);
+                    for (int col = 0; col < indexStep.colNum; ++col)
+                    {
+                        var tile = tiles[index];
+                        var dc = CoordFromIndex(index, tileExtents);
+                        byte configuration = CreateConfigurationWithAdjacent(themeIndex, dc, data, dataExtents, adjXM, adjXP, adjZM, adjZP, adjXMZM, adjXMZP, adjXPZM, adjXPZP);
+                        if (configuration == 0 || configuration == configs.Length - 1)
+                        {
+                            tile.type = TileType.Void;
+                        }
+
+                        if (skipDirectionsWithBorders != Direction.None && IsCulledBySkipDirectionsWithBorders(configuration, skipDirectionsWithBorders))
+                        {
+                            tile.type |= TileType.Culled;
+                        }
+                        else
+                        if (skipDirections != Direction.None && IsCulledBySkipDirections(configuration, skipDirections))
+                        {
+                            tile.type |= TileType.Culled;
+                        }
+
+                        tile.configTransformGroup = configs[configuration];
+                        tiles[index] = tile;
+
+                        index = indexStep.NextCol(index);
+                    }
+                }
+            }
+        }
+
+        [BurstCompile]
+        private struct CullLayerJob : IJob
+        {
+            public Extents tileExtents;
+
+            public LayerIndexStep indexStep;
+
+            public NativeArray<TileMeshData> tiles;
+
+            public void Execute()
+            {
+                for (int row = 0; row < indexStep.rowNum; ++row)
+                {
+                    int index = indexStep.StartRow(row);
+                    for (int col = 0; col < indexStep.colNum; ++col)
+                    {
+                        var tile = tiles[index];
+                        tile.type = TileType.Culled;
+                        tiles[index] = tile;
+
+                        index = indexStep.NextCol(index);
+                    }
+                }
+            }
+        }
+
         static private byte CreateConfiguration(int themeIndex, int3 dc, NativeArray<TileData> data, Extents dataExtents)
         {
             byte configuration = 0;
@@ -402,6 +490,76 @@ namespace MeshBuilder
             {
                 int index = IndexFromCoord(x, y, z, dataExtents);
                 return data[index].themeIndex == themeIndex;
+            }
+
+            return configuration;
+        }
+
+        static private byte CreateConfigurationWithAdjacent(int themeIndex, int3 dc, NativeArray<TileData> data, Extents dataExtents,
+            NativeArray<TileData> adjXM, NativeArray<TileData> adjXP, NativeArray<TileData> adjZM, NativeArray<TileData> adjZP,
+            NativeArray<TileData> adjXMZM, NativeArray<TileData> adjXMZP, NativeArray<TileData> adjXPZM, NativeArray<TileData> adjXPZP)
+        {
+            byte configuration = 0;
+
+            if (IsFilled(dc.x - 1, dc.y, dc.z    )) configuration |= Tile.TopLeftForward;
+            if (IsFilled(dc.x    , dc.y, dc.z    )) configuration |= Tile.TopRightForward;
+            if (IsFilled(dc.x - 1, dc.y, dc.z - 1)) configuration |= Tile.TopLeftBackward;
+            if (IsFilled(dc.x    , dc.y, dc.z - 1)) configuration |= Tile.TopRightBackward;
+
+            if (IsFilled(dc.x - 1, dc.y - 1, dc.z    )) configuration |= Tile.BottomLeftForward;
+            if (IsFilled(dc.x    , dc.y - 1, dc.z    )) configuration |= Tile.BottomRightForward;
+            if (IsFilled(dc.x - 1, dc.y - 1, dc.z - 1)) configuration |= Tile.BottomLeftBackward;
+            if (IsFilled(dc.x    , dc.y - 1, dc.z - 1)) configuration |= Tile.BottomRightBackward;
+
+            bool IsFilled(int x, int y, int z)
+            {
+                if (dataExtents.IsInBounds(x, y, z))
+                {
+                    int index = IndexFromCoord(x, y, z, dataExtents);
+                    return data[index].themeIndex == themeIndex;
+                }
+
+                NativeArray<TileData> selectedData = data;
+                byte dir = FindDirection(x, y, z, dataExtents);
+                switch (dir)
+                {
+                    case (byte)Direction.XMinus: selectedData = adjXM; break;
+                    case (byte)Direction.XPlus: selectedData = adjXP; break;
+                    case (byte)Direction.ZMinus: selectedData = adjZM; break;
+                    case (byte)Direction.ZPlus: selectedData = adjZP; break;
+                    case (byte)Direction.XMinus | (byte)Direction.ZMinus: selectedData = adjXMZM; break;
+                    case (byte)Direction.XMinus | (byte)Direction.ZPlus: selectedData = adjXMZP; break;
+                    case (byte)Direction.XPlus | (byte)Direction.ZMinus: selectedData = adjXPZM; break;
+                    case (byte)Direction.XPlus | (byte)Direction.ZPlus: selectedData = adjXPZP; break;
+                }
+
+                if ((dir & (byte)Direction.XPlus) != 0) { x = 0; }
+                else if ((dir & (byte)Direction.XMinus) != 0) { x = dataExtents.X - 1; }
+
+                if ((dir & (byte)Direction.ZPlus) != 0) { z = 0; }
+                else if ((dir & (byte)Direction.ZMinus) != 0) { z = dataExtents.Z - 1; }
+
+                if (dataExtents.IsInBounds(x, y, z) && selectedData.Length > 0)
+                {
+                    int index = IndexFromCoord(x, y, z, dataExtents);
+                    return selectedData[index].themeIndex == themeIndex;
+                }
+
+                return false;
+            }
+
+            byte FindDirection(int testX, int testY, int testZ, Extents e)
+            {
+                byte result = 0;
+
+                if (testX < 0) result |= (byte)Direction.XMinus;
+                if (testX >= e.X) result |= (byte)Direction.XPlus;
+           //     if (testY < 0) result |= (byte)Direction.YMinus;
+           //     if (testY >= e.Y) result |= (byte)Direction.YPlus;
+                if (testZ < 0) result |= (byte)Direction.ZMinus;
+                if (testZ >= e.Z) result |= (byte)Direction.ZPlus;
+
+                return result;
             }
 
             return configuration;
@@ -759,6 +917,169 @@ namespace MeshBuilder
             byte variant5;
             byte variant6;
             byte variant7;
+        }
+
+        private class AdjacentVolumes
+        {
+            public DataVolume XM { get; set; }
+            public DataVolume XP { get; set; }
+            public DataVolume ZM { get; set; }
+            public DataVolume ZP { get; set; }
+
+            public DataVolume XMZM { get; set; }
+            public DataVolume XMZP { get; set; }
+            public DataVolume XPZM { get; set; }
+            public DataVolume XPZP { get; set; }
+
+            private NativeArray<TileData> tempArray;
+
+            public void SetAdjacent(DataVolume data, byte direction)
+            {
+                switch (direction)
+                {
+                    case (byte)Direction.XMinus: XM = data; break;
+                    case (byte)Direction.XPlus: XP = data; break;
+                    case (byte)Direction.ZMinus: ZM = data; break;
+                    case (byte)Direction.ZPlus: ZP = data; break;
+                    case (byte)Direction.XMinus | (byte)Direction.ZMinus: XMZM = data; break;
+                    case (byte)Direction.XMinus | (byte)Direction.ZPlus: XMZP = data; break;
+                    case (byte)Direction.XPlus | (byte)Direction.ZMinus: XPZM = data; break;
+                    case (byte)Direction.XPlus | (byte)Direction.ZPlus: XPZP = data; break;
+                    default:
+                        {
+                            Debug.LogError("direction not handled");
+                            break;
+                        }
+                }
+            }
+
+            public JobHandle ScheduleJobs(int themeIndex, DataVolume data, TileVolume tiles, NativeArray<ConfigTransformGroup> configs, Direction skipDirections, Direction skipDirectionsWithBorders, JobHandle handle)
+            {
+                tempArray = new NativeArray<TileData>(0, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+                
+                if (XM != null)
+                {
+                    handle = CreateBoundaryJob(Direction.XMinus, themeIndex, data, tiles, configs, skipDirections, skipDirectionsWithBorders, handle);
+                }
+                if (XP != null)
+                {
+                    handle = CreateCullLayerJob(Direction.XPlus, tiles, handle);
+                }
+                if (ZM != null)
+                {
+                    handle = CreateBoundaryJob(Direction.ZMinus, themeIndex, data, tiles, configs, skipDirections, skipDirectionsWithBorders, handle);
+                }
+                if (ZP != null)
+                {
+                    handle = CreateCullLayerJob(Direction.ZPlus, tiles, handle);
+                }
+
+                return handle;
+            }
+
+            public void DisposeTemp()
+            {
+                SafeDispose(ref tempArray);
+            }
+
+            private JobHandle CreateBoundaryJob(Direction dir, int themeIndex, DataVolume data, TileVolume tiles, NativeArray<ConfigTransformGroup> configs, Direction skipDirections, Direction skipDirectionsWithBorders, JobHandle dependHandle)
+            {
+                var job = new UpdateBoundaryJob
+                {
+                    tileExtents = new Extents(tiles.XLength, tiles.YLength, tiles.ZLength),
+                    dataExtents = new Extents(data.XLength, data.YLength, data.ZLength),
+                    themeIndex = themeIndex,
+                    configs = configs,
+                    data = data.Data,
+
+                    indexStep = LayerIndexStep.Create(dir, tiles),
+                    
+                    skipDirections = skipDirections,
+                    skipDirectionsWithBorders = skipDirectionsWithBorders,
+
+                    adjXM = (XM == null) ? tempArray : XM.Data,
+                    adjXP = (XP == null) ? tempArray : XP.Data,
+                    adjZM = (ZM == null) ? tempArray : ZM.Data,
+                    adjZP = (ZP == null) ? tempArray : ZP.Data,
+                    adjXMZM = (XMZM == null) ? tempArray : XMZM.Data,
+                    adjXMZP = (XMZP == null) ? tempArray : XMZP.Data,
+                    adjXPZM = (XPZM == null) ? tempArray : XPZM.Data,
+                    adjXPZP = (XPZP == null) ? tempArray : XPZP.Data,
+                    
+                    tiles = tiles.Data
+                };
+
+                return job.Schedule(dependHandle);
+            }
+
+            private JobHandle CreateCullLayerJob(Direction dir, TileVolume tiles, JobHandle dependHandle)
+            {
+                var job = new CullLayerJob
+                {
+                    indexStep = LayerIndexStep.Create(dir, tiles),
+                    tileExtents = new Extents(tiles.XLength, tiles.YLength, tiles.ZLength),
+                    tiles = tiles.Data
+                };
+
+                return job.Schedule(dependHandle);
+            }
+        }
+
+        private struct LayerIndexStep
+        {
+            public int start;
+            public int colStep;
+            public int colNum;
+            public int rowStep;
+            public int rowNum;
+
+            public int StartRow(int row) { return start + rowStep * row; }
+            public int NextCol(int index) { return index + colStep; }
+
+            static public LayerIndexStep Create<T>(Direction dir, Volume<T> volume) where T : struct
+            {
+                var res = new LayerIndexStep();
+                res.rowStep = volume.XLength * volume.ZLength;
+                res.rowNum = volume.YLength;
+                switch (dir)
+                {
+                    case Direction.XPlus:
+                        {
+                            res.start = volume.XLength - 1;
+                            res.colStep = volume.XLength;
+                            res.colNum = volume.ZLength;
+                        }
+                        break;
+                    case Direction.XMinus:
+                        {
+                            res.start = 0;
+                            res.colStep = volume.XLength;
+                            res.colNum = volume.ZLength;
+                        }
+                        break;
+                    case Direction.ZMinus:
+                        {
+                            res.start = 0;
+                            res.colStep = 1;
+                            res.colNum = volume.XLength;
+                        }
+                        break;
+                    case Direction.ZPlus:
+                        {
+                            res.start = volume.XLength * (volume.ZLength - 1);
+                            res.colStep = 1;
+                            res.colNum = volume.XLength;
+                        }
+                        break;
+                    default:
+                        {
+                            Debug.LogError("direction not handled!");
+                            break;
+                        }
+                }
+
+                return res;
+            }
         }
     }
 }
