@@ -7,7 +7,8 @@ using Unity.Mathematics;
 namespace MeshBuilder
 {
     using TileData = Tile.Data;
-    using DataVolume = Volume<MeshBuilder.Tile.Data>;
+    using DataVolume = Volume<Tile.Data>;
+    using Direction = Tile.Direction;
 
     /// <summary>
     /// GridMesher
@@ -265,7 +266,7 @@ namespace MeshBuilder
                 bool normalizedUV = uvMode == UVMode.Normalized;
                 float uScale = normalizedUV ? 1f : 1f / data.XLength;
                 float vScale = normalizedUV ? 1f : 1f / data.ZLength;
-                lastHandle = HeightMap.StartGeneration(MeshData, uScale, vScale, lastHandle);
+                lastHandle = HeightMap.StartGeneration(MeshData, uScale, vScale, resolution, dataExtents, gridCells, borderIndices, lastHandle);
             }
 
             JobHandle.ScheduleBatchedJobs();
@@ -350,7 +351,7 @@ namespace MeshBuilder
                         int left = -1;
                         for (int x = 0; x < volumeExtent.X; ++x)
                         {
-                            if (data[dataIndex].themeIndex == filledValue && (y == volumeExtent.Y - 1 || data[dataIndex + volumeExtent.XZ].themeIndex != filledValue))
+                            if (HasTop(x, y, z, data, filledValue, volumeExtent))
                             {
                                 var right = new Range { start = boundaryIndex, end = boundaryIndex + resolution };
                                 boundaryIndex += resolution + 1;
@@ -381,6 +382,7 @@ namespace MeshBuilder
                                 var cell = new GridCell
                                 {
                                     coord = new int3 { x = x, y = y, z = z },
+                                    connectedDirection = FindAdjacentDirections(x, y, z, data, filledValue, volumeExtent),
                                     leftCell = left,
                                     bottomCell = bottomRowBuffer[x],
                                     rightBorderIndices = right,
@@ -490,6 +492,31 @@ namespace MeshBuilder
                 borderIndices[topBorderStart] = GetBorderRightIndex(leftCell, resolution);
             }
 
+            static private bool HasTop(int x, int y, int z, NativeArray<TileData> data, int filledValue, Extents extent)
+            {
+                int i = extent.ToIndexAt(x, y, z);
+                return data[i].themeIndex == filledValue && (y == extent.Y - 1 || data[i + extent.XZ].themeIndex != filledValue);
+            }
+
+            static private bool HasTop(int index, int y, NativeArray<TileData> data, int filledValue, Extents extent)
+            {
+                return data[index].themeIndex == filledValue && (y == extent.Y - 1 || data[index + extent.XZ].themeIndex != filledValue);
+            }
+
+            static private byte FindAdjacentDirections(int x, int y, int z, NativeArray<TileData> data, int filledValue, Extents extent)
+            {
+                int i = extent.ToIndexAt(x, y, z);
+                byte res = 0;
+
+                if (x > 0 && HasTop(i - 1, y, data, filledValue, extent)) { res |= (byte)Tile.Direction.XMinus; }
+                if (x < extent.X - 1 && HasTop(i + 1, y, data, filledValue, extent)) { res |= (byte)Tile.Direction.XPlus; }
+
+                if (z > 0 && HasTop(i - extent.X, y, data, filledValue, extent)) { res |= (byte)Tile.Direction.ZMinus; }
+                if (z < extent.Z - 1 && HasTop(i + extent.X, y, data, filledValue, extent)) { res |= (byte)Tile.Direction.ZPlus; }
+
+                return res;
+            }
+
             private int GetBorderRightIndex(int cellIndex, int borderIndex) { return cells[cellIndex].rightBorderIndices.At(borderIndex, borderIndices); }
             private int GetBorderTopIndex(int cellIndex, int borderIndex) { return cells[cellIndex].topBorderIndices.At(borderIndex, borderIndices); }
         }
@@ -571,8 +598,7 @@ namespace MeshBuilder
                             c2 = bottom.At(1, borderIndices);
                             c3 = vertexIndex;
                         }
-                        else
-                        if (y == 0 && bottom.IsValid)
+                        else if (y == 0 && bottom.IsValid)
                         {
                             c0 = bottom.At(x, borderIndices);
                             c1 = vertexIndex + x + colOffset;
@@ -698,6 +724,9 @@ namespace MeshBuilder
             public Range topBorderIndices;
             public Range rightBorderIndices;
 
+            // Tile.Direction flags
+            public byte connectedDirection; 
+
             public bool HasLeftCell { get { return leftCell > -1; } }
             public bool HasBottomCell { get { return bottomCell > -1; } }
         }
@@ -752,6 +781,7 @@ namespace MeshBuilder
             private NativeArray<byte> tempHeightMapMax;
 
             private NativeArray<Color32> tempHeightMapColors;
+            private NativeArray<float> tempHeightLerpValues;
 
             private NativeArray<float> values;
 
@@ -778,7 +808,7 @@ namespace MeshBuilder
                 }
             }
 
-            public JobHandle StartGeneration(GridMeshData meshData, float uScale, float vScale, JobHandle lastHandle)
+            public JobHandle StartGeneration(GridMeshData meshData, float uScale, float vScale, int cellResolution, Extents dataExtent, NativeArray<GridCell> gridCells, NativeArray<int> borderIndices, JobHandle lastHandle)
             {
                 if (HeightMap != null && (scaleMode != ScaleMode.Manual || offsetMode != OffsetMode.Manual))
                 {
@@ -790,7 +820,18 @@ namespace MeshBuilder
                     tempHeightMapMin = new NativeArray<byte>(imgHeight, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
                     tempHeightMapAvg = new NativeArray<byte>(imgHeight, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
                     tempHeightMapMax = new NativeArray<byte>(imgHeight, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-
+                    tempHeightLerpValues = new NativeArray<float>(meshData.UVs.Length, Allocator.TempJob, NativeArrayOptions.ClearMemory);
+                    
+                    var generateHeightLerpJob = new GenerateHeightLerpJob
+                    {
+                        cellResolution = cellResolution,
+                        volumeExtent = dataExtent,
+                        cells = gridCells,
+                        borderIndices = borderIndices,
+                        heightLerpValues = tempHeightLerpValues
+                    };
+                    var heightLerpHandle = generateHeightLerpJob.Schedule(gridCells.Length, 32, lastHandle);
+                    
                     var heightMapJob = new CalcHeightMapInfoJob
                     {
                         heightmapWidth = imgWidth,
@@ -816,7 +857,9 @@ namespace MeshBuilder
                     };
 
                     lastHandle = fillHeightMapInfo.Schedule(lastHandle);
-                    
+
+                    lastHandle = JobHandle.CombineDependencies(lastHandle, heightLerpHandle);
+
                     var applyHeightmapJob = new ApplyHeightMapJob
                     {
                         heightmapWidth = HeightMap.width,
@@ -826,6 +869,7 @@ namespace MeshBuilder
                         colors = tempHeightMapColors,
                         heightValues = values,
                         uvs = meshData.UVs,
+                        heightLerpValues = tempHeightLerpValues,
                         vertices = meshData.Vertices
                     };
 
@@ -846,6 +890,7 @@ namespace MeshBuilder
                 SafeDispose(ref tempHeightMapAvg);
                 SafeDispose(ref tempHeightMapMax);
                 SafeDispose(ref tempHeightMapColors);
+                SafeDispose(ref tempHeightLerpValues);
             }
 
             static public HeightMapData CreateWithManualInfo(Texture2D heightMap, float valueScale, float valueOffset)
@@ -954,6 +999,111 @@ namespace MeshBuilder
                 }
             }
 
+            // a height multiplier is generated for the edges, 0 for now, could be extended to be more gradual
+            // if the grid is used with other mesh generators, it can be useful to set the edges to zero height, 
+            // so a hill on the grid doesn't overlap with the border tiles for example
+            [BurstCompile]
+            internal struct GenerateHeightLerpJob : IJobParallelFor
+            {
+                static private readonly Range NullRange = new Range { start = 0, end = 0 };
+
+                // cell properties
+                public int cellResolution;
+
+                // input data
+                public Extents volumeExtent;
+                [ReadOnly] public NativeArray<GridCell> cells;
+                [ReadOnly] public NativeArray<int> borderIndices;
+
+                // output data
+                [NativeDisableParallelForRestriction] [WriteOnly] public NativeArray<float> heightLerpValues;
+
+                public void Execute(int index)
+                {
+                    var cell = cells[index];
+
+                    Range left = cell.leftCell >= 0 ? cells[cell.leftCell].rightBorderIndices : NullRange;
+                    Range bottom = cell.bottomCell >= 0 ? cells[cell.bottomCell].topBorderIndices : NullRange;
+
+                    GenerateGrid(cell.coord, left, bottom, cell.rightBorderIndices, cell.topBorderIndices, cell.startVertex, cell.connectedDirection);
+                }
+
+                private void GenerateGrid(int3 coord, Range left, Range bottom, Range right, Range top, int vertexIndex, byte connectedDirection)
+                {
+                    int c0, c1, c2, c3;
+                    int width = cellResolution + 1;
+                    int rowOffset = left.IsValid ? width - 1 : width;
+                    int colOffset = left.IsValid ? -1 : 0;
+                    for (int y = 0; y < cellResolution; ++y)
+                    {
+                        for (int x = 0; x < cellResolution; ++x)
+                        {
+                            // corner
+                            c0 = vertexIndex;
+                            // above
+                            c1 = c0 + rowOffset;
+                            // right
+                            c2 = c0 + 1;
+                            // diagonal corner
+                            c3 = c0 + rowOffset + 1;
+
+                            if (x == 0 && y == 0 && bottom.IsValid && left.IsValid)
+                            {
+                                c0 = bottom.At(0, borderIndices);
+                                c1 = left.At(1, borderIndices);
+                                c2 = bottom.At(1, borderIndices);
+                                c3 = vertexIndex;
+                            }
+                            else if (y == 0 && bottom.IsValid)
+                            {
+                                c0 = bottom.At(x, borderIndices);
+                                c1 = vertexIndex + x + colOffset;
+                                c2 = bottom.At(x + 1, borderIndices);
+                                c3 = vertexIndex + x + 1 + colOffset;
+                            }
+                            else if (x == 0 && left.IsValid)
+                            {
+                                c0 = left.At(y, borderIndices);
+                                c1 = left.At(y + 1, borderIndices);
+                                c2 = vertexIndex;
+                                c3 = vertexIndex + cellResolution;
+                            }
+                            else
+                            {
+                                ++vertexIndex;
+                            }
+
+                            SetHeightLerpValues(c0, c1, c2, c3, connectedDirection, x, y, cellResolution);
+                        }
+
+                        // right side vertex
+                        if (y > 0 || !bottom.IsValid)
+                        {
+                            ++vertexIndex;
+                        }
+                    }
+                }
+
+                private void SetHeightLerpValues(int v0, int v1, int v2, int v3, byte adjacentDirection, int x, int y, int cellResolution)
+                {
+                    heightLerpValues[v0] = CalcHeightLerpValue(adjacentDirection, x, y, cellResolution);
+                    heightLerpValues[v1] = CalcHeightLerpValue(adjacentDirection, x, y + 1, cellResolution);
+                    heightLerpValues[v2] = CalcHeightLerpValue(adjacentDirection, x + 1, y, cellResolution);
+                    heightLerpValues[v3] = CalcHeightLerpValue(adjacentDirection, x + 1, y + 1, cellResolution);
+                }
+
+                private float CalcHeightLerpValue(byte adjacentDirection, int x, int y, int cellResolution)
+                {
+                    if ((adjacentDirection & (byte)Direction.XMinus) == 0 && x == 0) { return 0f; }
+                    if ((adjacentDirection & (byte)Direction.XPlus) == 0 && x == cellResolution) { return 0f; }
+
+                    if ((adjacentDirection & (byte)Direction.YMinus) == 0 && y == 0) { return 0f; }
+                    if ((adjacentDirection & (byte)Direction.YPlus) == 0 && y == cellResolution) { return 0f; }
+
+                    return 1f;
+                }
+            }
+
             [BurstCompile]
             public struct ApplyHeightMapJob : IJobParallelFor
             {
@@ -966,6 +1116,7 @@ namespace MeshBuilder
 
                 [ReadOnly] public NativeArray<Color32> colors;
                 [ReadOnly] public NativeArray<float2> uvs;
+                [ReadOnly] public NativeArray<float> heightLerpValues;
                 public NativeArray<float3> vertices;
 
                 public void Execute(int index)
@@ -975,7 +1126,9 @@ namespace MeshBuilder
 
                     int colorIndex = y * heightmapWidth + x;
                     Color32 color = colors[colorIndex];
-                   vertices[index] += new float3(0, heightValues[ValueScaleIndex] * color.r + heightValues[ValueOffsetIndex], 0);
+                    float height = heightValues[ValueScaleIndex] * color.r + heightValues[ValueOffsetIndex];
+                    height *= heightLerpValues[index];
+                    vertices[index] += new float3(0, height, 0);
                 }
             }
         }
