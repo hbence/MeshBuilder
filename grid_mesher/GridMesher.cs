@@ -15,7 +15,6 @@ namespace MeshBuilder
     /// 
     /// TODO:
     /// - it only generates a top part, it should be able to handle any direction
-    /// - it should be able to handle multiple materials
     /// - it would be nice if it could generate heightmap lerp values 
     /// so the sides would be always at 0 and scale towards the heightmap value
     /// 
@@ -152,14 +151,13 @@ namespace MeshBuilder
             HeightMap = HeightMapData.CreateWithScaleFromTexIntervalMinOffset(heightMap, maxHeight);
         }
 
-
         public void Dispose()
         {
             lastHandle.Complete();
 
-         //   DisposeTemp();
+            DisposeTemp();
 
-            SafeDispose(meshArrayLengths);
+            SafeDispose(ref meshArrayLengths);
 
             HeightMap = null;
 
@@ -168,9 +166,9 @@ namespace MeshBuilder
 
         private void DisposeTemp()
         {
-            SafeDispose(gridCells);
-            SafeDispose(borderIndices);
-            SafeDispose(tempRowBuffer);
+            SafeDispose(ref gridCells);
+            SafeDispose(ref borderIndices);
+            SafeDispose(ref tempRowBuffer);
 
             MeshData = null;
         }
@@ -653,24 +651,27 @@ namespace MeshBuilder
         internal class GridMeshData
         {
             // mesh data
-            public NativeArray<float3> Vertices { get; private set; }
-            public NativeArray<int> Tris { get; private set; }
-            public NativeArray<float2> UVs { get; private set; }
+            private NativeArray<float3> vertices;
+            public NativeArray<float3> Vertices { get { return vertices; } }
+            private NativeArray<int> tris;
+            public NativeArray<int> Tris { get { return tris; } }
+            private NativeArray<float2> uvs;
+            public NativeArray<float2> UVs { get { return uvs; } }
             
             public GridMeshData(int vertexCount, int triangleCount)
             {
                 Dispose();
 
-                Vertices = new NativeArray<float3>(vertexCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-                UVs = new NativeArray<float2>(vertexCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-                Tris = new NativeArray<int>(triangleCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+                vertices = new NativeArray<float3>(vertexCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+                uvs = new NativeArray<float2>(vertexCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+                tris = new NativeArray<int>(triangleCount, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
             }
 
             public void Dispose()
             {
-                if (Vertices.IsCreated) Vertices.Dispose();
-                if (Tris.IsCreated) Tris.Dispose();
-                if (UVs.IsCreated) UVs.Dispose();
+                SafeDispose(ref vertices);
+                SafeDispose(ref tris);
+                SafeDispose(ref uvs);
             }
 
             public void UpdateMesh(Mesh mesh)
@@ -710,19 +711,21 @@ namespace MeshBuilder
             public int At(int index, NativeArray<int> indices) { return indices[start + index]; }
         }
 
-        static private void SafeDispose<T>(NativeArray<T> collection) where T : struct
+        static private void SafeDispose<T>(ref NativeArray<T> collection) where T : struct
         {
             if (collection.IsCreated)
             {
                 collection.Dispose();
+                collection = default;
             }
         }
 
-        static private void SafeDispose<T>(NativeList<T> collection) where T : struct
+        static private void SafeDispose<T>(ref NativeList<T> collection) where T : struct
         {
             if (collection.IsCreated)
             {
                 collection.Dispose();
+                collection = default;
             }
         }
 
@@ -768,7 +771,7 @@ namespace MeshBuilder
 
             public void Dispose()
             {
-            //    DisposeTemps();
+                DisposeTemps();
                 if (values.IsCreated)
                 {
                     values.Dispose();
@@ -839,10 +842,10 @@ namespace MeshBuilder
 
             private void DisposeTemps()
             {
-                SafeDispose(tempHeightMapMin);
-                SafeDispose(tempHeightMapAvg);
-                SafeDispose(tempHeightMapMax);
-                SafeDispose(tempHeightMapColors);
+                SafeDispose(ref tempHeightMapMin);
+                SafeDispose(ref tempHeightMapAvg);
+                SafeDispose(ref tempHeightMapMax);
+                SafeDispose(ref tempHeightMapColors);
             }
 
             static public HeightMapData CreateWithManualInfo(Texture2D heightMap, float valueScale, float valueOffset)
