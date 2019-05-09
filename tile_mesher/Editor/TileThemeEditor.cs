@@ -25,7 +25,6 @@ namespace MeshBuilder
         {
             themeNameProp = serializedObject.FindProperty("themeName");
             typeProp = serializedObject.FindProperty("type");
-            openTowardsThemesProp = serializedObject.FindProperty("openTowardsThemes");
             baseVariantsProp = serializedObject.FindProperty("baseVariants");
 
             fillOptions = new AutoFillOptions();
@@ -37,7 +36,6 @@ namespace MeshBuilder
 
             EditorGUILayout.PropertyField(themeNameProp);
             EditorGUILayout.PropertyField(typeProp);
-            EditorGUILayout.PropertyField(openTowardsThemesProp, true);
 
             EditorGUILayout.Separator();
             EditorGUILayout.LabelField("Base Pieces", EditorStyles.boldLabel);

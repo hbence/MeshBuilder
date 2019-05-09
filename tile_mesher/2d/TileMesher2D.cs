@@ -62,7 +62,7 @@ namespace MeshBuilder
             Data = dataVolume;
             ThemePalette = themePalette;
             YLevel = Mathf.Clamp(yLevel, 0, dataVolume.YLength - 1);
-            ThemeIndex = themeIndex;
+            FillValue = themeIndex;
             MesherSettings = settings != null ? settings : new Settings();
 
             Theme = theme;
@@ -164,7 +164,7 @@ namespace MeshBuilder
             {
                 tileExtents = tileExtents,
                 dataExtents = dataExtents,
-                themeIndex = ThemeIndex,
+                themeIndex = FillValue,
                 yLevel = YLevel,
                 configs = Theme.Configs,
                 data = data.Data,

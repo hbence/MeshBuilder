@@ -47,10 +47,6 @@ namespace MeshBuilder
         public Type ThemeType { get { return type; } }
 
         [SerializeField]
-        private string[] openTowardsThemes = null;
-        public string[] OpenTowardsThemes { get { return openTowardsThemes; } }
-
-        [SerializeField]
         private BaseMeshVariants[] baseVariants;
         public BaseMeshVariants[] BaseVariants { get { return baseVariants; } }
 
@@ -115,7 +111,7 @@ namespace MeshBuilder
         {
             if (baseVariants == null || baseVariants.Length == 0)
             {
-                LogWarning("theme has no base mesh pieces!");
+                Debug.LogWarning(themeName + ": theme has no base mesh pieces!");
                 return;
             }
 
@@ -124,14 +120,14 @@ namespace MeshBuilder
                 var baseVar = BaseVariants[i];
                 if (baseVar.Variants == null || baseVar.Variants.Length == 0)
                 {
-                    LogWarning("theme has base variant with zero meshes!");
+                    Debug.LogWarning(themeName + ": theme has base variant with zero meshes!");
                 }
 
                 for (int j = i + 1; j < baseVariants.Length; ++j)
                 {
                     if (baseVar.PieceConfig == baseVariants[j].PieceConfig)
                     {
-                        LogWarning("theme has multiple base variants with matching configuration!");
+                        Debug.LogWarning(themeName + ": theme has multiple base variants with matching configuration!");
                     }
                 }
             }
@@ -154,7 +150,7 @@ namespace MeshBuilder
 
             if (nullConfigs.Count > 0)
             {
-                LogWarning("There are uncovered configurations!");
+                Debug.LogWarning(themeName + ": There are uncovered configurations!");
                 foreach (var c in nullConfigs)
                 {
                     Debug.LogWarning("config: " + c);
@@ -209,7 +205,7 @@ namespace MeshBuilder
                 }
                 else
                 {
-                    LogWarning("Couldn't find configuration in mesh name:" + mesh.name);
+                    Debug.LogWarning(themeName + ": Couldn't find configuration in mesh name:" + mesh.name);
                 }
             }
 
@@ -226,13 +222,8 @@ namespace MeshBuilder
             }
             else
             {
-                LogWarning("Couldn't find any mesh variants!");
+                Debug.LogWarning(themeName + ": Couldn't find any mesh variants!");
             }
-        }
-
-        private void LogWarning(string msg)
-        {
-            Debug.LogWarning(themeName + ": " + msg);
         }
 
         public bool Is2DTheme { get { return Is2DType(type); } }

@@ -59,7 +59,7 @@ namespace MeshBuilder
 
         // in the data volume we're generating the mesh
         // for this value
-        public int ThemeIndex { get; protected set; }
+        public int FillValue { get; protected set; }
 
         protected Extents dataExtents;
         protected Extents tileExtents;

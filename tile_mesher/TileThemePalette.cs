@@ -7,55 +7,101 @@ namespace MeshBuilder
     public class TileThemePalette : ScriptableObject
     {
         [SerializeField]
-        private TileTheme[] themes = null;
+        private PaletteElem[] elems = null;
         
         public void Init()
         {
-            if (themes != null)
+            if (elems != null && elems.Length > 0)
             {
-                foreach (var theme in themes)
+                foreach (var elem in elems)
                 {
-                    theme.Init();
+                    elem.Theme.Init();
                 }
             }
         }
-     
-        private List<int> CollectOpenThemeIndices(TileTheme theme)
-        {
-            List<int> results = new List<int>();
 
-            if (theme.OpenTowardsThemes != null && theme.OpenTowardsThemes.Length > 0)
+        public int CollectOpenThemeFillValueFlags(TileTheme theme)
+        {
+            int flags = 0;
+            int index = FindThemeIndex(theme);
+            if (index >= 0 && elems[index].OpenTowardsThemes != null)
             {
-                foreach (var openTheme in theme.OpenTowardsThemes)
+                foreach (var openTheme in elems[index].OpenTowardsThemes)
                 {
-                    int index = FindThemeIndex(openTheme);
-                    if (index >= 0)
+                    int otherIndex = FindThemeIndex(openTheme);
+                    if (otherIndex >= 0)
                     {
-                        results.Add(index);
+                        int otherFillValue = elems[otherIndex].FillValue;
+                        if (otherFillValue > 31)
+                        {
+                            Debug.LogError("fille value can't be used as a flag, you are either using too many themes or this should be reimplemented!");
+                        }
+                        else
+                        {
+                            flags |= 1 << otherFillValue;
+                        }
                     }
                 }
             }
-
-            return results;
+            return flags;
         }
         
         public int FindThemeIndex(string name)
         {
-            for (int i = 0; i < themes.Length; ++i)
+            if (elems != null)
             {
-                if (themes[i].ThemeName == name)
+                for (int i = 0; i < elems.Length; ++i)
                 {
-                    return i;
+                    if (elems[i].Theme.ThemeName == name)
+                    {
+                        return i;
+                    }
                 }
             }
             return -1;
         }
 
-        public TileTheme Get(int index)
+        public int FindThemeIndex(TileTheme theme)
         {
-            return themes[index];
+            if (elems != null)
+            {
+                for (int i = 0; i < elems.Length; ++i)
+                {
+                    if (elems[i].Theme == theme)
+                    {
+                        return i;
+                    }
+                }
+            }
+            return -1;
         }
 
-        public int ThemeCount { get { return themes != null ? themes.Length : 0; } }
+        public int GetFillValue(int index)
+        {
+            return elems[index].FillValue;
+        }
+
+        public TileTheme Get(int index)
+        {
+            return elems[index].Theme;
+        }
+
+        public int ThemeCount { get { return elems != null ? elems.Length : 0; } }
+
+        [System.Serializable]
+        public class PaletteElem
+        {
+            [SerializeField]
+            private TileTheme theme = null;
+            public TileTheme Theme { get { return theme; } }
+
+            [SerializeField]
+            private int fillValue = 1;
+            public int FillValue { get { return fillValue; } }
+
+            [SerializeField]
+            private string[] openTowardsThemes = null;
+            public string[] OpenTowardsThemes { get { return openTowardsThemes; } }
+        }
     }
 }

@@ -25,7 +25,7 @@ namespace MeshBuilder
         // INITIAL DATA
         private TileTheme theme;
         private DataVolume data;
-        private Settings settings;
+        public Settings MesherSettings { get; private set; }
 
         private float3 cellSize;
 
@@ -50,23 +50,24 @@ namespace MeshBuilder
         public void Init(DataVolume dataVolume, int themeIndex, TileThemePalette themePalette, float3 cellSize = default)
         {
             var theme = themePalette.Get(themeIndex);
-            Init(dataVolume, themeIndex, theme, themePalette, cellSize, DefaultSettings);
+            int fillValue = themePalette.GetFillValue(themeIndex);
+            Init(dataVolume, fillValue, theme, themePalette, cellSize, DefaultSettings);
         }
 
-        public void Init(DataVolume dataVolume, int themeIndex, TileTheme theme, float3 cellSize = default, Settings settings = null)
+        public void Init(DataVolume dataVolume, int fillValue, TileTheme theme, float3 cellSize = default, Settings settings = null)
         {
-            Init(dataVolume, themeIndex, theme, null, cellSize, settings);
+            Init(dataVolume, fillValue, theme, null, cellSize, settings);
         }
 
-        public void Init(DataVolume dataVolume, int themeIndex, TileTheme theme, TileThemePalette themePalette, float3 cellSize = default, Settings settings = null)
+        public void Init(DataVolume dataVolume, int fillValue, TileTheme theme, TileThemePalette themePalette, float3 cellSize = default, Settings settings = null)
         {
             Dispose();
             
             this.data = dataVolume;
             this.ThemePalette = themePalette;
             this.theme = theme;
-            this.ThemeIndex = themeIndex;
-            this.settings = settings == null ? DefaultSettings : settings;
+            this.FillValue = fillValue;
+            this.MesherSettings = settings == null ? DefaultSettings : settings;
 
             this.theme.Init();
 
@@ -131,7 +132,14 @@ namespace MeshBuilder
 
                 lastHandle = ScheduleTileGeneration(tiles, data, 64, lastHandle);
 
-                lastHandle = adjacents.ScheduleJobs(ThemeIndex, data, tiles, theme.Configs, settings.skipDirections, settings.skipDirectionsAndBorders, lastHandle);
+                if (ThemePalette != null)
+                {
+                    int openFillFlags = ThemePalette.CollectOpenThemeFillValueFlags(theme);
+                    openFillFlags |= (1 << FillValue);
+                    lastHandle = ScheduleOpenFlagsUpdate(tiles, data, theme.Configs, openFillFlags, 128, lastHandle);
+                }
+
+                lastHandle = adjacents.ScheduleJobs(FillValue, data, tiles, theme.Configs, MesherSettings.skipDirections, MesherSettings.skipDirectionsAndBorders, lastHandle);
             }
             
             if (HasTilesData && HasTileMeshes)
@@ -182,15 +190,15 @@ namespace MeshBuilder
         // It's possible the leaner version aren't needed, and GenerateTileDataJobFullOptions will be enough
         private JobHandle ScheduleTileGeneration(TileVolume resultTiles, DataVolume data, int batchCount, JobHandle dependOn)
         {
-            if (settings.skipDirections == Direction.None && 
-                settings.skipDirectionsAndBorders == Direction.None &&
-                settings.filledBoundaries == Direction.None)
+            if (MesherSettings.skipDirections == Direction.None && 
+                MesherSettings.skipDirectionsAndBorders == Direction.None &&
+                MesherSettings.filledBoundaries == Direction.None)
             {
                 var tileGeneration = new GenerateTileDataJob
                 {
                     tileExtents = tileExtents,
                     dataExtents = dataExtents,
-                    themeIndex = ThemeIndex,
+                    themeIndex = FillValue,
                     configs = theme.Configs,
                     data = data.Data,
                     tiles = resultTiles.Data
@@ -199,16 +207,16 @@ namespace MeshBuilder
             }
             else
             {
-                if (settings.filledBoundaries != Direction.None)
+                if (MesherSettings.filledBoundaries != Direction.None)
                 {
                     var tileGeneration = new GenerateTileDataJobFullOptions
                     {
                         tileExtents = tileExtents,
                         dataExtents = dataExtents,
-                        themeIndex = ThemeIndex,
-                        skipDirections = settings.skipDirections,
-                        skipDirectionsWithBorders = settings.skipDirectionsAndBorders,
-                        filledBoundaries = settings.filledBoundaries,
+                        themeIndex = FillValue,
+                        skipDirections = MesherSettings.skipDirections,
+                        skipDirectionsWithBorders = MesherSettings.skipDirectionsAndBorders,
+                        filledBoundaries = MesherSettings.filledBoundaries,
                         configs = theme.Configs,
                         data = data.Data,
                         tiles = resultTiles.Data
@@ -221,9 +229,9 @@ namespace MeshBuilder
                     {
                         tileExtents = tileExtents,
                         dataExtents = dataExtents,
-                        themeIndex = ThemeIndex,
-                        skipDirections = settings.skipDirections,
-                        skipDirectionsWithBorders = settings.skipDirectionsAndBorders,
+                        themeIndex = FillValue,
+                        skipDirections = MesherSettings.skipDirections,
+                        skipDirectionsWithBorders = MesherSettings.skipDirectionsAndBorders,
                         configs = theme.Configs,
                         data = data.Data,
                         tiles = resultTiles.Data
@@ -231,6 +239,23 @@ namespace MeshBuilder
                     return tileGeneration.Schedule(resultTiles.Data.Length, batchCount, dependOn);
                 }
             }
+        }
+
+        private JobHandle ScheduleOpenFlagsUpdate(TileVolume tiles, DataVolume data, NativeArray<ConfigTransformGroup> configs, int openFillFlags, int batchCount, JobHandle dependOn)
+        {
+            var job = new UpdateOpenTileConfigurations
+            {
+                tileExtents = tileExtents,
+                dataExtents = dataExtents,
+
+                openFillFlags = openFillFlags,
+
+                configs = configs,
+                data = data.Data,
+                tiles = tiles.Data
+            };
+
+            return job.Schedule(tiles.Data.Length, batchCount, dependOn);
         }
 
         private JobHandle ScheduleMeshTileGeneration(Volume<MeshTile> resultMeshTiles, TileVolume tiles, int batchCount, JobHandle dependOn)
@@ -495,6 +520,34 @@ namespace MeshBuilder
             return configuration;
         }
 
+        static private byte CreateConfigurationWithOpenFlags(int3 dc, NativeArray<TileData> data, Extents dataExtents, int openFlags)
+        {
+            byte configuration = 0;
+
+            if (IsFilled(dc.x - 1, dc.y, dc.z)) configuration |= Tile.TopLeftForward;
+            if (IsFilled(dc.x, dc.y, dc.z)) configuration |= Tile.TopRightForward;
+            if (IsFilled(dc.x - 1, dc.y, dc.z - 1)) configuration |= Tile.TopLeftBackward;
+            if (IsFilled(dc.x, dc.y, dc.z - 1)) configuration |= Tile.TopRightBackward;
+            if (IsFilled(dc.x - 1, dc.y - 1, dc.z)) configuration |= Tile.BottomLeftForward;
+            if (IsFilled(dc.x, dc.y - 1, dc.z)) configuration |= Tile.BottomRightForward;
+            if (IsFilled(dc.x - 1, dc.y - 1, dc.z - 1)) configuration |= Tile.BottomLeftBackward;
+            if (IsFilled(dc.x, dc.y - 1, dc.z - 1)) configuration |= Tile.BottomRightBackward;
+
+            bool IsFilled(int x, int y, int z)
+            {
+                if (dataExtents.IsInBounds(x, y, z))
+                {
+                    int index = IndexFromCoord(x, y, z, dataExtents);
+                    int value = data[index].themeIndex;
+                    return value != 0 && ((1 << value) & openFlags) != 0;
+                }
+
+                return true;
+            }
+
+            return configuration;
+        }
+
         static private byte CreateConfigurationWithAdjacent(int themeIndex, int3 dc, NativeArray<TileData> data, Extents dataExtents,
             NativeArray<TileData> adjXM, NativeArray<TileData> adjXP, NativeArray<TileData> adjZM, NativeArray<TileData> adjZP,
             NativeArray<TileData> adjXMZM, NativeArray<TileData> adjXMZP, NativeArray<TileData> adjXPZM, NativeArray<TileData> adjXPZP)
@@ -651,6 +704,35 @@ namespace MeshBuilder
             if ((skipDirections & Direction.ZMinus) != 0 && (configuration & ZMinusMask) == 0) { return true; }
 
             return false;
+        }
+        
+        [BurstCompile]
+        private struct UpdateOpenTileConfigurations : IJobParallelFor
+        {
+            public Extents tileExtents;
+            public Extents dataExtents;
+
+            public int openFillFlags;
+
+            [ReadOnly] public NativeArray<ConfigTransformGroup> configs;
+            [ReadOnly] public NativeArray<TileData> data;
+            public NativeArray<TileMeshData> tiles;
+
+            public void Execute(int index)
+            {
+                int3 dc = CoordFromIndex(index, tileExtents);
+                var tile = tiles[index];
+                if (tile.type != TileType.Void)
+                {
+                    byte configuration = CreateConfigurationWithOpenFlags(dc, data, dataExtents, openFillFlags);
+                    if (configuration == 0 || configuration == configs.Length - 1)
+                    {
+                        tile.type = TileType.Void;
+                        tile.configTransformGroup = configs[0];
+                    }
+                    tiles[index] = tile;
+                }
+            }
         }
 
         [BurstCompile]
