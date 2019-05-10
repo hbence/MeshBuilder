@@ -97,6 +97,7 @@ namespace MeshBuilder
 
             Mesh = new Mesh();
             Mesh.name = name;
+            Mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
         }
 
         public void StartGeneration()
@@ -251,6 +252,7 @@ namespace MeshBuilder
                     }
 
                     var subMesh = new Mesh();
+                    subMesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
                     subMesh.CombineMeshes(currentList.ToArray(), true, true);
                     submeshInstArray[currentSubIndex] = new CombineInstance { mesh = subMesh };
 
