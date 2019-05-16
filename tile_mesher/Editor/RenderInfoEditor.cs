@@ -10,12 +10,25 @@ namespace MeshBuilder
     {
         private const bool ExpandChildren = true;
 
-        private bool groupFoldout = false;
-        private float height = EditorGUIUtility.singleLineHeight;
-
         public override float GetPropertyHeight(SerializedProperty property, GUIContent label)
         {
-            return height;
+            if (property.isExpanded)
+            {
+                float lineHeight = EditorGUIUtility.singleLineHeight + 2;
+                float height = lineHeight * 5;
+
+                var subMeshInfo = property.FindPropertyRelative("subMeshInfo");
+                if (subMeshInfo != null)
+                {
+                    height += subMeshInfo.arraySize * 4 * lineHeight;
+                }
+
+                return height;
+            }
+            else
+            {
+                return base.GetPropertyHeight(property, label);
+            }
         }
 
         public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
@@ -28,9 +41,9 @@ namespace MeshBuilder
 
             lineRect = EditorGUI.IndentedRect(lineRect);
 
-            groupFoldout = EditorGUI.BeginFoldoutHeaderGroup(lineRect, groupFoldout, property.displayName);
+            property.isExpanded = EditorGUI.BeginFoldoutHeaderGroup(lineRect, property.isExpanded, property.displayName);
 
-            if (groupFoldout)
+            if (property.isExpanded)
             {
                 EditorGUI.indentLevel++;
 
@@ -45,18 +58,13 @@ namespace MeshBuilder
                 DisplayArray(subMeshInfo, ref lineRect);
 
                 lineRect.y += lineHeight;
-                bool add = GUI.Button(lineRect, "Add Submesh");
-
-                if (add)
+                if (GUI.Button(lineRect, "Add Submesh"))
                 {
                     ++subMeshInfo.arraySize;
                 }
 
                 EditorGUI.indentLevel--;
             }
-
-            lineRect.y += lineHeight;
-            height = lineRect.y - start;
 
             EditorGUI.EndFoldoutHeaderGroup();
             EditorGUI.EndProperty();
