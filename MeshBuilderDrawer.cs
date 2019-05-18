@@ -7,7 +7,7 @@ namespace MeshBuilder
     {
         [SerializeField]
         protected RenderInfo renderer;
-        public RenderInfo Renderer { get { return renderer; } set { renderer = value; } }
+        public RenderInfo Renderer { get => renderer; set => renderer = value; }
 
         public IMeshBuilder Mesher { get; set; }
 

@@ -31,23 +31,23 @@ namespace MeshBuilder
         }
 
         private NativeArray<float3> vertices;
-        public NativeArray<float3> Vertices { get { return vertices; } }
+        public NativeArray<float3> Vertices { get => vertices; }
         private NativeArray<int> triangles;
-        public NativeArray<int> Triangles { get { return triangles; } }
+        public NativeArray<int> Triangles { get => triangles; }
         private NativeArray<float3> normals;
-        public NativeArray<float3> Normals { get { return normals; } }
+        public NativeArray<float3> Normals { get => normals; }
         private NativeArray<Color> colors;
-        public NativeArray<Color> Colors { get { return colors; } }
+        public NativeArray<Color> Colors { get => colors; }
         private NativeArray<float4> tangents;
-        public NativeArray<float4> Tangents { get { return tangents; } }
+        public NativeArray<float4> Tangents { get => tangents; }
         private NativeArray<float2> uvs;
-        public NativeArray<float2> UVs { get { return uvs; } }
+        public NativeArray<float2> UVs { get => uvs; }
         private NativeArray<float2> uvs2;
-        public NativeArray<float2> UVs2 { get { return uvs2; } }
+        public NativeArray<float2> UVs2 { get => uvs2; }
         private NativeArray<float2> uvs3;
-        public NativeArray<float2> UVs3 { get { return uvs3; } }
+        public NativeArray<float2> UVs3 { get => uvs3; }
         private NativeArray<float2> uvs4;
-        public NativeArray<float2> UVs4 { get { return uvs4; } }
+        public NativeArray<float2> UVs4 { get => uvs4; }
 
         public int VerticesLength { get; private set; }
 
@@ -187,15 +187,15 @@ namespace MeshBuilder
             return mesh;
         }
 
-        public bool HasVertices { get { return Has(vertices); } }
-        public bool HasTriangles { get { return Has(triangles); } }
-        public bool HasNormals { get { return Has(normals); } }
-        public bool HasColors { get { return Has(colors); } }
-        public bool HasTangents { get { return Has(tangents); } }
-        public bool HasUVs { get { return Has(uvs); } }
-        public bool HasUVs2 { get { return Has(uvs2); } }
-        public bool HasUVs3 { get { return Has(uvs3); } }
-        public bool HasUVs4 { get { return Has(uvs4); } }
+        public bool HasVertices { get => Has(vertices); }
+        public bool HasTriangles{ get => Has(triangles); }
+        public bool HasNormals  { get => Has(normals); } 
+        public bool HasColors   { get => Has(colors); }
+        public bool HasTangents { get => Has(tangents); }
+        public bool HasUVs  { get => Has(uvs); }
+        public bool HasUVs2 { get => Has(uvs2); }
+        public bool HasUVs3 { get => Has(uvs3); }
+        public bool HasUVs4 { get => Has(uvs4); }
 
         private bool Has<T>(NativeArray<T> array) where T: struct { return array.IsCreated; }
 
