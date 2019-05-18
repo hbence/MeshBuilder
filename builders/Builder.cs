@@ -29,14 +29,12 @@ namespace MeshBuilder
             if (State == BuilderState.Uninitialized)
             {
                 Debug.LogError("modifier was not inited!");
-                DisposeTemps();
                 return dependOn;
             }
 
             if (State == BuilderState.Generating)
             {
                 Debug.LogError("modifier is already generating!");
-                DisposeTemps();
                 return dependOn;
             }
 
