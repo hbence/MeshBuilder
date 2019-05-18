@@ -2,6 +2,8 @@
 using Unity.Jobs;
 using UnityEngine;
 
+using static MeshBuilder.Utils;
+
 namespace MeshBuilder
 {
     abstract public class TileMesherBase<TileVariant> : IMeshBuilder where TileVariant : struct
@@ -170,33 +172,6 @@ namespace MeshBuilder
         virtual protected void DisposeTemp()
         {
 
-        }
-
-        static protected void SafeDispose<T>(ref Volume<T> volume) where T : struct
-        {
-            if (volume != null)
-            {
-                volume.Dispose();
-                volume = null;
-            }
-        }
-
-        static protected void SafeDispose<T>(ref NativeArray<T> collection) where T : struct
-        {
-            if (collection.IsCreated)
-            {
-                collection.Dispose();
-                collection = default;
-            }
-        }
-
-        static protected void SafeDispose<T>(ref NativeList<T> collection) where T : struct
-        {
-            if (collection.IsCreated)
-            {
-                collection.Dispose();
-                collection = default;
-            }
         }
 
         /// <summary>

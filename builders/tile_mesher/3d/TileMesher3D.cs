@@ -6,6 +6,7 @@ using Unity.Mathematics;
 using System.Runtime.InteropServices;
 
 using static MeshBuilder.Extents;
+using static MeshBuilder.Utils;
 
 using TileData = MeshBuilder.Tile.Data;
 using TileType = MeshBuilder.Tile.Type;
@@ -14,6 +15,7 @@ using TileVolume = MeshBuilder.Volume<MeshBuilder.TileMesher3D.TileMeshData>; //
 using ConfigTransformGroup = MeshBuilder.TileTheme.ConfigTransformGroup;
 using PieceTransform = MeshBuilder.Tile.PieceTransform;
 using Direction = MeshBuilder.Tile.Direction;
+
 
 namespace MeshBuilder
 {
