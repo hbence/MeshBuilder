@@ -21,7 +21,6 @@ namespace MeshBuilder
 {
     public class TileMesher3D : TileMesherBase<TileMesher3D.TileMeshData>
     {
-        private const string DefaultName = "tile_mesh_3d";
         static private readonly Settings DefaultSettings = new Settings { };
 
         // INITIAL DATA
@@ -39,12 +38,7 @@ namespace MeshBuilder
         // TEMP DATA
         private NativeList<MeshInstance> tempInstanceList;
 
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        /// <param name="name">name of the mesher, mostly for logging and debugging purposes</param>
-        public TileMesher3D(string name = DefaultName)
-            : base(name)
+        public TileMesher3D()
         {
             adjacents = new AdjacentVolumes();
         }
@@ -64,26 +58,25 @@ namespace MeshBuilder
         public void Init(DataVolume dataVolume, int fillValue, TileTheme theme, TileThemePalette themePalette, float3 cellSize = default, Settings settings = null)
         {
             Dispose();
-            
+
+            theme.Init();
+            if (theme.Configs.Length < TileTheme.Type3DConfigCount)
+            {
+                Debug.LogError("The theme has less than the required number of configurations! " + theme.Configs.Length);
+                return;
+            }
+
             this.data = dataVolume;
             this.ThemePalette = themePalette;
             this.theme = theme;
             this.FillValue = fillValue;
             this.MesherSettings = settings == null ? DefaultSettings : settings;
-
-            this.theme.Init();
-
-            if (theme.Configs.Length < TileTheme.Type3DConfigCount)
-            {
-                Debug.LogError("The theme has less than the required number of configurations! " + theme.Configs.Length);
-                state = State.Uninitialized;
-                return;
-            }
-
+            
             this.cellSize = cellSize;
             if (this.cellSize.x == 0 || this.cellSize.y == 0 || this.cellSize.z == 0)
             {
                 this.cellSize = new float3(1, 1, 1);
+                Debug.LogError("cell size can't have zero value! (cell reset to (1,1,1))");
             }
 
             int x = data.XLength;
@@ -94,7 +87,7 @@ namespace MeshBuilder
 
             generationType = GenerationType.FromDataUncached;
 
-            state = State.Initialized;
+            Inited();
         }
 
         public void SetAdjacent(DataVolume data, byte direction)
@@ -102,87 +95,67 @@ namespace MeshBuilder
             adjacents.SetAdjacent(data, direction);
         }
 
-        override protected void ScheduleGenerationJobs()
-        {
+        override protected JobHandle StartGeneration(JobHandle dependOn)
+        { 
             if (generationType == GenerationType.FromDataUncached)
             {
                 if (HasTilesData)
                 {
-                    if (!tiles.DoExtentsMatch(tileExtents))
-                    {
-                        SafeDispose(ref tiles);
-                    }
+                    if (!tiles.DoExtentsMatch(tileExtents)) { SafeDispose(ref tiles); }
                 }
 
-                if (!HasTilesData)
-                {
-                    tiles = new TileVolume(tileExtents);
-                }
+                if (!HasTilesData) { tiles = new TileVolume(tileExtents); }
 
                 if (HasTileMeshes)
                 {
-                    if (!tileMeshes.DoExtentsMatch(tileExtents))
-                    {
-                        SafeDispose(ref tileMeshes);
-                    }
+                    if (!tileMeshes.DoExtentsMatch(tileExtents)) { SafeDispose(ref tileMeshes); }
                 }
 
-                if (!HasTileMeshes)
-                {
-                    tileMeshes = new Volume<MeshTile>(tileExtents);
-                }
+                if (!HasTileMeshes) { tileMeshes = new Volume<MeshTile>(tileExtents); }
 
-                lastHandle = ScheduleTileGeneration(tiles, data, 64, lastHandle);
+                dependOn = ScheduleTileGeneration(tiles, data, 64, dependOn);
 
                 if (ThemePalette != null)
                 {
                     int openFillFlags = ThemePalette.CollectOpenThemeFillValueFlags(theme);
                     openFillFlags |= (1 << FillValue);
-                    lastHandle = ScheduleOpenFlagsUpdate(tiles, data, theme.Configs, openFillFlags, 128, lastHandle);
+                    dependOn = ScheduleOpenFlagsUpdate(tiles, data, theme.Configs, openFillFlags, 128, dependOn);
                 }
 
-                lastHandle = adjacents.ScheduleJobs(FillValue, data, tiles, theme.Configs, MesherSettings.skipDirections, MesherSettings.skipDirectionsAndBorders, lastHandle);
+                dependOn = adjacents.ScheduleJobs(FillValue, data, tiles, theme.Configs, MesherSettings.skipDirections, MesherSettings.skipDirectionsAndBorders, dependOn);
             }
             
             if (HasTilesData && HasTileMeshes)
             {
-                lastHandle = ScheduleMeshTileGeneration(tileMeshes, tiles, 32, lastHandle);
+                dependOn = ScheduleMeshTileGeneration(tileMeshes, tiles, 32, dependOn);
 
                 tempInstanceList = new NativeList<MeshInstance>(Allocator.TempJob);
-                lastHandle = ScheduleFillCombineInstanceList(tempInstanceList, tileMeshes, lastHandle);
+                AddTemp(tempInstanceList);
+                dependOn = ScheduleFillCombineInstanceList(tempInstanceList, tileMeshes, dependOn);
             }
             else
             {
-                if (!HasTilesData) Debug.LogError(Name+ " no tiles data!");
-                if (!HasTileMeshes) Debug.LogError(Name + " no mesh tiles data!");
+                if (!HasTilesData) Debug.LogError("TileMesher has no tiles data!");
+                if (!HasTileMeshes) Debug.LogError("TileMesher has no mesh tiles data!");
             }
+
+            return dependOn;
         }
 
-        override protected void AfterGenerationJobsComplete()
+        override protected void EndGeneration(Mesh mesh)
         {
             if (tempInstanceList.IsCreated)
             {
-                CombineMeshes(Mesh, tempInstanceList, theme);
+                CombineMeshes(mesh, tempInstanceList, theme);
+                tempInstanceList = default;
             }
-
-            if (state == State.Generating)
-            {
-                state = State.Initialized;
-            }
-        }
-
-        protected override void DisposeTemp()
-        {
-            base.DisposeTemp();
-
-            adjacents.DisposeTemp();
-            SafeDispose(ref tempInstanceList);
         }
 
         public override void Dispose()
         {
             base.Dispose();
 
+            adjacents.Dispose();
             SafeDispose(ref tileMeshes);
         }
 
@@ -609,8 +582,8 @@ namespace MeshBuilder
 
                 if (testX < 0) result |= (byte)Direction.XMinus;
                 if (testX >= e.X) result |= (byte)Direction.XPlus;
-           //     if (testY < 0) result |= (byte)Direction.YMinus;
-           //     if (testY >= e.Y) result |= (byte)Direction.YPlus;
+                if (testY < 0) result |= (byte)Direction.YMinus;
+                if (testY >= e.Y) result |= (byte)Direction.YPlus;
                 if (testZ < 0) result |= (byte)Direction.ZMinus;
                 if (testZ >= e.Z) result |= (byte)Direction.ZPlus;
 
@@ -1003,7 +976,7 @@ namespace MeshBuilder
             byte variant7;
         }
 
-        private class AdjacentVolumes
+        private class AdjacentVolumes : System.IDisposable
         {
             public DataVolume XM { get; set; }
             public DataVolume XP { get; set; }
@@ -1015,7 +988,12 @@ namespace MeshBuilder
             public DataVolume XPZM { get; set; }
             public DataVolume XPZP { get; set; }
 
-            private NativeArray<TileData> tempArray;
+            private NativeArray<TileData> nullArray;
+
+            public AdjacentVolumes()
+            {
+                nullArray = new NativeArray<TileData>(0, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+            }
 
             public void SetAdjacent(DataVolume data, byte direction)
             {
@@ -1039,8 +1017,6 @@ namespace MeshBuilder
 
             public JobHandle ScheduleJobs(int themeIndex, DataVolume data, TileVolume tiles, NativeArray<ConfigTransformGroup> configs, Direction skipDirections, Direction skipDirectionsWithBorders, JobHandle handle)
             {
-                tempArray = new NativeArray<TileData>(0, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-                
                 if (XM != null)
                 {
                     handle = CreateBoundaryJob(Direction.XMinus, themeIndex, data, tiles, configs, skipDirections, skipDirectionsWithBorders, handle);
@@ -1061,9 +1037,9 @@ namespace MeshBuilder
                 return handle;
             }
 
-            public void DisposeTemp()
+            public void Dispose()
             {
-                SafeDispose(ref tempArray);
+                SafeDispose(ref nullArray);
             }
 
             private JobHandle CreateBoundaryJob(Direction dir, int themeIndex, DataVolume data, TileVolume tiles, NativeArray<ConfigTransformGroup> configs, Direction skipDirections, Direction skipDirectionsWithBorders, JobHandle dependHandle)
@@ -1081,14 +1057,14 @@ namespace MeshBuilder
                     skipDirections = skipDirections,
                     skipDirectionsWithBorders = skipDirectionsWithBorders,
 
-                    adjXM = (XM == null) ? tempArray : XM.Data,
-                    adjXP = (XP == null) ? tempArray : XP.Data,
-                    adjZM = (ZM == null) ? tempArray : ZM.Data,
-                    adjZP = (ZP == null) ? tempArray : ZP.Data,
-                    adjXMZM = (XMZM == null) ? tempArray : XMZM.Data,
-                    adjXMZP = (XMZP == null) ? tempArray : XMZP.Data,
-                    adjXPZM = (XPZM == null) ? tempArray : XPZM.Data,
-                    adjXPZP = (XPZP == null) ? tempArray : XPZP.Data,
+                    adjXM = (XM == null) ? nullArray : XM.Data,
+                    adjXP = (XP == null) ? nullArray : XP.Data,
+                    adjZM = (ZM == null) ? nullArray : ZM.Data,
+                    adjZP = (ZP == null) ? nullArray : ZP.Data,
+                    adjXMZM = (XMZM == null) ? nullArray : XMZM.Data,
+                    adjXMZP = (XMZP == null) ? nullArray : XMZP.Data,
+                    adjXPZM = (XPZM == null) ? nullArray : XPZM.Data,
+                    adjXPZP = (XPZP == null) ? nullArray : XPZP.Data,
                     
                     tiles = tiles.Data
                 };

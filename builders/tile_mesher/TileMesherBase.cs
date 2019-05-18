@@ -6,18 +6,10 @@ using static MeshBuilder.Utils;
 
 namespace MeshBuilder
 {
-    abstract public class TileMesherBase<TileVariant> : IMeshBuilder where TileVariant : struct
+    abstract public class TileMesherBase<TileVariant> : Builder where TileVariant : struct
     {
-        private static readonly Mesh NullMesh = new Mesh();
-
-        public enum Type
-        {
-            Mesher2D,
-            Mesher3D
-        }
+        public enum Type { Mesher2D, Mesher3D }
         
-        protected enum State { Uninitialized, Initialized, Generating }
-
         protected enum GenerationType
         {
             /// <summary>
@@ -48,13 +40,9 @@ namespace MeshBuilder
             {
                 if (theme != value)
                 {
-                    if (theme != null)
-                    {
-                        theme.Release();
-                    }
-
+                    theme?.Release();
                     theme = value;
-                    theme.Retain();
+                    theme?.Retain();
                 }
             }
         }
@@ -66,112 +54,40 @@ namespace MeshBuilder
         protected Extents dataExtents;
         protected Extents tileExtents;
 
-        public string Name { get; private set; }
-        protected State state = State.Uninitialized;
         protected GenerationType generationType = GenerationType.FromDataUncached;
 
         private TileThemePalette themePalette;
         public TileThemePalette ThemePalette
         {
-            get
-            {
-                return themePalette;
-            }
+            get { return themePalette; }
             protected set
             {
                 themePalette = value;
-                if (themePalette != null)
-                {
-                    themePalette.Init();
-                }
+                themePalette?.Init();
             }
         }
 
         // GENERATED DATA
         protected Volume<TileVariant> tiles;
-        protected JobHandle lastHandle;
-
-        public Mesh Mesh { get; protected set; }
-
-        public TileMesherBase(string name)
+        
+        override protected void EndGeneration(Mesh mesh)
         {
-            Name = name;
-
-            Mesh = new Mesh();
-            Mesh.name = name;
-            Mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
-        }
-
-        public void StartGeneration()
-        {
-            if (!IsInitialized)
-            {
-                Debug.LogError(Name + " not initialized!");
-                return;
-            }
-
-            if (IsGenerating)
-            {
-                Debug.LogError(Name + " is already generating!");
-                return;
-            }
-
-            state = State.Generating;
-
-            lastHandle.Complete();
-            DisposeTemp();
-
-            ScheduleGenerationJobs();
-
-            JobHandle.ScheduleBatchedJobs();
-        }
-
-        abstract protected void ScheduleGenerationJobs();
-
-        public void EndGeneration()
-        {
-            if (!IsGenerating)
-            {
-                Debug.LogWarning(Name + " is not generating! nothing to stop");
-                return;
-            }
-
-            lastHandle.Complete();
-            state = State.Initialized;
-
-            AfterGenerationJobsComplete();
-
             if (generationType == GenerationType.FromDataUncached)
             {
                 SafeDispose(ref tiles);
             }
-
-            DisposeTemp();
         }
 
-        abstract protected void AfterGenerationJobsComplete();
-
-        virtual public void Dispose()
+        override public void Dispose()
         {
-            state = State.Uninitialized;
-
-            lastHandle.Complete();
-            DisposeTemp();
+            base.Dispose();
 
             SafeDispose(ref tiles);
 
-            if (Theme != null)
-            {
-                Theme.Release();
-                Theme = null;
-            }
+            Theme?.Release();
+            Theme = null;
 
             ThemePalette = null;
-        }
-
-        virtual protected void DisposeTemp()
-        {
-
         }
 
         /// <summary>
@@ -237,10 +153,7 @@ namespace MeshBuilder
                 mesh.CombineMeshes(submeshInstArray, false, false);
             }
         }
-
-        public bool IsInitialized { get { return state != State.Uninitialized; } }
-        public bool IsGenerating { get { return state == State.Generating; } }
-
+        
         protected bool HasTilesData { get { return tiles != null && !tiles.IsDisposed; } }
 
         /// <summary>

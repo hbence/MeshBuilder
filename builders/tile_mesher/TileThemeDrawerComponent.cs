@@ -38,7 +38,7 @@ namespace MeshBuilder
         protected Volume<Tile.Data> tileData;
         public Volume<Tile.Data> TileData { get { return tileData; } set { tileData = value; NeedsToRebuild(); } }
 
-        protected IMeshBuilder Mesher { get; set; }
+        protected Builder Mesher { get; set; }
 
         // this is serialized so it can be triggered from the editor
         [SerializeField]
@@ -60,7 +60,7 @@ namespace MeshBuilder
                 InitMesher();
                 if (Mesher != null)
                 {
-                    Mesher.StartGeneration();
+                    Mesher.Start();
                 }
             }
         }
@@ -69,7 +69,7 @@ namespace MeshBuilder
         {
             if (Mesher != null && Mesher.IsGenerating)
             {
-                Mesher.EndGeneration();
+                Mesher.Complete();
             }
         }
 
@@ -96,28 +96,30 @@ namespace MeshBuilder
 
             if (theme.Is3DTheme)
             {
-                if (Mesher == null)
-                {
-                    Mesher = new TileMesher3D(theme.ThemeName + "_mesher");
-                }
+                if (Mesher == null) { Mesher = new TileMesher3D(); }
 
                 TileMesher3D mesher3D = Mesher as TileMesher3D;
                 if (mesher3D != null)
                 {
                     mesher3D.Init(tileData, themeIndex, theme, cellSize, Settings3D);
                 }
+                else
+                {
+                    Debug.LogError("Mesher is not 3D!");
+                }
             }
             else
             {
-                if (Mesher == null)
-                {
-                    Mesher = new TileMesher2D(theme.ThemeName + "_mesher");
-                }
+                if (Mesher == null) { Mesher = new TileMesher2D(); }
 
                 TileMesher2D mesher2D = Mesher as TileMesher2D;
                 if (mesher2D != null)
                 {
                     mesher2D.Init(tileData, yLayer, themeIndex, theme);
+                }
+                else
+                {
+                    Debug.LogError("Mesher is not 2D!");
                 }
             }
 
@@ -128,7 +130,7 @@ namespace MeshBuilder
         {
             if (Mesher != null)
             {
-                Mesher.StartGeneration();
+                Mesher.Start();
             }
         }
 

@@ -6,6 +6,7 @@ using Unity.Mathematics;
 using System.Runtime.InteropServices;
 
 using static MeshBuilder.Extents;
+using static MeshBuilder.Utils;
 
 using TileData = MeshBuilder.Tile.Data;
 using TileType = MeshBuilder.Tile.Type;
@@ -17,9 +18,8 @@ using Direction = MeshBuilder.Tile.Direction;
 
 namespace MeshBuilder
 {
-    public class TileMesher2D : TileMesherBase<TileMesher2D.TileMeshData>, System.IDisposable
+    public class TileMesher2D : TileMesherBase<TileMesher2D.TileMeshData>
     {
-        private const string DefaultName = "tile_mesh_2d";
         static private readonly Settings DefaultSettings = new Settings { };
 
         // INITIAL DATA
@@ -33,16 +33,6 @@ namespace MeshBuilder
 
         // TEMP DATA
         private NativeList<MeshInstance> tempInstanceList;
-
-        /// <summary>
-        /// Constructor
-        /// </summary>
-        /// <param name="name">name of the mesher, mostly for logging and debugging purposes</param>
-        public TileMesher2D(string name = DefaultName)
-            : base(name)
-        {
-
-        }
 
         public void Init(DataVolume dataVolume, int yLevel, int themeIndex, TileThemePalette themePalette)
         {
@@ -59,6 +49,13 @@ namespace MeshBuilder
         {
             Dispose();
 
+            theme.Init();
+            if (theme.Configs.Length < TileTheme.Type2DConfigCount)
+            {
+                Debug.LogError("TileMesher theme has less than the required number of configurations! " + theme.ThemeName);
+                return;
+            }
+
             Data = dataVolume;
             ThemePalette = themePalette;
             YLevel = Mathf.Clamp(yLevel, 0, dataVolume.YLength - 1);
@@ -69,14 +66,7 @@ namespace MeshBuilder
 
             if (YLevel != yLevel)
             {
-                Debug.LogError(Name + " yLevel is out of bounds:" + yLevel + " it is clamped!");
-            }
-
-            if (theme.Configs.Length < TileTheme.Type2DConfigCount)
-            {
-                Debug.LogError(Name + " - The theme has less than the required number of configurations!");
-                state = State.Uninitialized;
-                return;
+                Debug.LogError("TileMesher2D yLevel is out of bounds:" + yLevel + " it is clamped!");
             }
 
             int x = Data.XLength;
@@ -87,63 +77,47 @@ namespace MeshBuilder
 
             generationType = GenerationType.FromDataUncached;
 
-            state = State.Initialized;
+            Inited();
         }
 
-        override protected void ScheduleGenerationJobs()
+        override protected JobHandle StartGeneration(JobHandle dependOn)
         {
             if (generationType == GenerationType.FromDataUncached)
             {
-                if (HasTilesData)
-                {
-                    tiles.Dispose();
-                }
+                if (HasTilesData) { tiles.Dispose(); }
+
                 tiles = new TileVolume(tileExtents);
 
-                if (HasTileMeshes)
-                {
-                    tileMeshes.Dispose();
-                }
+                if (HasTileMeshes) { tileMeshes.Dispose(); }
 
                 tileMeshes = new Volume<MeshTile>(tileExtents);
 
-                lastHandle = ScheduleTileGeneration(tiles, Data, 64, lastHandle);
+                dependOn = ScheduleTileGeneration(tiles, Data, 64, dependOn);
             }
 
             if (HasTilesData && HasTileMeshes)
             {
-                lastHandle = ScheduleMeshTileGeneration(tileMeshes, tiles, 32, lastHandle);
+                dependOn = ScheduleMeshTileGeneration(tileMeshes, tiles, 32, dependOn);
 
                 tempInstanceList = new NativeList<MeshInstance>(Allocator.TempJob);
-                lastHandle = ScheduleFillCombineInstanceList(tempInstanceList, tileMeshes, lastHandle);
+                AddTemp(tempInstanceList);
+                dependOn = ScheduleFillCombineInstanceList(tempInstanceList, tileMeshes, dependOn);
             }
             else
             {
-                if (!HasTilesData) Debug.LogError(Name + " no tiles data!");
-                if (!HasTileMeshes) Debug.LogError(Name + " no mesh tiles data!");
+                if (!HasTilesData) Debug.LogError("TileMesher2D has no tiles data!");
+                if (!HasTileMeshes) Debug.LogError("TileMesher2D has no mesh tiles data!");
             }
+
+            return dependOn;
         }
 
-        override protected void AfterGenerationJobsComplete()
+        override protected void EndGeneration(Mesh mesh)
         {
             if (tempInstanceList.IsCreated)
             {
                 CombineMeshes(Mesh, tempInstanceList, Theme);
-            }
-
-            if (state == State.Generating)
-            {
-                state = State.Initialized;
-            }
-        }
-
-        protected override void DisposeTemp()
-        {
-            base.DisposeTemp();
-
-            if (tempInstanceList.IsCreated)
-            {
-                tempInstanceList.Dispose();
+                tempInstanceList = default;
             }
         }
 
@@ -151,11 +125,7 @@ namespace MeshBuilder
         {
             base.Dispose();
 
-            if (tileMeshes != null)
-            {
-                tileMeshes.Dispose();
-                tileMeshes = null;
-            }
+            SafeDispose(ref tileMeshes);
         }
 
         private JobHandle ScheduleTileGeneration(TileVolume resultTiles, DataVolume data, int batchCount, JobHandle dependOn)
