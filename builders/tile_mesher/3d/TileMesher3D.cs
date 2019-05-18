@@ -114,14 +114,14 @@ namespace MeshBuilder
                 if (!HasTileMeshes) { tileMeshes = new Volume<MeshTile>(tileExtents); }
 
                 dependOn = ScheduleTileGeneration(tiles, data, 64, dependOn);
-
+                
                 if (ThemePalette != null)
                 {
                     int openFillFlags = ThemePalette.CollectOpenThemeFillValueFlags(theme);
                     openFillFlags |= (1 << FillValue);
                     dependOn = ScheduleOpenFlagsUpdate(tiles, data, theme.Configs, openFillFlags, 128, dependOn);
                 }
-
+                
                 dependOn = adjacents.ScheduleJobs(FillValue, data, tiles, theme.Configs, MesherSettings.skipDirections, MesherSettings.skipDirectionsAndBorders, dependOn);
             }
             
@@ -159,10 +159,10 @@ namespace MeshBuilder
             SafeDispose(ref tileMeshes);
         }
 
-        // TODO: tile generation is divided into multiple verions, based on the mesher settings
+        // TODO: tile generation is divided into multiple versions, based on the mesher settings
         // so if a feature is not needed there is less branching and checking, it causes some code duplication and
         // I'm not yet sure if it has a visible performance impact or what the most used features would be.
-        // It's possible the leaner version aren't needed, and GenerateTileDataJobFullOptions will be enough
+        // It's possible the leaner versions aren't needed, and GenerateTileDataJobFullOptions will be enough
         private JobHandle ScheduleTileGeneration(TileVolume resultTiles, DataVolume data, int batchCount, JobHandle dependOn)
         {
             if (MesherSettings.skipDirections == Direction.None && 
@@ -410,6 +410,10 @@ namespace MeshBuilder
                         {
                             tile.type = TileType.Void;
                         }
+                        else
+                        {
+                            tile.type = TileType.Normal;
+                        }
 
                         if (skipDirectionsWithBorders != Direction.None && IsCulledBySkipDirectionsWithBorders(configuration, skipDirectionsWithBorders))
                         {
@@ -499,14 +503,14 @@ namespace MeshBuilder
         {
             byte configuration = 0;
 
-            if (IsFilled(dc.x - 1, dc.y, dc.z)) configuration |= Tile.TopLeftForward;
-            if (IsFilled(dc.x, dc.y, dc.z)) configuration |= Tile.TopRightForward;
-            if (IsFilled(dc.x - 1, dc.y, dc.z - 1)) configuration |= Tile.TopLeftBackward;
-            if (IsFilled(dc.x, dc.y, dc.z - 1)) configuration |= Tile.TopRightBackward;
-            if (IsFilled(dc.x - 1, dc.y - 1, dc.z)) configuration |= Tile.BottomLeftForward;
-            if (IsFilled(dc.x, dc.y - 1, dc.z)) configuration |= Tile.BottomRightForward;
+            if (IsFilled(dc.x - 1, dc.y,     dc.z))     configuration |= Tile.TopLeftForward;
+            if (IsFilled(dc.x    , dc.y,     dc.z))     configuration |= Tile.TopRightForward;
+            if (IsFilled(dc.x - 1, dc.y,     dc.z - 1)) configuration |= Tile.TopLeftBackward;
+            if (IsFilled(dc.x    , dc.y,     dc.z - 1)) configuration |= Tile.TopRightBackward;
+            if (IsFilled(dc.x - 1, dc.y - 1, dc.z))     configuration |= Tile.BottomLeftForward;
+            if (IsFilled(dc.x    , dc.y - 1, dc.z))     configuration |= Tile.BottomRightForward;
             if (IsFilled(dc.x - 1, dc.y - 1, dc.z - 1)) configuration |= Tile.BottomLeftBackward;
-            if (IsFilled(dc.x, dc.y - 1, dc.z - 1)) configuration |= Tile.BottomRightBackward;
+            if (IsFilled(dc.x    , dc.y - 1, dc.z - 1)) configuration |= Tile.BottomRightBackward;
 
             bool IsFilled(int x, int y, int z)
             {
@@ -517,7 +521,7 @@ namespace MeshBuilder
                     return value != 0 && ((1 << value) & openFlags) != 0;
                 }
 
-                return true;
+                return false;
             }
 
             return configuration;
@@ -541,9 +545,9 @@ namespace MeshBuilder
 
             bool IsFilled(int x, int y, int z)
             {
+                int index = IndexFromCoord(x, y, z, dataExtents);
                 if (dataExtents.IsInBounds(x, y, z))
                 {
-                    int index = IndexFromCoord(x, y, z, dataExtents);
                     return data[index].themeIndex == themeIndex;
                 }
 
@@ -567,9 +571,9 @@ namespace MeshBuilder
                 if ((dir & (byte)Direction.ZPlus) != 0) { z = 0; }
                 else if ((dir & (byte)Direction.ZMinus) != 0) { z = dataExtents.Z - 1; }
 
-                if (dataExtents.IsInBounds(x, y, z) && selectedData.Length > 0)
+                index = IndexFromCoord(x, y, z, dataExtents);
+                if (dataExtents.IsInBounds(x, y, z) && index < selectedData.Length)
                 {
-                    int index = IndexFromCoord(x, y, z, dataExtents);
                     return selectedData[index].themeIndex == themeIndex;
                 }
 
