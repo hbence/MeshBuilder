@@ -4,7 +4,7 @@ using Unity.Jobs;
 
 namespace MeshBuilder
 {
-    public abstract class Builder : System.IDisposable
+    public abstract class Builder : IMeshBuilder
     {
         protected enum BuilderState { Uninitialized, Initialized, Generating }
         protected BuilderState State { get; private set; }
