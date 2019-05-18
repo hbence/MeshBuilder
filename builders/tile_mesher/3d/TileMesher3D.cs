@@ -1009,7 +1009,7 @@ namespace MeshBuilder
                     case (byte)Direction.XPlus | (byte)Direction.ZPlus: XPZP = data; break;
                     default:
                         {
-                            Debug.LogError("direction not handled");
+                            Debug.LogError("direction not handled: " + direction);
                             break;
                         }
                 }
@@ -1017,6 +1017,11 @@ namespace MeshBuilder
 
             public JobHandle ScheduleJobs(int themeIndex, DataVolume data, TileVolume tiles, NativeArray<ConfigTransformGroup> configs, Direction skipDirections, Direction skipDirectionsWithBorders, JobHandle handle)
             {
+                if (!nullArray.IsCreated)
+                {
+                    nullArray = new NativeArray<TileData>(0, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
+                }
+
                 if (XM != null)
                 {
                     handle = CreateBoundaryJob(Direction.XMinus, themeIndex, data, tiles, configs, skipDirections, skipDirectionsWithBorders, handle);
