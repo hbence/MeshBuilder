@@ -144,11 +144,23 @@ namespace MeshBuilder
 
         override protected void EndGeneration(Mesh mesh)
         {
+            /*
             if (tempInstanceList.IsCreated)
             {
                 CombineMeshes(mesh, tempInstanceList, theme);
                 tempInstanceList = default;
             }
+            //*/
+            if (tempInstanceList.IsCreated)
+            {
+                var job = ScheduleCombineMeshes(tempInstanceList, theme, default);
+                combinationBuilder.Mesh = mesh;
+                combinationBuilder.Complete();
+
+                mesh = combinationBuilder.Mesh;
+            }
+            //*/
+            base.EndGeneration(mesh);
         }
 
         public override void Dispose()

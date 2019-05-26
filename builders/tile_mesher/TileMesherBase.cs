@@ -1,8 +1,10 @@
 ﻿using Unity.Collections;
 using Unity.Jobs;
 using UnityEngine;
+using Unity.Mathematics;
 
 using static MeshBuilder.Utils;
+using DataInstance = MeshBuilder.MeshCombinationBuilder.DataInstance;
 
 namespace MeshBuilder
 {
@@ -69,6 +71,8 @@ namespace MeshBuilder
 
         // GENERATED DATA
         protected Volume<TileVariant> tiles;
+
+        protected MeshCombinationBuilder combinationBuilder;
         
         override protected void EndGeneration(Mesh mesh)
         {
@@ -152,6 +156,30 @@ namespace MeshBuilder
 
                 mesh.CombineMeshes(submeshInstArray, false, false);
             }
+        }
+
+        protected JobHandle ScheduleCombineMeshes(NativeArray<MeshInstance> instanceData, TileTheme theme, JobHandle dependOn)
+        {
+            var instanceArray = new NativeArray<DataInstance>(instanceData.Length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+            AddTemp(instanceArray);
+
+            for (int i = 0; i < instanceData.Length; ++i)
+            {
+                var data = instanceData[i];
+                instanceArray[i] = new DataInstance()
+                {
+                    dataOffsets = theme.TileThemeCache.GetMeshDataOffset(data.basePieceIndex, data.variantIndex),
+                    transform = ToFloat4x4(instanceData[i].instance.transform)
+                };
+            }
+
+            combinationBuilder = new MeshCombinationBuilder();
+            AddTemp(combinationBuilder);
+
+            combinationBuilder.Init(instanceArray, theme);
+            dependOn = combinationBuilder.Start(dependOn);
+
+            return dependOn;
         }
         
         protected bool HasTilesData { get { return tiles != null && !tiles.IsDisposed; } }
