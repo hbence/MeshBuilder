@@ -12,7 +12,8 @@ namespace MeshBuilder
         private JobHandle lastHandle;
         private List<System.IDisposable> temps = new List<System.IDisposable>();
 
-        public Mesh Mesh { get; private set; }
+    //    public Mesh Mesh { get; private set; }
+        public Mesh Mesh { get; set; }
 
         public Builder()
         {
@@ -79,7 +80,7 @@ namespace MeshBuilder
             temps.Add(temp);
         }
 
-        protected void DisposeTemps()
+        virtual protected void DisposeTemps()
         {
             foreach (var elem in temps)
             {
