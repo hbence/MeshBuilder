@@ -12,10 +12,18 @@ namespace MeshBuilder
 
     public class MeshCombinationBuilder : Builder
     {
-        private uint meshDataFlags = 0;
-        private int vertexCount = 0;
-        private int triangleLength = 0;
-        private Offset[] submeshTriangleOffsets;
+        private struct ResultMeshInfo
+        {
+            public uint meshDataFlags;
+            public int vertexCount;
+            public int triangleLength;
+            public Offset[] submeshTriangleOffsets;
+
+            public ResultMeshInfo(uint flags, int vertsCount, int triCount, Offset[] submeshOffsets)
+            { meshDataFlags = flags; vertexCount = vertsCount; triangleLength = triCount; submeshTriangleOffsets = submeshOffsets; }
+
+            public MeshData CreateMeshData(Allocator allocator) { return new MeshData(vertexCount, triangleLength, submeshTriangleOffsets, allocator, meshDataFlags); }
+        }
 
         private TileTheme theme;
         private NativeArray<DataInstance> instanceArray;
@@ -33,16 +41,14 @@ namespace MeshBuilder
             combinedMesh.Dispose();
             combinedMesh = default;
 
-            InitCombinedMeshInfo(instanceArray, theme);
-
             Inited();
         }
 
-        private void InitCombinedMeshInfo(NativeArray<DataInstance> instanceArray, TileTheme theme)
+        private ResultMeshInfo CalcCombinedMeshInfo(NativeArray<DataInstance> instanceArray, TileTheme theme)
         {
-            meshDataFlags = theme.TileThemeCache.MeshDataBufferFlags;
-            vertexCount = 0;
-            triangleLength = 0;
+            uint meshDataFlags = theme.TileThemeCache.MeshDataBufferFlags;
+            int vertexCount = 0;
+            int triangleLength = 0;
 
             var submeshLengths = new List<int>();
             
@@ -64,26 +70,28 @@ namespace MeshBuilder
                 }
             }
 
-            submeshTriangleOffsets = new Offset[submeshLengths.Count];
+            var submeshTriangleOffsets = new Offset[submeshLengths.Count];
             int triIndex = 0;
             for (int i = 0; i < submeshLengths.Count; ++i)
             {
                 submeshTriangleOffsets[i] = new Offset { index = triIndex, length = submeshLengths[i] };
                 triIndex += submeshLengths[i];
             }
+
+            return new ResultMeshInfo(meshDataFlags, vertexCount, triangleLength, submeshTriangleOffsets);
         }
 
         protected override JobHandle StartGeneration(JobHandle dependOn)
         {
-            JobHandle combined = default;
-            
-            combinedMesh = new MeshData(vertexCount, triangleLength, submeshTriangleOffsets, Allocator.TempJob, meshDataFlags);
+            var combinedInfo = CalcCombinedMeshInfo(instanceArray, theme);
+            combinedMesh = combinedInfo.CreateMeshData(Allocator.TempJob);
             AddTemp(combinedMesh);
 
-            var submeshOffsets = new NativeArray<Offset>(submeshTriangleOffsets, Allocator.TempJob);
+            var submeshOffsets = new NativeArray<Offset>(combinedInfo.submeshTriangleOffsets, Allocator.TempJob);
             AddTemp(submeshOffsets);
 
             JobHandle bufferFinished = default;
+            JobHandle combined = default;
 
             MeshData source = theme.TileThemeCache.MeshData;
 
@@ -98,7 +106,7 @@ namespace MeshBuilder
                 bufferFinished = ScheduleTriangleCombination(source.Triangles, combinedMesh.Triangles, submeshOffsets, dependOn);
                 combined = JobHandle.CombineDependencies(combined, bufferFinished);
             }
-            
+
             if (combinedMesh.HasNormals)
             {
                 bufferFinished = ScheduleTransformedCombination(BufferType.Normal, source.Normals, combinedMesh.Normals, dependOn);
@@ -140,7 +148,7 @@ namespace MeshBuilder
                 bufferFinished = ScheduleCombination(source.UVs4, combinedMesh.UVs4, dependOn);
                 combined = JobHandle.CombineDependencies(combined, bufferFinished);
             }
-            
+
             return combined;
         }
 
