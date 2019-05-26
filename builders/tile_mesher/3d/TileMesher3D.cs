@@ -795,21 +795,15 @@ namespace MeshBuilder
             private CombineInstance CreateCombineInstance(float3 pos, PieceTransform pieceTransform)
             {
                 float4x4 transform = ToRotationMatrix(pieceTransform);
-                
-                if (HasFlag(pieceTransform, PieceTransform.MirrorX))
-                {
-                    transform = math.mul(ToScaleMatrix(PieceTransform.MirrorX), transform);
-                }
 
-                if (HasFlag(pieceTransform, PieceTransform.MirrorY))
-                {
-                    transform = math.mul(ToScaleMatrix(PieceTransform.MirrorY), transform);
-                }
+                if (HasFlag(pieceTransform, PieceTransform.MirrorX)) MirrorMatrix(PieceTransform.MirrorX, ref transform);
+                if (HasFlag(pieceTransform, PieceTransform.MirrorY)) MirrorMatrix(PieceTransform.MirrorY, ref transform);
 
-                MatrixConverter m = new MatrixConverter { };
-                m.float4x4 = math.mul(float4x4.Translate(pos), transform);
+                transform.c3.x = pos.x;
+                transform.c3.y = pos.y;
+                transform.c3.z = pos.z;
 
-                return new CombineInstance { subMeshIndex = 0, transform = m.Matrix4x4 };
+                return new CombineInstance { subMeshIndex = 0, transform = ToMatrix4x4(transform) };
             }
 
             static private bool HasFlag(PieceTransform transform, PieceTransform flag)
@@ -817,21 +811,15 @@ namespace MeshBuilder
                 return (byte)(transform & flag) != 0;
             }
 
-            // NOTE: I wanted to use static readonly matrices instead of constructing new ones
-            // but that didn't work with the Burst compiler
-            static private float4x4 ToScaleMatrix(PieceTransform pieceTransform)
+            static private void MirrorMatrix(PieceTransform pieceTransform, ref float4x4 m)
             {
                 byte mirror = (byte)((byte)pieceTransform & MirrorMask);
                 switch (mirror)
                 {
-                    case (byte)PieceTransform.MirrorX: return float4x4.Scale(-1, 1, 1);
-                    case (byte)PieceTransform.MirrorY: return float4x4.Scale(1, -1, 1);
-                    case (byte)PieceTransform.MirrorZ: return float4x4.Scale(1, 1, -1);
-                    case (byte)PieceTransform.MirrorXY: return float4x4.Scale(-1, -1, 1);
-                    case (byte)PieceTransform.MirrorXZ: return float4x4.Scale(-1, 1, -1);
-                    case (byte)PieceTransform.MirrorXYZ: return float4x4.Scale(-1, -1, -1);
+                    case (byte)PieceTransform.MirrorX: m.c0.x *= -1; m.c1.x *= -1; m.c2.x *= -1; break;
+                    case (byte)PieceTransform.MirrorY: m.c0.y *= -1; m.c1.y *= -1; m.c2.y *= -1; break;
+                    case (byte)PieceTransform.MirrorZ: m.c0.z *= -1; m.c1.z *= -1; m.c2.z *= -1; break;
                 }
-                return float4x4.identity;
             }
 
             static private float4x4 ToRotationMatrix(PieceTransform pieceTransform)
@@ -844,24 +832,6 @@ namespace MeshBuilder
                     case (byte)PieceTransform.Rotate270: return float4x4.RotateY(math.radians(-270));
                 }
                 return float4x4.identity;
-            }
-
-            /// <summary>
-            /// Utility class for converting the matrxi data between the two different versions.
-            /// The jobs use the float4x4 version to perform operations which might be faster, but the CombineInstance
-            /// struct takes Matrix4x4.
-            /// TODO: Check this later, later versions of Unity might accept float4x4 which would make this obsolete.
-            /// NOTE: This is also used elsewhere, but when I moved it out from this struct to reuse it I got weird 
-            /// errors and the Unity editor started to glitch
-            /// </summary>
-            [StructLayout(LayoutKind.Explicit)]
-            private struct MatrixConverter
-            {
-                [FieldOffset(0)]
-                public float4x4 float4x4;
-
-                [FieldOffset(0)]
-                public Matrix4x4 Matrix4x4;
             }
         }
 
@@ -1107,37 +1077,42 @@ namespace MeshBuilder
 
             static public LayerIndexStep Create<T>(Direction dir, Volume<T> volume) where T : struct
             {
+                return Create(dir, volume.XLength, volume.YLength, volume.ZLength);
+            }
+
+            static public LayerIndexStep Create(Direction dir, int xLength, int yLength, int zLength)
+            {
                 var res = new LayerIndexStep();
-                res.rowStep = volume.XLength * volume.ZLength;
-                res.rowNum = volume.YLength;
+                res.rowStep = xLength * zLength;
+                res.rowNum = yLength;
                 switch (dir)
                 {
                     case Direction.XPlus:
                         {
-                            res.start = volume.XLength - 1;
-                            res.colStep = volume.XLength;
-                            res.colNum = volume.ZLength;
+                            res.start = xLength - 1;
+                            res.colStep = xLength;
+                            res.colNum = zLength;
                         }
                         break;
                     case Direction.XMinus:
                         {
                             res.start = 0;
-                            res.colStep = volume.XLength;
-                            res.colNum = volume.ZLength;
+                            res.colStep = xLength;
+                            res.colNum = zLength;
                         }
                         break;
                     case Direction.ZMinus:
                         {
                             res.start = 0;
                             res.colStep = 1;
-                            res.colNum = volume.XLength;
+                            res.colNum = xLength;
                         }
                         break;
                     case Direction.ZPlus:
                         {
-                            res.start = volume.XLength * (volume.ZLength - 1);
+                            res.start = xLength * (zLength - 1);
                             res.colStep = 1;
-                            res.colNum = volume.XLength;
+                            res.colNum = xLength;
                         }
                         break;
                     default:
