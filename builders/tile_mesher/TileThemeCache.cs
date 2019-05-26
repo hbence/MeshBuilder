@@ -16,7 +16,9 @@ namespace MeshBuilder
         public class MeshCache : System.IDisposable
         {
             private NativeArray<Offset> baseMeshVariants;
+            public NativeArray<Offset> BaseMeshVariants { get => baseMeshVariants; }
             private NativeArray<MeshDataOffset> dataOffsets;
+            public NativeArray<MeshDataOffset> DataOffsets { get => dataOffsets; }
             public MeshData MeshData { get; private set; }
 
             public uint MeshDataBufferFlags { get => MeshData.BufferFlags; }
