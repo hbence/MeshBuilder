@@ -64,12 +64,14 @@ namespace MeshBuilder
 
         protected override JobHandle StartGeneration(MeshData meshData, JobHandle dependOn)
         {
-            normalCells = new NativeHashMap<int3, NormalCell>(tempMeshData.VerticesLength, Allocator.TempJob);
-            AddTemp(normalCells);
+            if (meshData.HasNormals)
+            {
+                normalCells = new NativeHashMap<int3, NormalCell>(tempMeshData.VerticesLength, Allocator.TempJob);
+                AddTemp(normalCells);
 
-            dependOn = ScheduleGenerateNewNormals(meshData, dependOn);
-            dependOn = ScheduleUpdateNormals(meshData, dependOn);
-
+                dependOn = ScheduleGenerateNewNormals(meshData, dependOn);
+                dependOn = ScheduleUpdateNormals(meshData, dependOn);
+            }
             return dependOn;
         }
 
