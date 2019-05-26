@@ -5,6 +5,7 @@ using Unity.Mathematics;
 
 using static MeshBuilder.Utils;
 using DataInstance = MeshBuilder.MeshCombinationBuilder.DataInstance;
+using PieceTransform = MeshBuilder.Tile.PieceTransform;
 
 namespace MeshBuilder
 {
@@ -122,10 +123,7 @@ namespace MeshBuilder
                             maxSubMeshCount = Mathf.Max(maxSubMeshCount, variantMesh.subMeshCount);
                             for (int subIndex = 0; subIndex < variantMesh.subMeshCount; ++subIndex)
                             {
-                                var combineInstance = data.instance;
-                                combineInstance.mesh = variantMesh;
-                                combineInstance.subMeshIndex = subIndex;
-                                combineList.Add(combineInstance);
+                                combineList.Add(new CombineInstance { transform = data.transform, mesh = variantMesh, subMeshIndex = subIndex });
                             }
                         }
                     }
@@ -169,10 +167,15 @@ namespace MeshBuilder
                 instanceArray[i] = new DataInstance()
                 {
                     dataOffsets = theme.TileThemeCache.GetMeshDataOffset(data.basePieceIndex, data.variantIndex),
-                    transform = ToFloat4x4(instanceData[i].instance.transform)
+                    transform = instanceData[i].transform
                 };
             }
 
+            return ScheduleCombineMeshes(instanceArray, theme, dependOn);
+        }
+
+        protected JobHandle ScheduleCombineMeshes(NativeArray<DataInstance> instanceArray, TileTheme theme, JobHandle dependOn)
+        {
             combinationBuilder = new MeshCombinationBuilder();
             AddTemp(combinationBuilder);
 
@@ -181,8 +184,53 @@ namespace MeshBuilder
 
             return dependOn;
         }
-        
+
         protected bool HasTilesData { get { return tiles != null && !tiles.IsDisposed; } }
+
+        private const byte RotationMask = (byte)(PieceTransform.Rotate90 | PieceTransform.Rotate180 | PieceTransform.Rotate270);
+        private const byte MirrorMask = (byte)PieceTransform.MirrorXYZ;
+
+        static protected void MirrorMatrix(PieceTransform pieceTransform, ref float4x4 m)
+        {
+            byte mirror = (byte)((byte)pieceTransform & MirrorMask);
+            switch (mirror)
+            {
+                case (byte)PieceTransform.MirrorX: m.c0.x *= -1; m.c1.x *= -1; m.c2.x *= -1; break;
+                case (byte)PieceTransform.MirrorY: m.c0.y *= -1; m.c1.y *= -1; m.c2.y *= -1; break;
+                case (byte)PieceTransform.MirrorZ: m.c0.z *= -1; m.c1.z *= -1; m.c2.z *= -1; break;
+            }
+        }
+
+        static protected float4x4 ToRotationMatrix(PieceTransform pieceTransform)
+        {
+            byte rotation = (byte)((byte)pieceTransform & RotationMask);
+            switch (rotation)
+            {
+                case (byte)PieceTransform.Rotate90: return float4x4.RotateY(math.radians(-90));
+                case (byte)PieceTransform.Rotate180: return float4x4.RotateY(math.radians(-180));
+                case (byte)PieceTransform.Rotate270: return float4x4.RotateY(math.radians(-270));
+            }
+            return float4x4.identity;
+        }
+
+        static protected bool HasFlag(PieceTransform transform, PieceTransform flag)
+        {
+            return (byte)(transform & flag) != 0;
+        }
+
+        static protected float4x4 CreateTransform(float3 pos, PieceTransform pieceTransform)
+        {
+            float4x4 transform = ToRotationMatrix(pieceTransform);
+
+            if (HasFlag(pieceTransform, PieceTransform.MirrorX)) { MirrorMatrix(PieceTransform.MirrorX, ref transform); }
+            if (HasFlag(pieceTransform, PieceTransform.MirrorY)) { MirrorMatrix(PieceTransform.MirrorY, ref transform); }
+
+            transform.c3.x = pos.x;
+            transform.c3.y = pos.y;
+            transform.c3.z = pos.z;
+
+            return transform;
+        }
 
         /// <summary>
         /// Contains data for rendering a mesh piece. The matrix and indices are usually 
@@ -192,7 +240,7 @@ namespace MeshBuilder
         /// </summary>
         protected struct MeshInstance
         {
-            public CombineInstance instance;
+            public float4x4 transform;
             public int basePieceIndex;
             public byte variantIndex;
         }

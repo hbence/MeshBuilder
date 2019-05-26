@@ -20,11 +20,8 @@ namespace MeshBuilder
     /// - it only generates a top part, it should be able to handle any direction
     /// - it would be nice if the heightmap lerp values would be gradual
     /// </summary>
-    public class GridMesher : Builder, IMeshBuilder
+    public class GridMesher : Builder
     {
-        public void StartGeneration() { }
-        public void EndGeneration() { }
-
         public enum UVMode { Normalized, NoScaling }
 
         private const uint MeshDataBufferFlags = (uint)MeshData.Buffer.Vertex | (uint)MeshData.Buffer.Triangle | (uint)MeshData.Buffer.UV;

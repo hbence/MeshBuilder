@@ -37,16 +37,16 @@ namespace MeshBuilder
 
         protected Volume<Tile.Data> tileData;
         public Volume<Tile.Data> TileData { get { return tileData; } set { tileData = value; NeedsToRebuild(); } }
-
-        protected Builder Mesher { get; set; }
-
+        
         // this is serialized so it can be triggered from the editor
         [SerializeField]
         private bool needsToRebuild = true;
 
         private void Awake()
         {
-            drawer = new MeshBuilderDrawer(renderInfo);
+            drawer = theme.Is2DTheme ? 
+                MeshBuilderDrawer.Create<TileMesher2D>(renderInfo) : 
+                MeshBuilderDrawer.Create<TileMesher3D>(renderInfo);
             AddDrawer(drawer);
         }
 
@@ -58,18 +58,15 @@ namespace MeshBuilder
 
                 InitTileData();
                 InitMesher();
-                if (Mesher != null)
-                {
-                    Mesher.Start();
-                }
+                drawer.StartBuilder();
             }
         }
 
         private void LateUpdate()
         {
-            if (Mesher != null && Mesher.IsGenerating)
+            if (drawer.IsBuilderGenerating)
             {
-                Mesher.Complete();
+                drawer.CompleteBuilder();
             }
         }
 
@@ -96,42 +93,29 @@ namespace MeshBuilder
 
             if (theme.Is3DTheme)
             {
-                if (Mesher == null) { Mesher = new TileMesher3D(); }
+                if (drawer == null ||drawer.Get<TileMesher3D>() == null)
+                {
+                    drawer?.Dispose();
+                    drawer = MeshBuilderDrawer.Create<TileMesher3D>(renderInfo);
+                }
 
-                TileMesher3D mesher3D = Mesher as TileMesher3D;
-                if (mesher3D != null)
-                {
-                    mesher3D.Init(tileData, themeIndex, theme, cellSize, Settings3D);
-                }
-                else
-                {
-                    Debug.LogError("Mesher is not 3D!");
-                }
+                drawer.Get<TileMesher3D>().Init(tileData, themeIndex, theme, cellSize, Settings3D);
             }
             else
             {
-                if (Mesher == null) { Mesher = new TileMesher2D(); }
+                if (drawer == null || drawer.Get<TileMesher2D>() == null)
+                {
+                    drawer?.Dispose();
+                    drawer = MeshBuilderDrawer.Create<TileMesher2D>(renderInfo);
+                }
 
-                TileMesher2D mesher2D = Mesher as TileMesher2D;
-                if (mesher2D != null)
-                {
-                    mesher2D.Init(tileData, yLayer, themeIndex, theme);
-                }
-                else
-                {
-                    Debug.LogError("Mesher is not 2D!");
-                }
+                drawer.Get<TileMesher2D>().Init(tileData, yLayer, themeIndex, theme);
             }
-
-            drawer.Mesher = Mesher;
         }
 
         public void StartGeneration()
         {
-            if (Mesher != null)
-            {
-                Mesher.Start();
-            }
+            drawer.StartBuilder();
         }
 
         public void NeedsToRebuild()
@@ -141,10 +125,10 @@ namespace MeshBuilder
 
         public void Dispose()
         {
-            if (Mesher != null)
+            if (drawer != null)
             {
-                Mesher.Dispose();
-                Mesher = null;
+                drawer.Dispose();
+                drawer = null;
             }
 
             if (cachedTileData != null)
@@ -161,7 +145,7 @@ namespace MeshBuilder
             Dispose();
         }
 
-        public bool IsGenerating { get { return Mesher != null && Mesher.IsGenerating; } }
-        public Mesh Mesh { get { return Mesher != null ? Mesher.Mesh : null; } }
+        public bool IsGenerating { get { return drawer != null && drawer.IsBuilderGenerating; } }
+        public Mesh Mesh { get { return drawer != null ? drawer.Mesh : null; } }
     }
 }

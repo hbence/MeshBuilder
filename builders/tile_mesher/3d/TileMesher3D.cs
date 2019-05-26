@@ -3,7 +3,6 @@ using Unity.Jobs;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Mathematics;
-using System.Runtime.InteropServices;
 
 using static MeshBuilder.Extents;
 using static MeshBuilder.Utils;
@@ -13,15 +12,17 @@ using TileType = MeshBuilder.Tile.Type;
 using DataVolume = MeshBuilder.Volume<MeshBuilder.Tile.Data>; // type values
 using TileVolume = MeshBuilder.Volume<MeshBuilder.TileMesher3D.TileMeshData>; // configuration indices
 using ConfigTransformGroup = MeshBuilder.TileTheme.ConfigTransformGroup;
-using PieceTransform = MeshBuilder.Tile.PieceTransform;
 using Direction = MeshBuilder.Tile.Direction;
-
+using DataInstance = MeshBuilder.MeshCombinationBuilder.DataInstance;
+using MeshDataOffset = MeshBuilder.MeshCombinationBuilder.MeshDataOffsets;
 
 namespace MeshBuilder
 {
     public class TileMesher3D : TileMesherBase<TileMesher3D.TileMeshData>
     {
         static private readonly Settings DefaultSettings = new Settings { };
+
+        private bool useUnityCombineMeshes = false;
 
         // INITIAL DATA
         private TileTheme theme;
@@ -36,7 +37,8 @@ namespace MeshBuilder
         private Volume<MeshTile> tileMeshes;
 
         // TEMP DATA
-        private NativeList<MeshInstance> tempInstanceList;
+        private NativeList<MeshInstance> tempMeshInstanceList;
+        private NativeList<DataInstance> tempDataInstanceList;
 
         public TileMesher3D()
         {
@@ -124,14 +126,28 @@ namespace MeshBuilder
                 
                 dependOn = adjacents.ScheduleJobs(FillValue, data, tiles, theme.Configs, MesherSettings.skipDirections, MesherSettings.skipDirectionsAndBorders, dependOn);
             }
-            
+
             if (HasTilesData && HasTileMeshes)
             {
                 dependOn = ScheduleMeshTileGeneration(tileMeshes, tiles, 32, dependOn);
 
-                tempInstanceList = new NativeList<MeshInstance>(Allocator.TempJob);
-                AddTemp(tempInstanceList);
-                dependOn = ScheduleFillCombineInstanceList(tempInstanceList, tileMeshes, dependOn);
+                if (useUnityCombineMeshes)
+                {
+                    tempMeshInstanceList = new NativeList<MeshInstance>(Allocator.TempJob);
+                    AddTemp(tempMeshInstanceList);
+                    dependOn = ScheduleFillMeshInstanceList(tempMeshInstanceList, tileMeshes, dependOn);
+                }
+                else
+                {
+                    tempDataInstanceList = new NativeList<DataInstance>(Allocator.TempJob);
+                    AddTemp(tempDataInstanceList);
+                    dependOn = ScheduleFillDataInstanceList(tempDataInstanceList, tileMeshes, dependOn);
+
+                    // TODO: GET RID OF THIS SOMEHOW!!!
+                    dependOn.Complete();
+
+                    ScheduleCombineMeshes(tempDataInstanceList, theme, default);
+                }
             }
             else
             {
@@ -144,22 +160,22 @@ namespace MeshBuilder
 
         override protected void EndGeneration(Mesh mesh)
         {
-            /*
-            if (tempInstanceList.IsCreated)
+            if (useUnityCombineMeshes)
             {
-                CombineMeshes(mesh, tempInstanceList, theme);
-                tempInstanceList = default;
+                if (tempMeshInstanceList.IsCreated)
+                {
+                    CombineMeshes(mesh, tempMeshInstanceList, theme);
+                    tempMeshInstanceList = default;
+                }
             }
-            //*/
-            if (tempInstanceList.IsCreated)
+            else
             {
-                var job = ScheduleCombineMeshes(tempInstanceList, theme, default);
-                combinationBuilder.Mesh = mesh;
-                combinationBuilder.Complete();
+                if (tempDataInstanceList.IsCreated)
+                {
+                    combinationBuilder.Complete(mesh);
+                }
+            }
 
-                mesh = combinationBuilder.Mesh;
-            }
-            //*/
             base.EndGeneration(mesh);
         }
 
@@ -258,10 +274,23 @@ namespace MeshBuilder
             return tileGeneration.Schedule(tiles.Data.Length, batchCount, dependOn);
         }
 
-        private JobHandle ScheduleFillCombineInstanceList(NativeList<MeshInstance> resultList, Volume<MeshTile> meshTiles, JobHandle dependOn)
+        private JobHandle ScheduleFillMeshInstanceList(NativeList<MeshInstance> resultList, Volume<MeshTile> meshTiles, JobHandle dependOn)
         {
-            var fillList = new FillCombineInstanceListJob
+            var fillList = new FillMeshInstanceListJob
             {
+                meshTiles = meshTiles.Data,
+                resultCombineInstances = resultList
+            };
+
+            return fillList.Schedule(dependOn);
+        }
+
+        private JobHandle ScheduleFillDataInstanceList(NativeList<DataInstance> resultList, Volume<MeshTile> meshTiles, JobHandle dependOn)
+        {
+            var fillList = new FillDataInstanceListJob
+            {
+                baseMeshVariants = theme.TileThemeCache.BaseMeshVariants,
+                dataOffsets = theme.TileThemeCache.DataOffsets,
                 meshTiles = meshTiles.Data,
                 resultCombineInstances = resultList
             };
@@ -729,9 +758,6 @@ namespace MeshBuilder
         [BurstCompile]
         private struct GenerateMeshDataJob : IJobParallelFor
         {
-            private const byte RotationMask = (byte)(PieceTransform.Rotate90 | PieceTransform.Rotate180 | PieceTransform.Rotate270);
-            private const byte MirrorMask = (byte)PieceTransform.MirrorXYZ;
-
             public Extents tileExtents;
             public float3 cellSize;
             [ReadOnly] public NativeArray<TileMeshData> tiles;
@@ -798,56 +824,14 @@ namespace MeshBuilder
             {
                 return new MeshInstance
                 {
-                    instance = CreateCombineInstance(pos, group[index].PieceTransform),
+                    transform = CreateTransform(pos, group[index].PieceTransform),
                     basePieceIndex = group[index].BaseMeshIndex,
                     variantIndex = variant
                 };
             }
-
-            private CombineInstance CreateCombineInstance(float3 pos, PieceTransform pieceTransform)
-            {
-                float4x4 transform = ToRotationMatrix(pieceTransform);
-
-                if (HasFlag(pieceTransform, PieceTransform.MirrorX)) MirrorMatrix(PieceTransform.MirrorX, ref transform);
-                if (HasFlag(pieceTransform, PieceTransform.MirrorY)) MirrorMatrix(PieceTransform.MirrorY, ref transform);
-
-                transform.c3.x = pos.x;
-                transform.c3.y = pos.y;
-                transform.c3.z = pos.z;
-
-                return new CombineInstance { subMeshIndex = 0, transform = ToMatrix4x4(transform) };
-            }
-
-            static private bool HasFlag(PieceTransform transform, PieceTransform flag)
-            {
-                return (byte)(transform & flag) != 0;
-            }
-
-            static private void MirrorMatrix(PieceTransform pieceTransform, ref float4x4 m)
-            {
-                byte mirror = (byte)((byte)pieceTransform & MirrorMask);
-                switch (mirror)
-                {
-                    case (byte)PieceTransform.MirrorX: m.c0.x *= -1; m.c1.x *= -1; m.c2.x *= -1; break;
-                    case (byte)PieceTransform.MirrorY: m.c0.y *= -1; m.c1.y *= -1; m.c2.y *= -1; break;
-                    case (byte)PieceTransform.MirrorZ: m.c0.z *= -1; m.c1.z *= -1; m.c2.z *= -1; break;
-                }
-            }
-
-            static private float4x4 ToRotationMatrix(PieceTransform pieceTransform)
-            {
-                byte rotation = (byte)((byte)pieceTransform & RotationMask);
-                switch (rotation)
-                {
-                    case (byte)PieceTransform.Rotate90: return float4x4.RotateY(math.radians(-90));
-                    case (byte)PieceTransform.Rotate180: return float4x4.RotateY(math.radians(-180));
-                    case (byte)PieceTransform.Rotate270: return float4x4.RotateY(math.radians(-270));
-                }
-                return float4x4.identity;
-            }
         }
 
-        private struct FillCombineInstanceListJob : IJob
+        private struct FillMeshInstanceListJob : IJob
         {
             [ReadOnly] public NativeArray<MeshTile> meshTiles;
             [WriteOnly] public NativeList<MeshInstance> resultCombineInstances;
@@ -887,6 +871,61 @@ namespace MeshBuilder
                             }
                     }
                 }
+            }
+        }
+
+        private struct FillDataInstanceListJob : IJob
+        {
+            [ReadOnly] public NativeArray<Offset> baseMeshVariants;
+            [ReadOnly] public NativeArray<MeshDataOffset> dataOffsets;
+
+            [ReadOnly] public NativeArray<MeshTile> meshTiles;
+            [WriteOnly] public NativeList<DataInstance> resultCombineInstances;
+
+            public void Execute()
+            {
+                for (int i = 0; i < meshTiles.Length; ++i)
+                {
+                    var tile = meshTiles[i];
+                    switch (tile.count)
+                    {
+                        case 1:
+                            {
+                                resultCombineInstances.Add(ToDataInstance(tile.mesh0));
+                                break;
+                            }
+                        case 2:
+                            {
+                                resultCombineInstances.Add(ToDataInstance(tile.mesh0));
+                                resultCombineInstances.Add(ToDataInstance(tile.mesh1));
+                                break;
+                            }
+                        case 3:
+                            {
+                                resultCombineInstances.Add(ToDataInstance(tile.mesh0));
+                                resultCombineInstances.Add(ToDataInstance(tile.mesh1));
+                                resultCombineInstances.Add(ToDataInstance(tile.mesh2));
+                                break;
+                            }
+                        case 4:
+                            {
+                                resultCombineInstances.Add(ToDataInstance(tile.mesh0));
+                                resultCombineInstances.Add(ToDataInstance(tile.mesh1));
+                                resultCombineInstances.Add(ToDataInstance(tile.mesh2));
+                                resultCombineInstances.Add(ToDataInstance(tile.mesh3));
+                                break;
+                            }
+                    }
+                }
+            }
+
+            public DataInstance ToDataInstance(MeshInstance inst)
+            {
+                return new DataInstance()
+                {
+                    dataOffsets = TileTheme.MeshCache.GetMeshDataOffset(inst.basePieceIndex, inst.variantIndex, baseMeshVariants, dataOffsets),
+                    transform = inst.transform
+                };
             }
         }
 

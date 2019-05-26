@@ -116,7 +116,7 @@ namespace MeshBuilder
         {
             if (tempInstanceList.IsCreated)
             {
-                CombineMeshes(Mesh, tempInstanceList, Theme);
+                CombineMeshes(mesh, tempInstanceList, Theme);
                 tempInstanceList = default;
             }
         }
@@ -258,73 +258,10 @@ namespace MeshBuilder
             {
                 return new MeshInstance
                 {
-                    instance = CreateCombineInstance(pos, group[index].PieceTransform),
+                    transform = CreateTransform(pos, group[index].PieceTransform),
                     basePieceIndex = group[index].BaseMeshIndex,
                     variantIndex = variant
                 };
-            }
-
-            private CombineInstance CreateCombineInstance(float3 pos, PieceTransform pieceTransform)
-            {
-                float4x4 transform = ToRotationMatrix(pieceTransform);
-
-                if (((byte)pieceTransform & MirrorMask) != 0)
-                {
-                    transform = math.mul(transform, ToScaleMatrix(pieceTransform));
-                }
-
-                MatrixConverter m = new MatrixConverter { };
-                m.float4x4 = math.mul(float4x4.Translate(pos), transform);
-
-                return new CombineInstance { subMeshIndex = 0, transform = m.Matrix4x4 };
-            }
-            
-            // NOTE: I wanted to use static readonly matrices instead of constructing new ones
-            // but that didn't work with the Burst compiler
-
-            static private float4x4 ToScaleMatrix(PieceTransform pieceTransform)
-            {
-                byte mirror = (byte)((byte)pieceTransform & MirrorMask);
-                switch (mirror)
-                {
-                    case (byte)PieceTransform.MirrorX: return float4x4.Scale(-1, 1, 1);
-                    case (byte)PieceTransform.MirrorY: return float4x4.Scale(1, -1, 1);
-                    case (byte)PieceTransform.MirrorZ: return float4x4.Scale(1, 1, -1);
-                    case (byte)PieceTransform.MirrorXY: return float4x4.Scale(-1, -1, 1);
-                    case (byte)PieceTransform.MirrorXZ: return float4x4.Scale(-1, 1, -1);
-                    case (byte)PieceTransform.MirrorXYZ: return float4x4.Scale(-1, -1, -1);
-                }
-                return float4x4.identity;
-            }
-
-            static private float4x4 ToRotationMatrix(PieceTransform pieceTransform)
-            {
-                byte rotation = (byte)((byte)pieceTransform & RotationMask);
-                switch (rotation)
-                {
-                    case (byte)PieceTransform.Rotate90: return float4x4.RotateY(math.radians(-90));
-                    case (byte)PieceTransform.Rotate180: return float4x4.RotateY(math.radians(-180));
-                    case (byte)PieceTransform.Rotate270: return float4x4.RotateY(math.radians(-270));
-                }
-                return float4x4.identity;
-            }
-
-            /// <summary>
-            /// Utility class for converting the matrxi data between the two different versions.
-            /// The jobs use the float4x4 version to perform operations which might be faster, but the CombineInstance
-            /// struct takes Matrix4x4.
-            /// TODO: Check this later, later versions of Unity might accept float4x4 which would make this obsolete.
-            /// NOTE: This is also used elsewhere, but when I moved it out from this struct to reuse it I got weird 
-            /// errors and the Unity editor started to glitch
-            /// </summary>
-            [StructLayout(LayoutKind.Explicit)]
-            private struct MatrixConverter
-            {
-                [FieldOffset(0)]
-                public float4x4 float4x4;
-
-                [FieldOffset(0)]
-                public Matrix4x4 Matrix4x4;
             }
         }
 

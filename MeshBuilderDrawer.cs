@@ -1,27 +1,65 @@
 ﻿using UnityEngine;
+using Unity.Jobs;
 
 namespace MeshBuilder
 {
     [System.Serializable]
-    public class MeshBuilderDrawer
+    public class MeshBuilderDrawer : System.IDisposable
     {
         [SerializeField]
         protected RenderInfo renderer;
         public RenderInfo Renderer { get => renderer; set => renderer = value; }
 
-        public IMeshBuilder Mesher { get; set; }
+        public Builder MeshBuilder { get; private set; }
+        public T Get<T>() where T : Builder { return MeshBuilder as T; }
+        public Mesh Mesh { get; private set; }
 
-        public MeshBuilderDrawer(RenderInfo info)
+        public MeshBuilderDrawer(RenderInfo info, Builder builder)
         {
-            renderer = info; 
+            MeshBuilder = builder;
+            renderer = info;
+            Mesh = new Mesh();
         }
+
+        public void StartBuilder(JobHandle dependOn = default)
+        {
+            if (MeshBuilder.IsInitialized)
+            {
+                MeshBuilder.Start(dependOn);
+            }
+            else
+            {
+                Debug.LogError("MeshBuilder was not initialized!");
+            }
+        }
+
+        public void CompleteBuilder()
+        {
+            if (MeshBuilder.IsGenerating)
+            {
+                MeshBuilder.Complete(Mesh);
+            }
+            else
+            {
+                Debug.LogWarning("MeshBuilder was not generating!");
+            }
+        }
+
+        public bool IsBuilderGenerating { get => MeshBuilder.IsGenerating; }
 
         public void Render(Camera cam, Transform transform, int layer)
         {
-            if (Mesher != null && Mesher.Mesh != null)
-            {
-                renderer.Draw(transform, Mesher.Mesh, cam, layer);
-            }
+            renderer.Draw(transform, Mesh, cam, layer);
+        }
+
+        public void Dispose()
+        {
+            MeshBuilder.Dispose();
+        }
+
+        static public MeshBuilderDrawer Create<T>(RenderInfo info) where T : Builder, new()
+        {
+            return new MeshBuilderDrawer(info, new T());
         }
 
         [System.Serializable]

@@ -4,21 +4,13 @@ using Unity.Jobs;
 
 namespace MeshBuilder
 {
-    public abstract class Builder : IMeshBuilder
+    public abstract class Builder : System.IDisposable
     {
         protected enum BuilderState { Uninitialized, Initialized, Generating }
         protected BuilderState State { get; private set; }
 
         private JobHandle lastHandle;
         private List<System.IDisposable> temps = new List<System.IDisposable>();
-
-    //    public Mesh Mesh { get; private set; }
-        public Mesh Mesh { get; set; }
-
-        public Builder()
-        {
-            Mesh = new Mesh();
-        }
 
         protected void Inited()
         {
@@ -47,12 +39,12 @@ namespace MeshBuilder
             return lastHandle;
         }
 
-        public void Complete()
+        public void Complete(Mesh mesh)
         {
             if (State == BuilderState.Generating)
             {
                 lastHandle.Complete();
-                EndGeneration(Mesh);
+                EndGeneration(mesh);
                 State = BuilderState.Initialized;
             }
             else
