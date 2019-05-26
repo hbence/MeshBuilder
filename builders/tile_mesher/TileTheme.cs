@@ -2,6 +2,7 @@
 using UnityEngine;
 using Unity.Collections;
 
+using static MeshBuilder.Utils;
 using Piece = MeshBuilder.Tile.Piece;
 using PieceTransform = MeshBuilder.Tile.PieceTransform;
 
@@ -53,6 +54,8 @@ namespace MeshBuilder
         private NativeArray<ConfigTransformGroup> configs;
         public NativeArray<ConfigTransformGroup> Configs { get { return configs; } }
 
+        public MeshCache TileThemeCache { get; private set; }
+
         private int refCount = 0;
 
         public void Init()
@@ -65,14 +68,18 @@ namespace MeshBuilder
                 configs = new NativeArray<ConfigTransformGroup>(count, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
                 FillConfigurations();
             }
+
+            if (TileThemeCache == null)
+            {
+                TileThemeCache = new MeshCache(baseVariants, Allocator.Persistent);
+            }
         }
 
         public void Dispose()
         {
-            if (configs.IsCreated)
-            {
-                configs.Dispose();
-            }
+            SafeDispose(ref configs);
+            TileThemeCache?.Dispose();
+            TileThemeCache = null;
 
             refCount = 0;
         }
