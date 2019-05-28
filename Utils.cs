@@ -67,6 +67,38 @@ namespace MeshBuilder
             public Matrix4x4 Matrix4X4;
         }
 
+        // TODO: check back later, newer versions of Unity might allow direct use of math versions
+        // of data types making these converter classes superflous
+        [StructLayout(LayoutKind.Explicit)]
+        public struct Vector4Converter
+        {
+            [FieldOffset(0)]
+            public float4[] Float4Array;
+
+            [FieldOffset(0)]
+            public Vector4[] Vector4Array;
+        }
+
+        [StructLayout(LayoutKind.Explicit)]
+        public struct Vector3Converter
+        {
+            [FieldOffset(0)]
+            public float3[] Float3Array;
+
+            [FieldOffset(0)]
+            public Vector3[] Vector3Array;
+        }
+
+        [StructLayout(LayoutKind.Explicit)]
+        public struct Vector2Converter
+        {
+            [FieldOffset(0)]
+            public float2[] Float2Array;
+
+            [FieldOffset(0)]
+            public Vector2[] Vector2Array;
+        }
+
         static public Matrix4x4 ToMatrix4x4(float4x4 m)
         {
             var c = new MatrixConverter { Float4x4 = m };
@@ -77,6 +109,42 @@ namespace MeshBuilder
         {
             var c = new MatrixConverter { Matrix4X4 = m };
             return c.Float4x4;
+        }
+
+        static public Vector2[] ToVector2Array(NativeArray<float2> array)
+        {
+            var data = new Vector2Converter { Float2Array = array.ToArray() };
+            return data.Vector2Array;
+        }
+
+        static public Vector3[] ToVector3Array(NativeArray<float3> array)
+        {
+            var data = new Vector3Converter { Float3Array = array.ToArray() };
+            return data.Vector3Array;
+        }
+
+        static public Vector4[] ToVector4Array(NativeArray<float4> array)
+        {
+            var data = new Vector4Converter { Float4Array = array.ToArray() };
+            return data.Vector4Array;
+        }
+
+        static public float2[] ToFloat2Array(Vector2[] array)
+        {
+            var data = new Vector2Converter { Vector2Array = array };
+            return data.Float2Array;
+        }
+
+        static public float3[] ToFloat3Array(Vector3[] array)
+        {
+            var data = new Vector3Converter { Vector3Array = array };
+            return data.Float3Array;
+        }
+
+        static public float4[] ToFloat4Array(Vector4[] array)
+        {
+            var data = new Vector4Converter { Vector4Array = array };
+            return data.Float4Array;
         }
 
         [BurstCompile]

@@ -318,7 +318,7 @@ namespace MeshBuilder
                 int length = submeshTriangleOffsets[submesh].length;
                 if (dstBuffer.Length >= length)
                 {
-                    NativeArray<int>.Copy(triangles, (int)offset, dstBuffer, 0, (int)length);
+                    NativeArray<int>.Copy(triangles, offset, dstBuffer, 0, length);
                 }
                 else
                 {
@@ -360,43 +360,7 @@ namespace MeshBuilder
         {
             return (buffer.IsCreated && index >= 0 && index < buffer.Length);
         }
-
-        static public Vector2[] ToVector2Array(NativeArray<float2> array)
-        {
-            var data = new Vector2Converter { Float2Array = array.ToArray() };
-            return data.Vector2Array;
-        }
-
-        static public Vector3[] ToVector3Array(NativeArray<float3> array)
-        {
-            var data = new Vector3Converter { Float3Array = array.ToArray() };
-            return data.Vector3Array;
-        }
-
-        static public Vector4[] ToVector4Array(NativeArray<float4> array)
-        {
-            var data = new Vector4Converter { Float4Array = array.ToArray() };
-            return data.Vector4Array;
-        }
-
-        static public float2[] ToFloat2Array(Vector2[] array)
-        {
-            var data = new Vector2Converter { Vector2Array = array };
-            return data.Float2Array;
-        }
-
-        static public float3[] ToFloat3Array(Vector3[] array)
-        {
-            var data = new Vector3Converter { Vector3Array = array };
-            return data.Float3Array;
-        }
-
-        static public float4[] ToFloat4Array(Vector4[] array)
-        {
-            var data = new Vector4Converter { Vector4Array = array };
-            return data.Float4Array;
-        }
-
+        
         static public void UpdateMesh(Mesh mesh, NativeArray<float3> vertices, NativeArray<int> tris, NativeArray<float2> uvs)
         {
             mesh.Clear();
@@ -442,38 +406,6 @@ namespace MeshBuilder
             uint BufferFlag<T>(T[] a, Buffer flag) { return Has(a) ? (uint)flag : 0; }
 
             return bufferFlags;
-        }
-
-        // TODO: check back later, newer versions of Unity might allow direct use of math versions
-        // of data types making these converter classes superflous
-        [StructLayout(LayoutKind.Explicit)]
-        public struct Vector4Converter
-        {
-            [FieldOffset(0)]
-            public float4[] Float4Array;
-
-            [FieldOffset(0)]
-            public Vector4[] Vector4Array;
-        }
-
-        [StructLayout(LayoutKind.Explicit)]
-        public struct Vector3Converter
-        {
-            [FieldOffset(0)]
-            public float3[] Float3Array;
-
-            [FieldOffset(0)]
-            public Vector3[] Vector3Array;
-        }
-
-        [StructLayout(LayoutKind.Explicit)]
-        public struct Vector2Converter
-        {
-            [FieldOffset(0)]
-            public float2[] Float2Array;
-
-            [FieldOffset(0)]
-            public Vector2[] Vector2Array;
         }
     }
 }
