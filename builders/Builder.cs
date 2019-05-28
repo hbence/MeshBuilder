@@ -10,7 +10,7 @@ namespace MeshBuilder
         protected BuilderState State { get; private set; }
 
         private JobHandle lastHandle;
-        private List<System.IDisposable> temps = new List<System.IDisposable>();
+        protected List<System.IDisposable> Temps { get; private set; } = new List<System.IDisposable>();
 
         protected void Inited()
         {
@@ -69,16 +69,16 @@ namespace MeshBuilder
 
         protected void AddTemp(System.IDisposable temp)
         {
-            temps.Add(temp);
+            Temps.Add(temp);
         }
 
         virtual protected void DisposeTemps()
         {
-            foreach (var elem in temps)
+            foreach (var elem in Temps)
             {
                 elem.Dispose();
             }
-            temps.Clear();
+            Temps.Clear();
         }
     }
 }
