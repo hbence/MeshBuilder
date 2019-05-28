@@ -1,15 +1,14 @@
-﻿using System.Collections;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 using Unity.Collections;
 using Unity.Mathematics;
 
-
 namespace MeshBuilder
 {
-    using BufferType = MeshData.Buffer;
     using Offset = Utils.Offset;
     using MeshDataOffset = MeshCombinationBuilder.MeshDataOffsets;
+
+    using static Utils;
 
     public sealed partial class TileTheme
     {
@@ -95,9 +94,9 @@ namespace MeshBuilder
 
                 bool Has<T>(bool hasData, T[] a) { return hasData && a != null && a.Length > 0; }
 
-                void Copy2V(Vector2[] src, NativeArray<float2> dst) { NativeArray<float2>.Copy(MeshData.ToFloat2Array(src), 0, dst, vStart, vLength); }
-                void Copy3V(Vector3[] src, NativeArray<float3> dst) { NativeArray<float3>.Copy(MeshData.ToFloat3Array(src), 0, dst, vStart, vLength); }
-                void Copy4V(Vector4[] src, NativeArray<float4> dst) { NativeArray<float4>.Copy(MeshData.ToFloat4Array(src), 0, dst, vStart, vLength); }
+                void Copy2V(Vector2[] src, NativeArray<float2> dst) { NativeArray<float2>.Copy(ToFloat2Array(src), 0, dst, vStart, vLength); }
+                void Copy3V(Vector3[] src, NativeArray<float3> dst) { NativeArray<float3>.Copy(ToFloat3Array(src), 0, dst, vStart, vLength); }
+                void Copy4V(Vector4[] src, NativeArray<float4> dst) { NativeArray<float4>.Copy(ToFloat4Array(src), 0, dst, vStart, vLength); }
             }
 
             static private MeshDataOffset CreateMeshDataOffset(Mesh mesh, int startVertexIndex, int startTriangleIndex)

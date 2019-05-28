@@ -185,6 +185,17 @@ namespace MeshBuilder
             return dependOn;
         }
 
+        protected JobHandle ScheduleDeferredCombineMeshes(NativeList<DataInstance> instanceList, TileTheme theme, JobHandle dependOn)
+        {
+            combinationBuilder = new MeshCombinationBuilder();
+            AddTemp(combinationBuilder);
+
+            combinationBuilder.InitDeferred(instanceList, theme);
+            dependOn = combinationBuilder.Start(dependOn);
+
+            return dependOn;
+        }
+
         protected bool HasTilesData { get { return tiles != null && !tiles.IsDisposed; } }
 
         private const byte RotationMask = (byte)(PieceTransform.Rotate90 | PieceTransform.Rotate180 | PieceTransform.Rotate270);

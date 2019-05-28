@@ -4,25 +4,29 @@ using Unity.Burst;
 using Unity.Collections;
 using Unity.Mathematics;
 
-using static MeshBuilder.Extents;
-using static MeshBuilder.Utils;
-
-using TileData = MeshBuilder.Tile.Data;
-using TileType = MeshBuilder.Tile.Type;
-using DataVolume = MeshBuilder.Volume<MeshBuilder.Tile.Data>; // type values
-using TileVolume = MeshBuilder.Volume<MeshBuilder.TileMesher3D.TileMeshData>; // configuration indices
-using ConfigTransformGroup = MeshBuilder.TileTheme.ConfigTransformGroup;
-using Direction = MeshBuilder.Tile.Direction;
-using DataInstance = MeshBuilder.MeshCombinationBuilder.DataInstance;
-using MeshDataOffset = MeshBuilder.MeshCombinationBuilder.MeshDataOffsets;
-
 namespace MeshBuilder
 {
+    using static MeshBuilder.Extents;
+    using static MeshBuilder.Utils;
+
+    using TileData = Tile.Data;
+    using TileType = Tile.Type;
+    using DataVolume = Volume<Tile.Data>; // type values
+    using TileVolume = Volume<TileMesher3D.TileMeshData>; // configuration indices
+    using ConfigTransformGroup = TileTheme.ConfigTransformGroup;
+    using Direction = Tile.Direction;
+    using DataInstance = MeshCombinationBuilder.DataInstance;
+    using MeshDataOffset = MeshCombinationBuilder.MeshDataOffsets;
+
     public class TileMesher3D : TileMesherBase<TileMesher3D.TileMeshData>
     {
         static private readonly Settings DefaultSettings = new Settings { };
 
+        // the preferred mesh builder is the deferred version of the MeshCombinationBuilder class
+        // this is also the default
+        // the unity version is kept here in case the TileMesher needs a feature the MeshCombinationBuilder doesn't handle (and as a reference)
         private bool useUnityCombineMeshes = false;
+        private bool useDeferredCombineMeshBuilder = true;
 
         // INITIAL DATA
         private TileTheme theme;
@@ -143,10 +147,15 @@ namespace MeshBuilder
                     AddTemp(tempDataInstanceList);
                     dependOn = ScheduleFillDataInstanceList(tempDataInstanceList, tileMeshes, dependOn);
 
-                    // TODO: GET RID OF THIS SOMEHOW!!!
-                    dependOn.Complete();
-
-                    ScheduleCombineMeshes(tempDataInstanceList, theme, default);
+                    if (useDeferredCombineMeshBuilder)
+                    {
+                        dependOn = ScheduleDeferredCombineMeshes(tempDataInstanceList, theme, dependOn);
+                    }
+                    else
+                    {
+                        dependOn.Complete();
+                        ScheduleCombineMeshes(tempDataInstanceList, theme, default);
+                    }
                 }
             }
             else

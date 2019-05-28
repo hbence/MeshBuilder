@@ -9,49 +9,249 @@ namespace MeshBuilder
 {
     using BufferType = MeshData.Buffer;
     using Offset = Utils.Offset;
+    using static Utils;
 
     public class MeshCombinationBuilder : Builder
     {
-        private struct ResultMeshInfo
-        {
-            public uint meshDataFlags;
-            public int vertexCount;
-            public int triangleLength;
-            public Offset[] submeshTriangleOffsets;
-
-            public ResultMeshInfo(uint flags, int vertsCount, int triCount, Offset[] submeshOffsets)
-            { meshDataFlags = flags; vertexCount = vertsCount; triangleLength = triCount; submeshTriangleOffsets = submeshOffsets; }
-
-            public MeshData CreateMeshData(Allocator allocator) { return new MeshData(vertexCount, triangleLength, submeshTriangleOffsets, allocator, meshDataFlags); }
-        }
-
+        private bool deferred = false;
         private TileTheme theme;
-        private NativeArray<DataInstance> instanceArray;
 
-        private MeshData combinedMesh;
+        private Immediate immediateHandler;
+        private Deferred deferredHandler;
 
         public void Init(NativeArray<DataInstance> instanceArray, TileTheme theme)
         {
-            this.instanceArray = instanceArray;
+            deferred = false;
+            immediateHandler = new Immediate(instanceArray);
+            deferredHandler = null;
 
             this.theme?.Release();
             this.theme = theme;
             this.theme.Retain();
 
-            combinedMesh.Dispose();
-            combinedMesh = default;
+            Inited();
+        }
+
+        public void InitDeferred(NativeList<DataInstance> instanceList, TileTheme theme)
+        {
+            deferred = true;
+            deferredHandler = new Deferred(instanceList);
+            immediateHandler = null;
+
+            this.theme?.Release();
+            this.theme = theme;
+            this.theme.Retain();
 
             Inited();
         }
 
-        private ResultMeshInfo CalcCombinedMeshInfo(NativeArray<DataInstance> instanceArray, TileTheme theme)
+        protected override JobHandle StartGeneration(JobHandle dependOn)
         {
-            uint meshDataFlags = theme.TileThemeCache.MeshDataBufferFlags;
+            return deferred ? deferredHandler.ScheduleDeferredJobs(theme, Temps, dependOn) : 
+                                immediateHandler.ScheduleImmediateJobs(theme, Temps, dependOn);
+        }
+
+        private class Immediate
+        {
+            public NativeArray<DataInstance> instanceArray;
+            public MeshData combinedMesh;
+
+            public Immediate(NativeArray<DataInstance> instArray)
+            {
+                instanceArray = instArray;
+            }
+
+            public void UpdateMesh(Mesh mesh)
+            {
+                combinedMesh.UpdateMesh(mesh, MeshData.UpdateMode.Clear);
+            }
+
+            public JobHandle ScheduleImmediateJobs(TileTheme theme, List<System.IDisposable> tempList, JobHandle dependOn)
+            {
+                var combinedInfo = CalcCombinedMeshInfo(instanceArray, theme.TileThemeCache.MeshDataBufferFlags);
+                combinedMesh = combinedInfo.CreateMeshData(Allocator.TempJob);
+                tempList.Add(combinedMesh);
+
+                var submeshOffsets = new NativeArray<Offset>(combinedInfo.submeshTriangleOffsets, Allocator.TempJob);
+                tempList.Add(submeshOffsets);
+
+                JobHandle combined = default;
+                MeshData source = theme.TileThemeCache.MeshData;
+
+                if (combinedMesh.HasVertices)
+                {
+                    var h = CombineTransformedBufferJob.Schedule(BufferType.Vertex, source.Vertices, combinedMesh.Vertices, instanceArray, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                if (combinedMesh.HasTriangles)
+                {
+                    var h = CombineTriangleBufferJob.Schedule(source.Triangles, combinedMesh.Triangles, submeshOffsets, instanceArray, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                if (combinedMesh.HasNormals)
+                {
+                    var h = CombineTransformedBufferJob.Schedule(BufferType.Normal, source.Normals, combinedMesh.Normals, instanceArray, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                if (combinedMesh.HasColors)
+                {
+                    var h = CombineBufferJob<Color>.Schedule(source.Colors, combinedMesh.Colors, instanceArray, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                if (combinedMesh.HasTangents)
+                {
+                    var h = CombineBufferJob<float4>.Schedule(source.Tangents, combinedMesh.Tangents, instanceArray, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                if (combinedMesh.HasUVs)
+                {
+                    var h = CombineBufferJob<float2>.Schedule(source.UVs, combinedMesh.UVs, instanceArray, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                if (combinedMesh.HasUVs2)
+                {
+                    var h = CombineBufferJob<float2>.Schedule(source.UVs2, combinedMesh.UVs2, instanceArray, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                if (combinedMesh.HasUVs3)
+                {
+                    var h = CombineBufferJob<float2>.Schedule(source.UVs3, combinedMesh.UVs3, instanceArray, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                if (combinedMesh.HasUVs4)
+                {
+                    var h = CombineBufferJob<float2>.Schedule(source.UVs4, combinedMesh.UVs4, instanceArray, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                return combined;
+            }
+        }
+
+        private class Deferred
+        {
+            public NativeList<DataInstance> instanceList;
+            public DeferredMeshData deferredCombinedMesh;
+
+            public Deferred(NativeList<DataInstance> instances)
+            {
+                instanceList = instances;
+            }
+
+            public void UpdateMesh(Mesh mesh, ResultMeshInfo meshInfo)
+            {
+                deferredCombinedMesh.UpdateMesh(mesh, meshInfo);
+            }
+
+            public JobHandle ScheduleDeferredJobs(TileTheme theme, List<System.IDisposable> tempList, JobHandle dependOn)
+            {
+                uint meshFlags = theme.TileThemeCache.MeshDataBufferFlags;
+                deferredCombinedMesh = new DeferredMeshData(meshFlags, Allocator.TempJob);
+                tempList.Add(deferredCombinedMesh);
+
+                JobHandle combined = default;
+                MeshData source = theme.TileThemeCache.MeshData;
+
+                if (deferredCombinedMesh.HasVertices)
+                {
+                    var h = CombineTransformedBufferJob.ScheduleDeferred(BufferType.Vertex, source.Vertices, deferredCombinedMesh.Vertices, instanceList, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                if (deferredCombinedMesh.HasTriangles)
+                {
+                    var h = CombineTriangleBufferJob.ScheduleDeferred(source.Triangles, deferredCombinedMesh.Triangles, meshFlags, instanceList, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                if (deferredCombinedMesh.HasNormals)
+                {
+                    var h = CombineTransformedBufferJob.ScheduleDeferred(BufferType.Normal, source.Normals, deferredCombinedMesh.Normals, instanceList, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                if (deferredCombinedMesh.HasColors)
+                {
+                    var h = CombineBufferJob<Color>.ScheduleDeferred(source.Colors, deferredCombinedMesh.Colors, instanceList, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                if (deferredCombinedMesh.HasTangents)
+                {
+                    var h = CombineBufferJob<float4>.ScheduleDeferred(source.Tangents, deferredCombinedMesh.Tangents, instanceList, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                if (deferredCombinedMesh.HasUVs)
+                {
+                    var h = CombineBufferJob<float2>.ScheduleDeferred(source.UVs, deferredCombinedMesh.UVs, instanceList, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                if (deferredCombinedMesh.HasUVs2)
+                {
+                    var h = CombineBufferJob<float2>.ScheduleDeferred(source.UVs2, deferredCombinedMesh.UVs2, instanceList, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                if (deferredCombinedMesh.HasUVs3)
+                {
+                    var h = CombineBufferJob<float2>.ScheduleDeferred(source.UVs3, deferredCombinedMesh.UVs3, instanceList, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                if (deferredCombinedMesh.HasUVs4)
+                {
+                    var h = CombineBufferJob<float2>.ScheduleDeferred(source.UVs4, deferredCombinedMesh.UVs4, instanceList, dependOn);
+                    combined = JobHandle.CombineDependencies(combined, h);
+                }
+
+                return combined;
+            }
+        }
+
+        protected override void EndGeneration(Mesh mesh)
+        {
+            if (deferred)
+            {
+                var meshInfo = CalcCombinedMeshInfo(deferredHandler.instanceList, theme.TileThemeCache.MeshDataBufferFlags);
+                deferredHandler.UpdateMesh(mesh, meshInfo);
+            }
+            else
+            {
+                immediateHandler.UpdateMesh(mesh);
+            }
+        }
+
+        static private int CountCombinedVertexCount(NativeArray<DataInstance> instanceArray)
+        {
+            int count = 0;
+            foreach (var data in instanceArray) { count += data.dataOffsets.vertices.length; }
+            return count;
+        }
+
+        static private int CountCombinedIndexCount(NativeArray<DataInstance> instanceArray)
+        {
+            int count = 0;
+            foreach (var data in instanceArray) { count += data.dataOffsets.triangles.length; }
+            return count;
+        }
+
+        static private ResultMeshInfo CalcCombinedMeshInfo(NativeArray<DataInstance> instanceArray, uint meshDataFlags)
+        {
             int vertexCount = 0;
             int triangleLength = 0;
 
             var submeshLengths = new List<int>();
-            
+
             for (int i = 0; i < instanceArray.Length; ++i)
             {
                 var inst = instanceArray[i];
@@ -80,121 +280,7 @@ namespace MeshBuilder
 
             return new ResultMeshInfo(meshDataFlags, vertexCount, triangleLength, submeshTriangleOffsets);
         }
-
-        protected override JobHandle StartGeneration(JobHandle dependOn)
-        {
-            var combinedInfo = CalcCombinedMeshInfo(instanceArray, theme);
-            combinedMesh = combinedInfo.CreateMeshData(Allocator.TempJob);
-            AddTemp(combinedMesh);
-
-            var submeshOffsets = new NativeArray<Offset>(combinedInfo.submeshTriangleOffsets, Allocator.TempJob);
-            AddTemp(submeshOffsets);
-
-            JobHandle bufferFinished = default;
-            JobHandle combined = default;
-
-            MeshData source = theme.TileThemeCache.MeshData;
-
-            if (combinedMesh.HasVertices)
-            {
-                bufferFinished = ScheduleTransformedCombination(BufferType.Vertex, source.Vertices, combinedMesh.Vertices, dependOn);
-                combined = JobHandle.CombineDependencies(combined, bufferFinished);
-            }
-
-            if (combinedMesh.HasTriangles)
-            {
-                bufferFinished = ScheduleTriangleCombination(source.Triangles, combinedMesh.Triangles, submeshOffsets, dependOn);
-                combined = JobHandle.CombineDependencies(combined, bufferFinished);
-            }
-
-            if (combinedMesh.HasNormals)
-            {
-                bufferFinished = ScheduleTransformedCombination(BufferType.Normal, source.Normals, combinedMesh.Normals, dependOn);
-                combined = JobHandle.CombineDependencies(combined, bufferFinished);
-            }
-
-            if (combinedMesh.HasColors)
-            {
-                bufferFinished = ScheduleCombination(source.Colors, combinedMesh.Colors, dependOn);
-                combined = JobHandle.CombineDependencies(combined, bufferFinished);
-            }
-
-            if (combinedMesh.HasTangents)
-            {
-                bufferFinished = ScheduleCombination(source.Tangents, combinedMesh.Tangents, dependOn);
-                combined = JobHandle.CombineDependencies(combined, bufferFinished);
-            }
-
-            if (combinedMesh.HasUVs)
-            {
-                bufferFinished = ScheduleCombination(source.UVs, combinedMesh.UVs, dependOn);
-                combined = JobHandle.CombineDependencies(combined, bufferFinished);
-            }
-
-            if (combinedMesh.HasUVs2)
-            {
-                bufferFinished = ScheduleCombination(source.UVs2, combinedMesh.UVs2, dependOn);
-                combined = JobHandle.CombineDependencies(combined, bufferFinished);
-            }
-
-            if (combinedMesh.HasUVs3)
-            {
-                bufferFinished = ScheduleCombination(source.UVs3, combinedMesh.UVs3, dependOn);
-                combined = JobHandle.CombineDependencies(combined, bufferFinished);
-            }
-
-            if (combinedMesh.HasUVs4)
-            {
-                bufferFinished = ScheduleCombination(source.UVs4, combinedMesh.UVs4, dependOn);
-                combined = JobHandle.CombineDependencies(combined, bufferFinished);
-            }
-
-            return combined;
-        }
-
-        protected override void EndGeneration(Mesh mesh)
-        {
-            combinedMesh.UpdateMesh(mesh, MeshData.UpdateMode.Clear);
-        }
-
-        private JobHandle ScheduleTransformedCombination(BufferType type, NativeArray<float3> source, NativeArray<float3> destination, JobHandle dependOn)
-        {
-            var job = new CombineTransformedBufferJob
-            {
-                bufferType = type,
-                instances = instanceArray,
-                source = source,
-                destination = destination
-            };
-
-            return job.Schedule(dependOn);
-        }
-
-        private JobHandle ScheduleTriangleCombination(NativeArray<int> source, NativeArray<int> destination, NativeArray<Offset> submeshOffsets, JobHandle dependOn)
-        {
-            var job = new CombineTriangleBufferJob
-            {
-                instances = instanceArray,
-                submeshOffsets = submeshOffsets,
-                source = source,
-                destination = destination
-            };
-
-            return job.Schedule(dependOn);
-        }
-
-        private JobHandle ScheduleCombination<T>(NativeArray<T> source, NativeArray<T> destination, JobHandle dependOn) where T : struct
-        {
-            var job = new CombineBufferJob<T>
-            {
-                instances = instanceArray,
-                source = source,
-                destination = destination
-            };
-
-            return job.Schedule(dependOn);
-        }
-
+        
         public struct DataInstance
         {
             public MeshDataOffsets dataOffsets;
@@ -202,7 +288,7 @@ namespace MeshBuilder
         }
 
         // not pretty, but this needs to be a blittable type
-        // TODO: I could use an unsafe fixed array, I should test that later
+        // TODO: I could use an unsafe fixed array, not sure if that would be nicer, I should test that later
         public struct MeshDataOffsets
         {
             public Offset vertices; 
@@ -280,15 +366,13 @@ namespace MeshBuilder
             {
                 switch (bufferType)
                 {
-                    case BufferType.Vertex: CombineTransformed(source, destination, 1); break;
-                    case BufferType.Normal: CombineTransformed(source, destination, 0); break;
-                    default:
-                        Debug.LogError("not handled:" + bufferType);
-                        break;
+                    case BufferType.Vertex: CombineTransformed(source, destination, 1, instances); break;
+                    case BufferType.Normal: CombineTransformed(source, destination, 0, instances); break;
+                    default: Debug.LogError("not handled:" + bufferType); break;
                 }
             }
 
-            private void CombineTransformed(NativeArray<float3> source, NativeArray<float3> destination, float w)
+            static private void CombineTransformed(NativeArray<float3> source, NativeArray<float3> destination, float w, NativeArray<DataInstance> instances)
             {
                 int nextVertex = 0;
                 float4 vertex = new float4(0, 0, 0, w);
@@ -300,6 +384,51 @@ namespace MeshBuilder
                         vertex.xyz = source[i];
                         destination[nextVertex] = math.mul(instance.transform, vertex).xyz;
                         ++nextVertex;
+                    }
+                }
+            }
+
+            static public JobHandle Schedule(BufferType type, NativeArray<float3> source, NativeArray<float3> destination, NativeArray<DataInstance> instanceArray, JobHandle dependOn)
+            {
+                var job = new CombineTransformedBufferJob
+                {
+                    bufferType = type,
+                    instances = instanceArray,
+                    source = source,
+                    destination = destination
+                };
+                return job.Schedule(dependOn);
+            }
+
+            static public JobHandle ScheduleDeferred(BufferType type, NativeArray<float3> source, NativeList<float3> destination, NativeList<DataInstance> instances, JobHandle dependOn)
+            {
+                var job = new Deferred
+                {
+                    bufferType = type,
+                    instances = instances.AsDeferredJobArray(),
+                    source = source,
+                    destination = destination
+                };
+                return job.Schedule(dependOn);
+            }
+
+            public struct Deferred : IJob
+            {
+                public BufferType bufferType;
+                [ReadOnly] public NativeArray<DataInstance> instances;
+
+                [ReadOnly] public NativeArray<float3> source;
+                public NativeList<float3> destination;
+
+                public void Execute()
+                {
+                    int vertexCount = CountCombinedVertexCount(instances);
+                    destination.ResizeUninitialized(vertexCount);
+                    switch (bufferType)
+                    {
+                        case BufferType.Vertex: CombineTransformed(source, destination, 1, instances); break;
+                        case BufferType.Normal: CombineTransformed(source, destination, 0, instances); break;
+                        default: Debug.LogError("not handled:" + bufferType); break;
                     }
                 }
             }
@@ -315,15 +444,15 @@ namespace MeshBuilder
 
             public void Execute()
             {
-                CombineTriangles(source, destination);
+                CombineTriangles(source, destination, instances, submeshOffsets);
             }
 
-            private void CombineTriangles(NativeArray<int> source, NativeArray<int> destination)
+            static private void CombineTriangles<T>(NativeArray<int> source, NativeArray<int> destination, NativeArray<DataInstance> instances, T submeshOffsets) where T : IEnumerable<Offset>
             {
-                var destSubmeshStart = new int[submeshOffsets.Length];
-                for (int i = 0; i < destSubmeshStart.Length; ++i)
+                var destSubmeshStart = new List<int>();
+                foreach(var elem in submeshOffsets)
                 {
-                    destSubmeshStart[i] = submeshOffsets[i].Start;
+                    destSubmeshStart.Add(elem.Start);
                 }
 
                 int offset = 0;
@@ -366,6 +495,45 @@ namespace MeshBuilder
                 }
             }
 
+            static public JobHandle Schedule(NativeArray<int> source, NativeArray<int> destination, NativeArray<Offset> submeshOffsets, NativeArray<DataInstance> instanceArray, JobHandle dependOn)
+            {
+                var job = new CombineTriangleBufferJob
+                {
+                    instances = instanceArray,
+                    submeshOffsets = submeshOffsets,
+                    source = source,
+                    destination = destination
+                };
+                return job.Schedule(dependOn);
+            }
+
+            static public JobHandle ScheduleDeferred(NativeArray<int> source, NativeList<int> destination, uint meshflags, NativeList<DataInstance> instances, JobHandle dependOn)
+            {
+                var job = new Deferred
+                {
+                    meshFlags = meshflags,
+                    instances = instances.AsDeferredJobArray(),
+                    source = source,
+                    destination = destination
+                };
+                return job.Schedule(dependOn);
+            }
+
+            public struct Deferred : IJob
+            {
+                public uint meshFlags;
+                [ReadOnly] public NativeArray<DataInstance> instances;
+
+                [ReadOnly] public NativeArray<int> source;
+                public NativeList<int> destination;
+
+                public void Execute()
+                {
+                    var meshInfo = CalcCombinedMeshInfo(instances, meshFlags);
+                    destination.ResizeUninitialized(meshInfo.triangleLength);
+                    CombineTriangles(source, destination, instances, meshInfo.submeshTriangleOffsets);
+                }
+            }
         }
 
         public struct CombineBufferJob<T> : IJob where T : struct 
@@ -377,10 +545,10 @@ namespace MeshBuilder
 
             public void Execute()
             {
-                Combine(source, destination);
+                Combine(source, destination, instances);
             }
 
-            private void Combine(NativeArray<T> source, NativeArray<T> destination)
+            static private void Combine(NativeArray<T> source, NativeArray<T> destination, NativeArray<DataInstance> instances)
             {
                 int destIndex = 0;
                 foreach (var instance in instances)
@@ -388,6 +556,202 @@ namespace MeshBuilder
                     var vOffset = instance.dataOffsets.vertices;
                     NativeArray<T>.Copy(source, vOffset.index, destination, destIndex, vOffset.length);
                     destIndex += vOffset.length;
+                }
+            }
+
+            static public JobHandle Schedule(NativeArray<T> source, NativeArray<T> destination, NativeArray<DataInstance> instanceArray, JobHandle dependOn)
+            {
+                var job = new CombineBufferJob<T>
+                {
+                    instances = instanceArray,
+                    source = source,
+                    destination = destination
+                };
+                return job.Schedule(dependOn);
+            }
+
+            static public JobHandle ScheduleDeferred(NativeArray<T> source, NativeList<T> destination, NativeList<DataInstance> instances, JobHandle dependOn)
+            {
+                var job = new Deferred
+                {
+                    instances = instances.AsDeferredJobArray(),
+                    source = source,
+                    destination = destination
+                };
+                return job.Schedule(dependOn);
+            }
+
+            private struct Deferred : IJob
+            {
+                [ReadOnly] public NativeArray<DataInstance> instances;
+
+                [ReadOnly] public NativeArray<T> source;
+                public NativeList<T> destination;
+
+                public void Execute()
+                {
+                    int count = CountCombinedVertexCount(instances);
+                    destination.ResizeUninitialized(count);
+                    Combine(source, destination, instances);
+                }
+            }
+        }
+
+        private struct ResultMeshInfo
+        {
+            public uint meshDataFlags;
+            public int vertexCount;
+            public int triangleLength;
+            public Offset[] submeshTriangleOffsets;
+
+            public ResultMeshInfo(uint flags, int vertsCount, int triCount, Offset[] submeshOffsets)
+            { meshDataFlags = flags; vertexCount = vertsCount; triangleLength = triCount; submeshTriangleOffsets = submeshOffsets; }
+
+            public int SubmeshCount { get => submeshTriangleOffsets != null ? submeshTriangleOffsets.Length : 0; }
+
+            private bool IsSubmeshInBounds(int submesh) { return submesh >= 0 && submesh < SubmeshCount; }
+
+            public int GetSubmeshTriangleLength(int submesh)
+            {
+                return (IsSubmeshInBounds(submesh)) ? submeshTriangleOffsets[submesh].length : 0;
+            }
+
+            public bool CopySubmeshTriangles(int submesh, NativeArray<int> srcBuffer, int[] dstBuffer)
+            {
+                if (IsSubmeshInBounds(submesh))
+                {
+                    int offset = submeshTriangleOffsets[submesh].index;
+                    int length = submeshTriangleOffsets[submesh].length;
+                    if (dstBuffer.Length >= length)
+                    {
+                        NativeArray<int>.Copy(srcBuffer, offset, dstBuffer, 0, length);
+                    }
+                    else
+                    {
+                        Debug.LogError("buffer is too small for copy");
+                    }
+                }
+                else
+                {
+                    Debug.LogError("submesh index is out of bounds");
+                }
+
+                return false;
+            }
+
+            public MeshData CreateMeshData(Allocator allocator) { return new MeshData(vertexCount, triangleLength, submeshTriangleOffsets, allocator, meshDataFlags); }
+        }
+
+        private struct DeferredMeshData : System.IDisposable
+        {
+            private NativeList<float3> vertices;
+            public NativeList<float3> Vertices { get => vertices; }
+            public bool HasVertices { get => Has(vertices); }
+
+            private NativeList<int> triangles;
+            public NativeList<int> Triangles { get => triangles; }
+            public bool HasTriangles { get => Has(triangles); }
+
+            private NativeList<float3> normals;
+            public NativeList<float3> Normals { get => normals; }
+            public bool HasNormals { get => Has(normals); }
+
+            private NativeList<Color> colors;
+            public NativeList<Color> Colors { get => colors; }
+            public bool HasColors { get => Has(colors); }
+
+            private NativeList<float4> tangents;
+            public NativeList<float4> Tangents { get => tangents; }
+            public bool HasTangents { get => Has(tangents); }
+
+            private NativeList<float2> uvs;
+            public NativeList<float2> UVs { get => uvs; }
+            public bool HasUVs { get => Has(uvs); }
+
+            private NativeList<float2> uvs2;
+            public NativeList<float2> UVs2 { get => uvs2; }
+            public bool HasUVs2 { get => Has(uvs2); }
+
+            private NativeList<float2> uvs3;
+            public NativeList<float2> UVs3 { get => uvs3; }
+            public bool HasUVs3 { get => Has(uvs3); }
+
+            private NativeList<float2> uvs4;
+            public NativeList<float2> UVs4 { get => uvs4; }
+            public bool HasUVs4 { get => Has(uvs4); }
+
+            public DeferredMeshData(uint meshDataBufferFlags, Allocator allocator)
+            {
+                vertices = Initialize<float3>(meshDataBufferFlags, BufferType.Vertex, allocator);
+                triangles = Initialize<int>(meshDataBufferFlags, BufferType.Triangle, allocator);
+                normals = Initialize<float3>(meshDataBufferFlags, BufferType.Normal, allocator);
+                colors = Initialize<Color>(meshDataBufferFlags, BufferType.Color, allocator);
+                tangents = Initialize<float4>(meshDataBufferFlags, BufferType.Tangent, allocator);
+                uvs = Initialize<float2>(meshDataBufferFlags, BufferType.UV, allocator);
+                uvs2 = Initialize<float2>(meshDataBufferFlags, BufferType.UV2, allocator);
+                uvs3 = Initialize<float2>(meshDataBufferFlags, BufferType.UV3, allocator);
+                uvs4 = Initialize<float2>(meshDataBufferFlags, BufferType.UV4, allocator);
+            }
+
+            static private NativeList<T> Initialize<T>(uint meshDataBufferFlags, BufferType type, Allocator allocator) where T : struct
+            {
+                return MeshData.HasFlag(meshDataBufferFlags, type) ? new NativeList<T>(allocator) : default;
+            }
+
+            public void Dispose()
+            {
+                SafeDispose(ref vertices);
+                SafeDispose(ref triangles);
+                SafeDispose(ref normals);
+                SafeDispose(ref colors);
+                SafeDispose(ref tangents);
+                SafeDispose(ref uvs);
+                SafeDispose(ref uvs2);
+                SafeDispose(ref uvs3);
+                SafeDispose(ref uvs4);
+            }
+
+            private bool Has<T>(NativeList<T> list) where T : struct { return list.IsCreated; }
+
+            public void UpdateMesh(Mesh mesh, ResultMeshInfo meshInfo)
+            {
+                mesh.Clear();
+
+                if (HasVertices)
+                {
+                    mesh.vertices = ToVector3Array(vertices);
+                }
+
+                if (HasTriangles)
+                {
+                    if (vertices.Length > short.MaxValue)
+                    {
+                        mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+                    }
+
+                    var offsets = meshInfo.submeshTriangleOffsets;
+                    mesh.subMeshCount = meshInfo.SubmeshCount;
+                    for (int submesh = 0; submesh < offsets.Length; ++submesh)
+                    {
+                        int triLength = meshInfo.GetSubmeshTriangleLength(submesh);
+                        int[] buffer = new int[triLength];
+                        meshInfo.CopySubmeshTriangles(submesh, triangles, buffer);
+                        mesh.SetTriangles(buffer, submesh);
+                    }
+                }
+
+                if (HasNormals) mesh.normals = ToVector3Array(normals);
+                if (HasColors) mesh.colors = colors.ToArray();
+                if (HasTangents) mesh.tangents = ToVector4Array(tangents);
+                if (HasUVs) mesh.uv = ToVector2Array(uvs);
+                if (HasUVs2) mesh.uv2 = ToVector2Array(uvs2);
+                if (HasUVs3) mesh.uv3 = ToVector2Array(uvs3);
+                if (HasUVs4) mesh.uv4 = ToVector2Array(uvs4);
+
+                if (Has(vertices))
+                {
+                    mesh.RecalculateBounds();
+                    if (!Has(normals)) { mesh.RecalculateNormals(); }
                 }
             }
         }
