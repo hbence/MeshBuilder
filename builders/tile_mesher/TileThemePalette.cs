@@ -15,6 +15,18 @@ namespace MeshBuilder
             {
                 foreach (var elem in elems)
                 {
+                    if (elem == null)
+                    {
+                        Debug.LogError("palette has null elem!");
+                        continue;
+                    }
+
+                    if (elem.Theme == null)
+                    {
+                        Debug.LogError("palette elem has null theme!");
+                        continue;
+                    }
+
                     elem.Theme.Init();
                 }
             }
@@ -52,6 +64,11 @@ namespace MeshBuilder
             {
                 for (int i = 0; i < elems.Length; ++i)
                 {
+                    if (elems[i] == null || elems[i].Theme == null)
+                    {
+                        continue;
+                    }
+
                     if (elems[i].Theme.ThemeName == name)
                     {
                         return i;
@@ -67,6 +84,11 @@ namespace MeshBuilder
             {
                 for (int i = 0; i < elems.Length; ++i)
                 {
+                    if (elems[i] == null || elems[i].Theme == null)
+                    {
+                        continue;
+                    }
+
                     if (elems[i].Theme == theme)
                     {
                         return i;
