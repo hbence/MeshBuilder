@@ -65,6 +65,12 @@ namespace MeshBuilder
         {
             Dispose();
 
+            if (theme == null)
+            {
+                Debug.LogError("The mesher got a null theme");
+                return;
+            }
+
             theme.Init();
             if (theme.Configs.Length < TileTheme.Type3DConfigCount)
             {
