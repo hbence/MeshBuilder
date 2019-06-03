@@ -49,11 +49,11 @@ namespace MeshBuilder
             adjacents = new AdjacentVolumes();
         }
 
-        public void Init(DataVolume dataVolume, int themeIndex, TileThemePalette themePalette, float3 cellSize = default)
+        public void Init(DataVolume dataVolume, int themeIndex, TileThemePalette themePalette, float3 cellSize = default, Settings settings = null)
         {
             var theme = themePalette.Get(themeIndex);
             int fillValue = themePalette.GetFillValue(themeIndex);
-            Init(dataVolume, fillValue, theme, themePalette, cellSize, DefaultSettings);
+            Init(dataVolume, fillValue, theme, themePalette, cellSize, settings);
         }
 
         public void Init(DataVolume dataVolume, int fillValue, TileTheme theme, float3 cellSize = default, Settings settings = null)
@@ -82,7 +82,7 @@ namespace MeshBuilder
             this.ThemePalette = themePalette;
             this.theme = theme;
             this.FillValue = fillValue;
-            this.MesherSettings = settings == null ? DefaultSettings : settings;
+            this.MesherSettings = settings ?? DefaultSettings;
             
             this.cellSize = cellSize;
             if (this.cellSize.x == 0 || this.cellSize.y == 0 || this.cellSize.z == 0)
@@ -126,7 +126,7 @@ namespace MeshBuilder
                 if (!HasTileMeshes) { tileMeshes = new Volume<MeshTile>(tileExtents); }
 
                 dependOn = ScheduleTileGeneration(tiles, data, 64, dependOn);
-                
+             
                 if (ThemePalette != null)
                 {
                     int openFillFlags = ThemePalette.CollectOpenThemeFillValueFlags(theme);
@@ -494,9 +494,7 @@ namespace MeshBuilder
         private struct CullLayerJob : IJob
         {
             public Extents tileExtents;
-
             public LayerIndexStep indexStep;
-
             public NativeArray<TileMeshData> tiles;
 
             public void Execute()
@@ -666,7 +664,7 @@ namespace MeshBuilder
 
             if (configuration != 0 && configuration != 0b11111111)
             {
-                if (dc.x >= dataExtents.X && (filledBoundaries & Direction.XPlus) != 0)
+                if (dc.x >= dataExtents.X - 1 && (filledBoundaries & Direction.XPlus) != 0)
                 {
                     if ((configuration & Tile.TopLeftForward) != 0) configuration |= Tile.TopRightForward;
                     if ((configuration & Tile.TopLeftBackward) != 0) configuration |= Tile.TopRightBackward;
@@ -681,7 +679,7 @@ namespace MeshBuilder
                     if ((configuration & Tile.BottomRightBackward) != 0) configuration |= Tile.BottomLeftBackward;
                 }
 
-                if (dc.y >= dataExtents.Y && (filledBoundaries & Direction.YPlus) != 0)
+                if (dc.y >= dataExtents.Y - 1 && (filledBoundaries & Direction.YPlus) != 0)
                 {
                     if ((configuration & Tile.BottomLeftForward) != 0) configuration |= Tile.TopLeftForward;
                     if ((configuration & Tile.BottomRightForward) != 0) configuration |= Tile.TopRightForward;
@@ -695,7 +693,7 @@ namespace MeshBuilder
                     if ((configuration & Tile.TopLeftBackward) != 0) configuration |= Tile.BottomLeftBackward;
                     if ((configuration & Tile.TopRightBackward) != 0) configuration |= Tile.BottomRightBackward;
                 }
-                if (dc.z >= dataExtents.Z && (filledBoundaries & Direction.ZPlus) != 0)
+                if (dc.z >= dataExtents.Z - 1 && (filledBoundaries & Direction.ZPlus) != 0)
                 {
                     if ((configuration & Tile.TopLeftBackward) != 0) configuration |= Tile.TopLeftForward;
                     if ((configuration & Tile.TopRightBackward) != 0) configuration |= Tile.TopRightForward;
@@ -970,7 +968,7 @@ namespace MeshBuilder
             /// If the chunk is a flying paltform which needs all of its sides rendered, then the boundaries 
             /// should be generated. (and out of bounds cell are considered empty)
             /// </summary>
-            public Direction filledBoundaries = Direction.All;
+            public Direction filledBoundaries = Direction.None;
         }
 
         /// <summary>
