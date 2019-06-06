@@ -396,7 +396,7 @@ namespace MeshBuilder
         }
 
         public static readonly ConfigTransform NullTransform = new ConfigTransform(-1, PieceTransform.None);
-        public static readonly ConfigTransformGroup NullTransformGroup = new ConfigTransformGroup(NullTransform); 
+        public static readonly ConfigTransformGroup NullTransformGroup = new ConfigTransformGroup(new ConfigTransform(-1, PieceTransform.None)); 
 
         /// <summary>
         /// Multiple meshes can be used to handle a configuration. For example, the "diagonal corners" case

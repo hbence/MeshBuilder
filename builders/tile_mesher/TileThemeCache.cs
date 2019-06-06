@@ -41,8 +41,14 @@ namespace MeshBuilder
                     for (int variant = 0; variant < variantsCount; ++variant)
                     {
                         var mesh = baseVariants[i].Variants[variant];
+
+                        if (mesh.vertexCount == 0)
+                        {
+                            Debug.LogError("mesh has zero vertices:" + mesh.name);
+                        }
+
                         dataOffsetList.Add(CreateMeshDataOffset(mesh, vertexCount, trianglesCount));
-                        
+
                         UpdateMeshInfo(mesh, ref vertexCount, ref trianglesCount, ref meshDataFlags);
                     }
                 }
@@ -66,8 +72,8 @@ namespace MeshBuilder
 
             public void Dispose()
             {
-                Utils.SafeDispose(ref baseMeshVariants);
-                Utils.SafeDispose(ref dataOffsets);
+                SafeDispose(ref baseMeshVariants);
+                SafeDispose(ref dataOffsets);
                 MeshData.Dispose();
             }
 

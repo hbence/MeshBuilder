@@ -46,7 +46,7 @@ namespace MeshBuilder
                         int otherFillValue = elems[otherIndex].FillValue;
                         if (otherFillValue > 31)
                         {
-                            Debug.LogError("fille value can't be used as a flag, you are either using too many themes or this should be reimplemented!");
+                            Debug.LogError("fill value can't be used as a flag, you are either using too many themes or this should be reimplemented!");
                         }
                         else
                         {
