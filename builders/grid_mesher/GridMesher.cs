@@ -663,6 +663,11 @@ namespace MeshBuilder
 
             private HeightMapData(Texture2D heightMap, float maxHeight, float valueScale, ScaleMode scaleMode, float valueOffset, OffsetMode offsetMode)
             {
+                if (!heightMap.isReadable)
+                {
+                    Debug.LogError("You have to enable Read/Write on heightMap texture!");
+                }
+
                 HeightMap = heightMap;
                 this.maxHeight = maxHeight;
                 this.valueScale = valueScale;
