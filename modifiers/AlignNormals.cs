@@ -10,6 +10,8 @@ namespace MeshBuilder
 {
     // todo: replace the int3 hash with an int hash 
     // (is that large enough? perhaps it could choose variable type size based on bounding box size?)
+    // TODO: make a deferred version like the meshcombiner
+    // TODO: setting to align only certain submesh
     public class AlignNormals : Modifier
     {
         private const float MinCellSize = 0.001f;
@@ -31,19 +33,19 @@ namespace MeshBuilder
         private Mesh mesh;
         private MeshData tempMeshData;
 
-        public void Init(float alignCellSize)
+        public void Init(float alignmentCellSize)
         {
-            Init(alignCellSize, false, new float3(1, 1, 1), new float3(0, 0, 0));
+            Init(alignmentCellSize, false, new float3(1, 1, 1), new float3(0, 0, 0));
         }
 
-        public void Init(float alignCellSize, float3 skipCellStep, float3 skipCellSize)
+        public void Init(float alignmentCellSize, float3 skipCellStep, float3 skipCellSize)
         {
-            Init(alignCellSize, true, skipCellStep, skipCellSize);
+            Init(alignmentCellSize, true, skipCellStep, skipCellSize);
         }
 
-        private void Init(float alignCellSize, bool useSkipCells, float3 skipCellStep, float3 skipCellSize)
+        private void Init(float alignmentCellSize, bool useSkipCells, float3 skipCellStep, float3 skipCellSize)
         {
-            cellSize = Mathf.Max(alignCellSize, MinCellSize);
+            cellSize = Mathf.Max(alignmentCellSize, MinCellSize);
 
             this.useSkipCells = useSkipCells;
             this.skipCellStep = skipCellStep;
