@@ -5,7 +5,7 @@ namespace MeshBuilder
 {
     public class MeshBuilderDrawerComponent : MonoBehaviour
     {
-        private List<MeshBuilderDrawer> drawers;
+        public List<MeshBuilderDrawer> Drawers { get; private set; } 
 
         private void OnEnable()
         {
@@ -20,42 +20,47 @@ namespace MeshBuilder
 
         public void AddDrawer(MeshBuilderDrawer drawer)
         {
-            if (drawers == null)
+            if (Drawers == null)
             {
-                drawers = new List<MeshBuilderDrawer>();
-                drawers.Add(drawer);
+                Drawers = new List<MeshBuilderDrawer>();
+                Drawers.Add(drawer);
             }
             else
             {
                 if (!DoesContain(drawer))
                 {
-                    drawers.Add(drawer);
+                    Drawers.Add(drawer);
                 }
             }
         }
 
         public void RemoveDrawer(MeshBuilderDrawer drawer)
         {
-            if (drawers != null)
+            if (Drawers != null)
             {
-                drawers.Remove(drawer);
+                Drawers.Remove(drawer);
             }
+        }
+
+        public void RemoveAll()
+        {
+            Drawers.Clear();
         }
 
         public bool DoesContain(MeshBuilderDrawer drawer)
         {
-            if (drawers != null)
+            if (Drawers != null)
             {
-                return drawers.Contains(drawer);
+                return Drawers.Contains(drawer);
             }
             return false;
         }
 
         private void DrawWithCamera(Camera camera)
         {
-            if (camera && drawers != null)
+            if (camera && Drawers != null)
             {
-                foreach(var drawer in drawers)
+                foreach(var drawer in Drawers)
                 {
                     drawer.Render(camera, transform, gameObject.layer);
                 }
