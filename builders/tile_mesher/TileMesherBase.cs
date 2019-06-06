@@ -50,6 +50,15 @@ namespace MeshBuilder
             }
         }
 
+        // the preferred mesh builder is the deferred version of the MeshCombinationBuilder class
+        // this is also the default
+        // the unity version is kept here in case the TileMesher needs a feature the MeshCombinationBuilder doesn't handle (and as a reference)
+        protected enum CombinationMode
+        {
+            UnityBuiltIn, CombinationBuilder, DeferredCombinationBuilder
+        }
+        protected CombinationMode combinationMode = CombinationMode.DeferredCombinationBuilder;
+
         // in the data volume we're generating the mesh
         // for this value
         public int FillValue { get; protected set; }
@@ -74,9 +83,40 @@ namespace MeshBuilder
         protected Volume<TileVariant> tiles;
 
         protected MeshCombinationBuilder combinationBuilder;
-        
+
+        // TEMP DATA
+        private NativeList<MeshInstance> tempMeshInstanceList;
+        private NativeList<DataInstance> tempDataInstanceList;
+
         override protected void EndGeneration(Mesh mesh)
         {
+            // the temp lists are added to Temps and will be disposed 
+            // that's why they are only set to default
+            if (combinationMode == CombinationMode.UnityBuiltIn)
+            {
+                if (tempMeshInstanceList.IsCreated)
+                {
+                    CombineMeshes(mesh, tempMeshInstanceList, Theme);
+                    tempMeshInstanceList = default;
+                }
+                else
+                {
+                    Debug.LogError("There was no tempMeshInstanceList to combine!");
+                }
+            }
+            else
+            {
+                if (tempDataInstanceList.IsCreated)
+                {
+                    combinationBuilder.Complete(mesh);
+                    tempDataInstanceList = default;
+                }
+                else
+                {
+                    Debug.LogError("There was no tempDataInstanceList created!");
+                }
+            }
+
             if (generationType == GenerationType.FromDataUncached)
             {
                 SafeDispose(ref tiles);
@@ -93,6 +133,39 @@ namespace MeshBuilder
             Theme = null;
 
             ThemePalette = null;
+        }
+
+        // collect the data for combination
+        // the MeshInstance contains the data for the unity CombineInstance version
+        // the DataInstance contains the data for the custom version
+        abstract protected JobHandle ScheduleFillMeshInstanceList(NativeList<MeshInstance> resultList, JobHandle dependOn);
+        abstract protected JobHandle ScheduleFillDataInstanceList(NativeList<DataInstance> resultList, JobHandle dependOn);
+
+        protected JobHandle ScheduleMeshCombination(JobHandle dependOn)
+        {
+            if (combinationMode == CombinationMode.UnityBuiltIn)
+            {
+                tempMeshInstanceList = new NativeList<MeshInstance>(Allocator.TempJob);
+                AddTemp(tempMeshInstanceList);
+                dependOn = ScheduleFillMeshInstanceList(tempMeshInstanceList, dependOn);
+            }
+            else
+            {
+                tempDataInstanceList = new NativeList<DataInstance>(Allocator.TempJob);
+                AddTemp(tempDataInstanceList);
+                dependOn = ScheduleFillDataInstanceList(tempDataInstanceList, dependOn);
+
+                if (combinationMode == CombinationMode.DeferredCombinationBuilder)
+                {
+                    dependOn = ScheduleDeferredCombineMeshes(tempDataInstanceList, Theme, dependOn);
+                }
+                else
+                {
+                    dependOn.Complete();
+                    dependOn = ScheduleCombineMeshes(tempDataInstanceList, Theme, default);
+                }
+            }
+            return dependOn;
         }
 
         /// <summary>

@@ -21,15 +21,8 @@ namespace MeshBuilder
     public class TileMesher3D : TileMesherBase<TileMesher3D.TileMeshData>
     {
         static private readonly Settings DefaultSettings = new Settings { };
-
-        // the preferred mesh builder is the deferred version of the MeshCombinationBuilder class
-        // this is also the default
-        // the unity version is kept here in case the TileMesher needs a feature the MeshCombinationBuilder doesn't handle (and as a reference)
-        private bool useUnityCombineMeshes = false;
-        private bool useDeferredCombineMeshBuilder = true;
-
+        
         // INITIAL DATA
-        private TileTheme theme;
         private DataVolume data;
         public Settings MesherSettings { get; private set; }
 
@@ -39,10 +32,6 @@ namespace MeshBuilder
 
         // GENERATED DATA
         private Volume<MeshTile> tileMeshes;
-
-        // TEMP DATA
-        private NativeList<MeshInstance> tempMeshInstanceList;
-        private NativeList<DataInstance> tempDataInstanceList;
 
         public TileMesher3D()
         {
@@ -78,11 +67,11 @@ namespace MeshBuilder
                 return;
             }
 
-            this.data = dataVolume;
-            this.ThemePalette = themePalette;
-            this.theme = theme;
-            this.FillValue = fillValue;
-            this.MesherSettings = settings ?? DefaultSettings;
+            data = dataVolume;
+            ThemePalette = themePalette;
+            Theme = theme;
+            FillValue = fillValue;
+            MesherSettings = settings ?? DefaultSettings;
             
             this.cellSize = cellSize;
             if (this.cellSize.x == 0 || this.cellSize.y == 0 || this.cellSize.z == 0)
@@ -129,40 +118,19 @@ namespace MeshBuilder
              
                 if (ThemePalette != null)
                 {
-                    int openFillFlags = ThemePalette.CollectOpenThemeFillValueFlags(theme);
+                    int openFillFlags = ThemePalette.CollectOpenThemeFillValueFlags(Theme);
                     openFillFlags |= (1 << FillValue);
-                    dependOn = ScheduleOpenFlagsUpdate(tiles, data, theme.Configs, openFillFlags, 128, dependOn);
+                    dependOn = ScheduleOpenFlagsUpdate(tiles, data, Theme.Configs, openFillFlags, 128, dependOn);
                 }
                 
-                dependOn = adjacents.ScheduleJobs(FillValue, data, tiles, theme.Configs, MesherSettings.skipDirections, MesherSettings.skipDirectionsAndBorders, dependOn);
+                dependOn = adjacents.ScheduleJobs(FillValue, data, tiles, Theme.Configs, MesherSettings.skipDirections, MesherSettings.skipDirectionsAndBorders, dependOn);
             }
 
             if (HasTilesData && HasTileMeshes)
             {
                 dependOn = ScheduleMeshTileGeneration(tileMeshes, tiles, 32, dependOn);
 
-                if (useUnityCombineMeshes)
-                {
-                    tempMeshInstanceList = new NativeList<MeshInstance>(Allocator.TempJob);
-                    AddTemp(tempMeshInstanceList);
-                    dependOn = ScheduleFillMeshInstanceList(tempMeshInstanceList, tileMeshes, dependOn);
-                }
-                else
-                {
-                    tempDataInstanceList = new NativeList<DataInstance>(Allocator.TempJob);
-                    AddTemp(tempDataInstanceList);
-                    dependOn = ScheduleFillDataInstanceList(tempDataInstanceList, tileMeshes, dependOn);
-
-                    if (useDeferredCombineMeshBuilder)
-                    {
-                        dependOn = ScheduleDeferredCombineMeshes(tempDataInstanceList, theme, dependOn);
-                    }
-                    else
-                    {
-                        dependOn.Complete();
-                        ScheduleCombineMeshes(tempDataInstanceList, theme, default);
-                    }
-                }
+                dependOn = ScheduleMeshCombination(dependOn);
             }
             else
             {
@@ -171,27 +139,6 @@ namespace MeshBuilder
             }
 
             return dependOn;
-        }
-
-        override protected void EndGeneration(Mesh mesh)
-        {
-            if (useUnityCombineMeshes)
-            {
-                if (tempMeshInstanceList.IsCreated)
-                {
-                    CombineMeshes(mesh, tempMeshInstanceList, theme);
-                    tempMeshInstanceList = default;
-                }
-            }
-            else
-            {
-                if (tempDataInstanceList.IsCreated)
-                {
-                    combinationBuilder.Complete(mesh);
-                }
-            }
-
-            base.EndGeneration(mesh);
         }
 
         public override void Dispose()
@@ -217,7 +164,7 @@ namespace MeshBuilder
                     tileExtents = tileExtents,
                     dataExtents = dataExtents,
                     themeIndex = FillValue,
-                    configs = theme.Configs,
+                    configs = Theme.Configs,
                     data = data.Data,
                     tiles = resultTiles.Data
                 };
@@ -235,7 +182,7 @@ namespace MeshBuilder
                         skipDirections = MesherSettings.skipDirections,
                         skipDirectionsWithBorders = MesherSettings.skipDirectionsAndBorders,
                         filledBoundaries = MesherSettings.filledBoundaries,
-                        configs = theme.Configs,
+                        configs = Theme.Configs,
                         data = data.Data,
                         tiles = resultTiles.Data
                     };
@@ -250,7 +197,7 @@ namespace MeshBuilder
                         themeIndex = FillValue,
                         skipDirections = MesherSettings.skipDirections,
                         skipDirectionsWithBorders = MesherSettings.skipDirectionsAndBorders,
-                        configs = theme.Configs,
+                        configs = Theme.Configs,
                         data = data.Data,
                         tiles = resultTiles.Data
                     };
@@ -289,24 +236,24 @@ namespace MeshBuilder
             return tileGeneration.Schedule(tiles.Data.Length, batchCount, dependOn);
         }
 
-        private JobHandle ScheduleFillMeshInstanceList(NativeList<MeshInstance> resultList, Volume<MeshTile> meshTiles, JobHandle dependOn)
+        override protected JobHandle ScheduleFillMeshInstanceList(NativeList<MeshInstance> resultList, JobHandle dependOn)
         {
             var fillList = new FillMeshInstanceListJob
             {
-                meshTiles = meshTiles.Data,
+                meshTiles = tileMeshes.Data,
                 resultCombineInstances = resultList
             };
 
             return fillList.Schedule(dependOn);
         }
 
-        private JobHandle ScheduleFillDataInstanceList(NativeList<DataInstance> resultList, Volume<MeshTile> meshTiles, JobHandle dependOn)
+        override protected JobHandle ScheduleFillDataInstanceList(NativeList<DataInstance> resultList, JobHandle dependOn)
         {
             var fillList = new FillDataInstanceListJob
             {
-                baseMeshVariants = theme.TileThemeCache.BaseMeshVariants,
-                dataOffsets = theme.TileThemeCache.DataOffsets,
-                meshTiles = meshTiles.Data,
+                baseMeshVariants = Theme.TileThemeCache.BaseMeshVariants,
+                dataOffsets = Theme.TileThemeCache.DataOffsets,
+                meshTiles = tileMeshes.Data,
                 resultCombineInstances = resultList
             };
 
@@ -844,6 +791,7 @@ namespace MeshBuilder
             }
         }
 
+        [BurstCompile]
         private struct FillMeshInstanceListJob : IJob
         {
             [ReadOnly] public NativeArray<MeshTile> meshTiles;
@@ -887,6 +835,7 @@ namespace MeshBuilder
             }
         }
 
+        [BurstCompile]
         private struct FillDataInstanceListJob : IJob
         {
             [ReadOnly] public NativeArray<Offset> baseMeshVariants;

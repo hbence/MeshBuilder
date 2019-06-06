@@ -3,7 +3,6 @@ using Unity.Jobs;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Mathematics;
-using System.Runtime.InteropServices;
 
 using static MeshBuilder.Extents;
 using static MeshBuilder.Utils;
@@ -15,6 +14,8 @@ using TileVolume = MeshBuilder.Volume<MeshBuilder.TileMesher2D.TileMeshData>; //
 using ConfigTransformGroup = MeshBuilder.TileTheme.ConfigTransformGroup;
 using PieceTransform = MeshBuilder.Tile.PieceTransform;
 using Direction = MeshBuilder.Tile.Direction;
+using DataInstance = MeshBuilder.MeshCombinationBuilder.DataInstance;
+using MeshDataOffset = MeshBuilder.MeshCombinationBuilder.MeshDataOffsets;
 
 namespace MeshBuilder
 {
@@ -32,20 +33,22 @@ namespace MeshBuilder
         private Volume<MeshTile> tileMeshes;
 
         // TEMP DATA
-        private NativeList<MeshInstance> tempInstanceList;
+        private NativeList<MeshInstance> tempMeshInstanceList;
+        private NativeList<DataInstance> tempDataInstanceList;
 
-        public void Init(DataVolume dataVolume, int yLevel, int themeIndex, TileThemePalette themePalette)
+        public void Init(DataVolume dataVolume, int yLevel, int themeIndex, TileThemePalette themePalette, Settings settings = null)
         {
             var theme = themePalette.Get(themeIndex);
-            Init(dataVolume, yLevel, themeIndex, theme, themePalette, DefaultSettings);
+            int fillValue = themePalette.GetFillValue(themeIndex);
+            Init(dataVolume, yLevel, fillValue, theme, themePalette, settings);
         }
 
-        public void Init(DataVolume dataVolume, int yLevel, int themeIndex, TileTheme theme, Settings settings = null)
+        public void Init(DataVolume dataVolume, int yLevel, int fillValue, TileTheme theme, Settings settings = null)
         {
-            Init(dataVolume, yLevel, themeIndex, theme, null, settings);
+            Init(dataVolume, yLevel, fillValue, theme, null, settings);
         }
 
-        public void Init(DataVolume dataVolume, int yLevel, int themeIndex, TileTheme theme, TileThemePalette themePalette, Settings settings = null)
+        public void Init(DataVolume dataVolume, int yLevel, int fillValue, TileTheme theme, TileThemePalette themePalette, Settings settings = null)
         {
             Dispose();
 
@@ -58,12 +61,12 @@ namespace MeshBuilder
 
             Data = dataVolume;
             ThemePalette = themePalette;
-            YLevel = Mathf.Clamp(yLevel, 0, dataVolume.YLength - 1);
-            FillValue = themeIndex;
-            MesherSettings = settings != null ? settings : new Settings();
+            FillValue = fillValue;
+            MesherSettings = settings ?? DefaultSettings;
 
             Theme = theme;
 
+            YLevel = Mathf.Clamp(yLevel, 0, dataVolume.YLength - 1);
             if (YLevel != yLevel)
             {
                 Debug.LogError("TileMesher2D yLevel is out of bounds:" + yLevel + " it is clamped!");
@@ -99,9 +102,7 @@ namespace MeshBuilder
             {
                 dependOn = ScheduleMeshTileGeneration(tileMeshes, tiles, 32, dependOn);
 
-                tempInstanceList = new NativeList<MeshInstance>(Allocator.TempJob);
-                AddTemp(tempInstanceList);
-                dependOn = ScheduleFillCombineInstanceList(tempInstanceList, tileMeshes, dependOn);
+                dependOn = ScheduleMeshCombination(dependOn);
             }
             else
             {
@@ -110,15 +111,6 @@ namespace MeshBuilder
             }
 
             return dependOn;
-        }
-
-        override protected void EndGeneration(Mesh mesh)
-        {
-            if (tempInstanceList.IsCreated)
-            {
-                CombineMeshes(mesh, tempInstanceList, Theme);
-                tempInstanceList = default;
-            }
         }
 
         public override void Dispose()
@@ -156,11 +148,24 @@ namespace MeshBuilder
             return tileGeneration.Schedule(tiles.Data.Length, batchCount, dependOn);
         }
 
-        private JobHandle ScheduleFillCombineInstanceList(NativeList<MeshInstance> resultList, Volume<MeshTile> meshTiles, JobHandle dependOn)
+        override protected JobHandle ScheduleFillMeshInstanceList(NativeList<MeshInstance> resultList, JobHandle dependOn)
         {
-            var fillList = new FillCombineInstanceListJob
+            var fillList = new FillMeshInstanceListJob
             {
-                meshTiles = meshTiles.Data,
+                meshTiles = tileMeshes.Data,
+                resultCombineInstances = resultList
+            };
+
+            return fillList.Schedule(dependOn);
+        }
+
+        override protected JobHandle ScheduleFillDataInstanceList(NativeList<DataInstance> resultList, JobHandle dependOn)
+        {
+            var fillList = new FillDataInstanceListJob
+            {
+                baseMeshVariants = Theme.TileThemeCache.BaseMeshVariants,
+                dataOffsets = Theme.TileThemeCache.DataOffsets,
+                meshTiles = tileMeshes.Data,
                 resultCombineInstances = resultList
             };
 
@@ -265,7 +270,8 @@ namespace MeshBuilder
             }
         }
 
-        private struct FillCombineInstanceListJob : IJob
+        [BurstCompile]
+        private struct FillMeshInstanceListJob : IJob
         {
             [ReadOnly] public NativeArray<MeshTile> meshTiles;
             [WriteOnly] public NativeList<MeshInstance> resultCombineInstances;
@@ -290,6 +296,47 @@ namespace MeshBuilder
                             }
                     }
                 }
+            }
+        }
+
+        [BurstCompile]
+        private struct FillDataInstanceListJob : IJob
+        {
+            [ReadOnly] public NativeArray<Offset> baseMeshVariants;
+            [ReadOnly] public NativeArray<MeshDataOffset> dataOffsets;
+
+            [ReadOnly] public NativeArray<MeshTile> meshTiles;
+            [WriteOnly] public NativeList<DataInstance> resultCombineInstances;
+
+            public void Execute()
+            {
+                for (int i = 0; i < meshTiles.Length; ++i)
+                {
+                    var tile = meshTiles[i];
+                    switch (tile.count)
+                    {
+                        case 1:
+                            {
+                                resultCombineInstances.Add(ToDataInstance(tile.mesh0));
+                                break;
+                            }
+                        case 2:
+                            {
+                                resultCombineInstances.Add(ToDataInstance(tile.mesh0));
+                                resultCombineInstances.Add(ToDataInstance(tile.mesh1));
+                                break;
+                            }
+                    }
+                }
+            }
+
+            public DataInstance ToDataInstance(MeshInstance inst)
+            {
+                return new DataInstance()
+                {
+                    dataOffsets = TileTheme.MeshCache.GetMeshDataOffset(inst.basePieceIndex, inst.variantIndex, baseMeshVariants, dataOffsets),
+                    transform = inst.transform
+                };
             }
         }
 
@@ -327,7 +374,7 @@ namespace MeshBuilder
 
             /// <summary>
             /// If the center tile (a tile wich is surrounded by other tiles) can be oriented 
-            /// in any direction, it can increase the diversity of the tileset
+            /// in any direction, it can increase the variety of the tileset
             /// </summary>
             public bool centerRandomRotation = false;
 
