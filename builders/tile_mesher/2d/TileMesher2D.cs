@@ -19,6 +19,7 @@ using MeshDataOffset = MeshBuilder.MeshCombinationBuilder.MeshDataOffsets;
 
 namespace MeshBuilder
 {
+    /// TODO: center randomization option uses the tile index, so it's not random at all (but still, it looks more varied)
     public class TileMesher2D : TileMesherBase<TileMesher2D.TileMeshData>
     {
         static private readonly Settings DefaultSettings = new Settings { };
@@ -31,10 +32,6 @@ namespace MeshBuilder
 
         // GENERATED DATA
         private Volume<MeshTile> tileMeshes;
-
-        // TEMP DATA
-        private NativeList<MeshInstance> tempMeshInstanceList;
-        private NativeList<DataInstance> tempDataInstanceList;
 
         public void Init(DataVolume dataVolume, int yLevel, int themeIndex, TileThemePalette themePalette, Settings settings = null)
         {
@@ -128,6 +125,10 @@ namespace MeshBuilder
                 dataExtents = dataExtents,
                 themeIndex = FillValue,
                 yLevel = YLevel,
+                centerRandomRotation = MesherSettings.centerRandomRotation,
+                emptyBoundaries = MesherSettings.emptyBoundaries,
+                skipCenter = MesherSettings.skipCenter,
+                skipBorder = MesherSettings.skipBorder,
                 configs = Theme.Configs,
                 data = data.Data,
                 tiles = resultTiles.Data
@@ -177,6 +178,8 @@ namespace MeshBuilder
         /// <summary>
         /// Takes the simple tile data volume (theme index - variant index pairs) and turns them into a volume of
         /// TileMeshData which contains every information to find and transform the correct mesh pieces for rendering
+        /// 
+        /// TODO: this handles every settings, should I separate some to handle simpler cases?
         /// </summary>
         [BurstCompile]
         private struct GenerateTileDataJob : IJobParallelFor
@@ -185,6 +188,10 @@ namespace MeshBuilder
             public Extents dataExtents;
             public int themeIndex;
             public int yLevel;
+            public bool centerRandomRotation;
+            public Direction emptyBoundaries;
+            public bool skipCenter;
+            public bool skipBorder;
 
             [ReadOnly] public NativeArray<ConfigTransformGroup> configs;
             [ReadOnly] public NativeArray<TileData> data;
@@ -200,6 +207,14 @@ namespace MeshBuilder
                 bool hasLB = dc.x > 0 && dc.z > 0 && IsFilled(dc.x - 1, yLevel, dc.z - 1);
                 bool hasRB = dc.x < dataExtents.X && dc.z > 0 && IsFilled(dc.x, yLevel, dc.z - 1);
 
+                if (emptyBoundaries != Direction.All)
+                {
+                    if (dc.x == 0 && !emptyBoundaries.HasFlag(Direction.XMinus)) { hasLF = true; hasLB = true; }
+                    if (dc.x == dataExtents.X && !emptyBoundaries.HasFlag(Direction.XPlus)) { hasRF = true; hasRB = true; }
+                    if (dc.z == 0 && !emptyBoundaries.HasFlag(Direction.ZMinus)) { hasLB = true; hasRB = true; }
+                    if (dc.z == dataExtents.Z && !emptyBoundaries.HasFlag(Direction.ZPlus)) { hasLF = true; hasRF = true; }
+                }
+
                 if (hasLF) configuration |= Tile.LeftForward;
                 if (hasRF) configuration |= Tile.RightForward;
                 if (hasLB) configuration |= Tile.LeftBackward;
@@ -207,7 +222,36 @@ namespace MeshBuilder
 
                 var transformGroup = configs[configuration];
 
-                tiles[index] = new TileMeshData { type = TileType.Normal, configTransformGroup = transformGroup, variant0 = 0, variant1 = 0 };
+                var tileType = TileType.Normal;
+                if (configuration == 0)
+                {
+                    tileType = TileType.Void;
+                }
+                else if (configuration == configs.Length - 1)
+                {
+                    if (skipCenter)
+                    {
+                        tileType = TileType.Void;
+                    }
+                    else
+                    if (centerRandomRotation)
+                    {
+                        var rot = (PieceTransform)(1 << (2 + (index % 4)));
+                        if ((byte)rot >= (byte)PieceTransform.Rotate90)
+                        {
+                            transformGroup = new ConfigTransformGroup(new TileTheme.ConfigTransform(transformGroup[0].BaseMeshIndex, rot));
+                        }
+                    }
+                }
+                else
+                {
+                    if (skipBorder)
+                    {
+                        tileType = TileType.Void;
+                    }
+                }
+
+                tiles[index] = new TileMeshData { type = tileType, configTransformGroup = transformGroup, variant0 = 0, variant1 = 0 };
             }
 
             private bool IsFilled(int x, int y, int z)
@@ -220,9 +264,6 @@ namespace MeshBuilder
         [BurstCompile]
         private struct GenerateMeshDataJob : IJobParallelFor
         {
-            private const byte RotationMask = (byte)(PieceTransform.Rotate90 | PieceTransform.Rotate180 | PieceTransform.Rotate270);
-            private const byte MirrorMask = (byte)PieceTransform.MirrorXYZ;
-
             public Extents tileExtents;
             [ReadOnly] public NativeArray<TileMeshData> tiles;
             [WriteOnly] public NativeArray<MeshTile> meshTiles;
