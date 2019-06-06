@@ -185,9 +185,10 @@ namespace MeshBuilder
             var assets = AssetDatabase.LoadAllAssetRepresentationsAtPath(path);
             foreach (var asset in assets)
             {
-                if (asset is Mesh)
+                var mesh = asset as Mesh;
+                if (mesh != null)
                 {
-                    meshes.Add(asset as Mesh);
+                    meshes.Add(mesh);
                 }
             }
 
