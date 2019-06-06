@@ -5,6 +5,7 @@ using UnityEditor;
 
 namespace MeshBuilder
 {
+    // TODO: Jobify the code and make it into a Modifier!
     [ExecuteInEditMode]
     public class LatticeGrid : MonoBehaviour
     {
