@@ -69,7 +69,7 @@ namespace MeshBuilder
             yLength = Mathf.Clamp(yLength, 2, MaxVertexLength);
             zLength = Mathf.Clamp(zLength, 2, MaxVertexLength);
 
-            if (grid.Vertices == null || (xLength != grid.XLength || yLength != grid.YLength || zLength != grid.ZLength))
+            if (grid == null || grid.Vertices == null || (xLength != grid.XLength || yLength != grid.YLength || zLength != grid.ZLength))
             {
                 grid = new VertexGrid(xLength, yLength, zLength, cellSize);
             }
