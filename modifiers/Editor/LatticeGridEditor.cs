@@ -4,7 +4,7 @@ using UnityEditor;
 
 namespace MeshBuilder
 {
-    [CustomEditor(typeof(LatticeGrid))]
+    [CustomEditor(typeof(LatticeGridComponent))]
     public class LatticeGridEditor : Editor
     {
         private static readonly Color NormalLineColor = new Color(0, 0, 0, 1.0f);
@@ -67,7 +67,7 @@ namespace MeshBuilder
 
             EditorGUILayout.Separator();
 
-            var lattice = target as LatticeGrid;
+            var lattice = target as LatticeGridComponent;
             if (GUILayout.Button("Import Grid"))
             {
                 var path = EditorUtility.OpenFilePanel("Open Grid", "", "asset");
@@ -91,7 +91,7 @@ namespace MeshBuilder
 
         private void OnSceneGUI()
         {
-            var lattice = target as LatticeGrid;
+            var lattice = target as LatticeGridComponent;
 
             CheckForPropertyChange(lattice);
 
@@ -132,7 +132,7 @@ namespace MeshBuilder
             HandleUtility.AddDefaultControl(GUIUtility.GetControlID(FocusType.Passive));
         }
 
-        private void DrawScreenGUI(LatticeGrid lattice)
+        private void DrawScreenGUI(LatticeGridComponent lattice)
         {
             Handles.BeginGUI();
             int menuWidth = menuOpen ? 140 : 80;
@@ -197,7 +197,7 @@ namespace MeshBuilder
             Handles.EndGUI();
         }
 
-        private void CheckForPropertyChange(LatticeGrid lattice)
+        private void CheckForPropertyChange(LatticeGridComponent lattice)
         {
             if (lattice.XLength != lattice.Grid.XLength ||
                 lattice.YLength != lattice.Grid.YLength ||
@@ -214,7 +214,7 @@ namespace MeshBuilder
             }
         }
 
-        private void HandleSelection(LatticeGrid lattice, Transform transform)
+        private void HandleSelection(LatticeGridComponent lattice, Transform transform)
         {
             if (selectedInfo.HasSelection)
             {
@@ -250,7 +250,7 @@ namespace MeshBuilder
 
         private const int LeftClick = 0;
 
-        void HandleInput(Event guiEvent, LatticeGrid lattice)
+        void HandleInput(Event guiEvent, LatticeGridComponent lattice)
         {
             if (guiEvent.button == LeftClick)
             {
@@ -278,7 +278,7 @@ namespace MeshBuilder
             return mod == EventModifiers.Control || mod == EventModifiers.Shift;
         }
 
-        void UpdateMouseOverInfo(Vector3 mousePosition, LatticeGrid lattice)
+        void UpdateMouseOverInfo(Vector3 mousePosition, LatticeGridComponent lattice)
         {
             selectedInfo.NotOverAnything();
 
@@ -346,7 +346,7 @@ namespace MeshBuilder
             needsRepaint = true;
         }
 
-        void Draw(LatticeGrid lattice)
+        void Draw(LatticeGridComponent lattice)
         {
             Camera cam = SceneView.lastActiveSceneView.camera;
             var verts = lattice.Grid.Vertices;
@@ -434,7 +434,7 @@ namespace MeshBuilder
             Handles.DrawSolidDisc(p, normal, radius);
         }
 
-        private Vector3 CalcSelectionCenter(LatticeGrid lattice)
+        private Vector3 CalcSelectionCenter(LatticeGridComponent lattice)
         {
             var verts = lattice.Grid.Vertices;
             var selected = selectedInfo.SelectedPointsIndices;

@@ -1,6 +1,6 @@
 ﻿using UnityEngine;
 
-using VertexGrid = MeshBuilder.LatticeGrid.VertexGrid;
+using VertexGrid = MeshBuilder.LatticeGridComponent.VertexGrid;
 
 namespace MeshBuilder
 {

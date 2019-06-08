@@ -7,7 +7,7 @@ namespace MeshBuilder
 {
     // TODO: Jobify the code and make it into a Modifier!
     [ExecuteInEditMode]
-    public class LatticeGrid : MonoBehaviour
+    public class LatticeGridComponent : MonoBehaviour
     {
         // to avoid accidentally setting it too large,
         // arbitrary value, not sure what's a realistic maximum value
@@ -314,7 +314,6 @@ namespace MeshBuilder
             {
                 // TODO: I could try the matrix conversion trick here with the vector3 -> float3 array, instead of for loop copy
                 gridVertices = new NativeArray<float3>(grid.Vertices.Length, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
-                var m = meshTransform.worldToLocalMatrix * gridTransform.localToWorldMatrix;
                 CopyVertices(grid.Vertices, gridVertices);
 
                 int cellCount = (grid.XLength - 1) * (grid.YLength - 1) * (grid.ZLength - 1);
