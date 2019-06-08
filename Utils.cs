@@ -111,6 +111,11 @@ namespace MeshBuilder
             return c.Float4x4;
         }
 
+        static public float3x4 ToFloat3x4(Matrix4x4 m)
+        {
+            return new float3x4(m.m00, m.m01, m.m02, m.m03, m.m10, m.m11, m.m12, m.m13, m.m20, m.m21, m.m22, m.m23);
+        }
+
         static public Vector2[] ToVector2Array(NativeArray<float2> array)
         {
             var data = new Vector2Converter { Float2Array = array.ToArray() };
