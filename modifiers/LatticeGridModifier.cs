@@ -181,6 +181,8 @@ namespace MeshBuilder
             }
         }
 
+        public bool HasSnapShot { get => SnapShot != null && SnapShot.HasCoordinates; }
+
         private class SnapShotData : System.IDisposable
         {
             private LatticeGridData gridData;

@@ -281,6 +281,7 @@ namespace MeshBuilder
             return new ResultMeshInfo(meshDataFlags, vertexCount, triangleLength, submeshTriangleOffsets);
         }
         
+        // TODO: float4x4 could be replaced to float3x4
         public struct DataInstance
         {
             public MeshDataOffsets dataOffsets;
