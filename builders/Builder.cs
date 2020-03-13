@@ -64,6 +64,7 @@ namespace MeshBuilder
 
         virtual public void Dispose()
         {
+            State = BuilderState.Uninitialized;
             DisposeTemps();
         }
 
