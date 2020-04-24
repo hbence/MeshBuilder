@@ -32,25 +32,31 @@ namespace MeshBuilder
                 uint meshDataFlags = 0;
 
                 int count = 0;
-                for (int i = 0; i < baseVariants.Length; ++i)
+                foreach (var baseVariant in baseVariants)
                 {
-                    int variantsCount = baseVariants[i].Variants.Length;
-                    baseMeshVariantList.Add(new Offset { index = count, length = variantsCount });
-
-                    count += variantsCount;
-                    for (int variant = 0; variant < variantsCount; ++variant)
+                    int variantsCount = 0;
+                    foreach (Mesh mesh in baseVariant.Variants)
                     {
-                        var mesh = baseVariants[i].Variants[variant];
+                        if (mesh == null)
+                        {
+                            Debug.LogError("mesh is null in base variants");
+                            continue;
+                        }
 
                         if (mesh.vertexCount == 0)
                         {
-                            Debug.LogError("mesh has zero vertices:" + mesh.name);
+                            Debug.LogError("mesh has zero vertices in base variants:" + mesh.name);
+                            continue;
                         }
 
                         dataOffsetList.Add(CreateMeshDataOffset(mesh, vertexCount, trianglesCount));
 
                         UpdateMeshInfo(mesh, ref vertexCount, ref trianglesCount, ref meshDataFlags);
+                        ++variantsCount;
                     }
+
+                    baseMeshVariantList.Add(new Offset { index = count, length = variantsCount });
+                    count += variantsCount;
                 }
 
                 baseMeshVariants = new NativeArray<Offset>(baseMeshVariantList.ToArray(), allocator);

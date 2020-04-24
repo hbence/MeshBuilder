@@ -71,6 +71,17 @@ namespace MeshBuilder
 
             if (TileThemeCache == null)
             {
+                foreach (var configVariants in baseVariants)
+                {
+                    foreach (var variant in configVariants.Variants)
+                    {
+                        if (variant == null)
+                        {
+                            Debug.LogError("theme: " + themeName + " config:"+ ConfigToString(configVariants.PieceConfig) + " has null mesh!");
+                        }
+                    }
+                }
+
                 TileThemeCache = new MeshCache(baseVariants, Allocator.Persistent);
             }
         }
@@ -235,6 +246,19 @@ namespace MeshBuilder
 
         public bool Is2DTheme { get { return Is2DType(type); } }
         public bool Is3DTheme { get { return !Is2DType(type); } }
+
+        private static string ConfigToString(byte config)
+        {
+            string result = "";
+            byte testFlag = 1 << 7;
+            for (int i = 0; i < 8; ++i)
+            {
+                result += ((config & testFlag) != 0) ? '1' : '0';
+                testFlag >>= 1;
+            }
+            result = result.Insert(3, "-");
+            return result;
+        }
 
         private class VariantInfo
         {
