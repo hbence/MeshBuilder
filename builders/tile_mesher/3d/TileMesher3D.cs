@@ -900,7 +900,7 @@ namespace MeshBuilder
             /// skip sides of the mesh, only full side elements get skipped (so borders, edges, corners stay intact),
             /// it doesn't modify the tile selection
             /// - which means smaller tunnels for example may stay unaffected (if they only contain edge pieces)
-            /// - if the edge or corner tiles contain visible features (e.g. rocks standing out), this will keep them so
+            /// - if the edge or corner tiles contain visible features (e.g. rocks standing out), this will keep them
             /// so there is no visible change if the mesh is recalculated with different skipDirections
             /// </summary>
             public Direction skipDirections = Direction.None;
