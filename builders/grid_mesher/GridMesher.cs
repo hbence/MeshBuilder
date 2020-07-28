@@ -101,24 +101,24 @@ namespace MeshBuilder
             }
         }
 
-        public void InitHeightMap(Texture2D heightMap, float valueScale, float valueOffset = 0)
+        public void InitHeightMap(Texture2D heightMap, float valueScale, float valueOffset = 0, bool applyEdgeLerp = false)
         {
-            HeightMap = HeightMapData.CreateWithManualInfo(heightMap, valueScale, valueOffset);
+            HeightMap = HeightMapData.CreateWithManualInfo(heightMap, valueScale, valueOffset, applyEdgeLerp);
         }
 
-        public void InitHeightMapScaleFromHeight(Texture2D heightMap, float maxHeight, float valueOffset = 0)
+        public void InitHeightMapScaleFromHeight(Texture2D heightMap, float maxHeight, float valueOffset = 0, bool applyEdgeLerp = false)
         {
-            HeightMap = HeightMapData.CreateWithScaleFromTexInterval(heightMap, maxHeight, valueOffset);
+            HeightMap = HeightMapData.CreateWithScaleFromTexInterval(heightMap, maxHeight, valueOffset, applyEdgeLerp);
         }
 
-        public void InitHeightMapScaleFromHeightAvgOffset(Texture2D heightMap, float maxHeight)
+        public void InitHeightMapScaleFromHeightAvgOffset(Texture2D heightMap, float maxHeight, bool applyEdgeLerp = false)
         {
-            HeightMap = HeightMapData.CreateWithScaleFromTexIntervalAvgOffset(heightMap, maxHeight);
+            HeightMap = HeightMapData.CreateWithScaleFromTexIntervalAvgOffset(heightMap, maxHeight, applyEdgeLerp);
         }
 
-        public void InitHeightMapScaleFromHeightMinOffset(Texture2D heightMap, float maxHeight)
+        public void InitHeightMapScaleFromHeightMinOffset(Texture2D heightMap, float maxHeight, bool applyEdgeLerp = false)
         {
-            HeightMap = HeightMapData.CreateWithScaleFromTexIntervalMinOffset(heightMap, maxHeight);
+            HeightMap = HeightMapData.CreateWithScaleFromTexIntervalMinOffset(heightMap, maxHeight, applyEdgeLerp);
         }
 
         override public void Dispose()
@@ -652,6 +652,8 @@ namespace MeshBuilder
             private OffsetMode offsetMode;
             private float valueOffset;
 
+            private bool applyEdgeLerp;
+
             private NativeArray<byte> tempHeightMapMin;
             private NativeArray<byte> tempHeightMapAvg;
             private NativeArray<byte> tempHeightMapMax;
@@ -661,7 +663,7 @@ namespace MeshBuilder
 
             private NativeArray<float> values;
 
-            private HeightMapData(Texture2D heightMap, float maxHeight, float valueScale, ScaleMode scaleMode, float valueOffset, OffsetMode offsetMode)
+            private HeightMapData(Texture2D heightMap, float maxHeight, float valueScale, ScaleMode scaleMode, float valueOffset, OffsetMode offsetMode, bool applyEdgeLerp)
             {
                 if (!heightMap.isReadable)
                 {
@@ -674,6 +676,7 @@ namespace MeshBuilder
                 this.scaleMode = scaleMode;
                 this.valueOffset = valueOffset;
                 this.offsetMode = offsetMode;
+                this.applyEdgeLerp = applyEdgeLerp;
 
                 values = new NativeArray<float>(2, Allocator.Persistent, NativeArrayOptions.UninitializedMemory);
                 values[ValueScaleIndex] = valueScale;
@@ -701,18 +704,8 @@ namespace MeshBuilder
                     tempHeightMapMin = new NativeArray<byte>(imgHeight, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
                     tempHeightMapAvg = new NativeArray<byte>(imgHeight, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
                     tempHeightMapMax = new NativeArray<byte>(imgHeight, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-                    tempHeightLerpValues = new NativeArray<float>(meshData.UVs.Length, Allocator.TempJob, NativeArrayOptions.ClearMemory);
 
-                    var generateHeightLerpJob = new GenerateHeightLerpJob
-                    {
-                        cellResolution = cellResolution,
-                        volumeExtent = dataExtent,
-                        cells = gridCells,
-                        borderIndices = borderIndices,
-                        heightLerpValues = tempHeightLerpValues
-                    };
-                    var heightLerpHandle = generateHeightLerpJob.Schedule(gridCells.Length, 32, lastHandle);
-
+                    
                     var heightMapJob = new CalcHeightMapInfoJob
                     {
                         heightmapWidth = imgWidth,
@@ -739,22 +732,51 @@ namespace MeshBuilder
 
                     lastHandle = fillHeightMapInfo.Schedule(lastHandle);
 
-                    lastHandle = JobHandle.CombineDependencies(lastHandle, heightLerpHandle);
-
-                    var applyHeightmapJob = new ApplyHeightMapJob
+                    if (applyEdgeLerp)
                     {
-                        heightmapWidth = HeightMap.width,
-                        heightmapHeight = HeightMap.height,
-                        uScale = uScale,
-                        vScale = vScale,
-                        colors = tempHeightMapColors,
-                        heightValues = values,
-                        uvs = meshData.UVs,
-                        heightLerpValues = tempHeightLerpValues,
-                        vertices = meshData.Vertices
-                    };
+                        tempHeightLerpValues = new NativeArray<float>(meshData.UVs.Length, Allocator.TempJob, NativeArrayOptions.ClearMemory);
 
-                    lastHandle = applyHeightmapJob.Schedule(meshData.VerticesLength, 128, lastHandle);
+                        var generateHeightLerpJob = new GenerateEdgeHeightLerpJob
+                        {
+                            cellResolution = cellResolution,
+                            volumeExtent = dataExtent,
+                            cells = gridCells,
+                            borderIndices = borderIndices,
+                            heightLerpValues = tempHeightLerpValues
+                        };
+                        var heightLerpHandle = generateHeightLerpJob.Schedule(gridCells.Length, 32, lastHandle);
+
+                        lastHandle = JobHandle.CombineDependencies(lastHandle, heightLerpHandle);
+
+                        var applyHeightmapJob = new ApplyHeightMapWithEdgeLerpJob
+                        {
+                            heightmapWidth = HeightMap.width,
+                            heightmapHeight = HeightMap.height,
+                            uScale = uScale,
+                            vScale = vScale,
+                            colors = tempHeightMapColors,
+                            heightValues = values,
+                            uvs = meshData.UVs,
+                            heightEdgeLerpValues = tempHeightLerpValues,
+                            vertices = meshData.Vertices
+                        };
+                        lastHandle = applyHeightmapJob.Schedule(meshData.VerticesLength, 128, lastHandle);
+                    }
+                    else
+                    {
+                        var applyHeightmapJob = new ApplyHeightMapJob
+                        {
+                            heightmapWidth = HeightMap.width,
+                            heightmapHeight = HeightMap.height,
+                            uScale = uScale,
+                            vScale = vScale,
+                            colors = tempHeightMapColors,
+                            heightValues = values,
+                            uvs = meshData.UVs,
+                            vertices = meshData.Vertices
+                        };
+                        lastHandle = applyHeightmapJob.Schedule(meshData.VerticesLength, 128, lastHandle);
+                    }
                 }
 
                 return lastHandle;
@@ -774,24 +796,24 @@ namespace MeshBuilder
                 SafeDispose(ref tempHeightLerpValues);
             }
 
-            static public HeightMapData CreateWithManualInfo(Texture2D heightMap, float valueScale, float valueOffset)
+            static public HeightMapData CreateWithManualInfo(Texture2D heightMap, float valueScale, float valueOffset, bool applyEdgeLerp)
             {
-                return new HeightMapData(heightMap, valueScale * 255f, valueScale, ScaleMode.Manual, valueOffset, OffsetMode.Manual);
+                return new HeightMapData(heightMap, valueScale * 255f, valueScale, ScaleMode.Manual, valueOffset, OffsetMode.Manual, applyEdgeLerp);
             }
 
-            static public HeightMapData CreateWithScaleFromTexInterval(Texture2D heightMap, float maxHeight, float valueOffset)
+            static public HeightMapData CreateWithScaleFromTexInterval(Texture2D heightMap, float maxHeight, float valueOffset, bool applyEdgeLerp)
             {
-                return new HeightMapData(heightMap, maxHeight, maxHeight / 255f, ScaleMode.FromTexInterval, valueOffset, OffsetMode.Manual);
+                return new HeightMapData(heightMap, maxHeight, maxHeight / 255f, ScaleMode.FromTexInterval, valueOffset, OffsetMode.Manual, applyEdgeLerp);
             }
 
-            static public HeightMapData CreateWithScaleFromTexIntervalMinOffset(Texture2D heightMap, float maxHeight)
+            static public HeightMapData CreateWithScaleFromTexIntervalMinOffset(Texture2D heightMap, float maxHeight, bool applyEdgeLerp)
             {
-                return new HeightMapData(heightMap, maxHeight, maxHeight / 255f, ScaleMode.FromTexInterval, 0, OffsetMode.FromTexMin);
+                return new HeightMapData(heightMap, maxHeight, maxHeight / 255f, ScaleMode.FromTexInterval, 0, OffsetMode.FromTexMin, applyEdgeLerp);
             }
 
-            static public HeightMapData CreateWithScaleFromTexIntervalAvgOffset(Texture2D heightMap, float maxHeight)
+            static public HeightMapData CreateWithScaleFromTexIntervalAvgOffset(Texture2D heightMap, float maxHeight, bool applyEdgeLerp)
             {
-                return new HeightMapData(heightMap, maxHeight, maxHeight / 255f, ScaleMode.FromTexInterval, 0, OffsetMode.FromTexAverage);
+                return new HeightMapData(heightMap, maxHeight, maxHeight / 255f, ScaleMode.FromTexInterval, 0, OffsetMode.FromTexAverage, applyEdgeLerp);
             }
 
             [BurstCompile]
@@ -881,10 +903,11 @@ namespace MeshBuilder
             }
 
             // a height multiplier is generated for the edges, 0 for now, could be extended to be more gradual
+            // (altough if it stays like this, it would be enought to just go through the edges)
             // if the grid is used with other mesh generators, it can be useful to set the edges to zero height, 
             // so a hill on the grid doesn't overlap with the border tiles for example
             [BurstCompile]
-            internal struct GenerateHeightLerpJob : IJobParallelFor
+            internal struct GenerateEdgeHeightLerpJob : IJobParallelFor
             {
                 static private readonly Range NullRange = new Range { start = 0, end = 0 };
 
@@ -906,10 +929,10 @@ namespace MeshBuilder
                     Range left = cell.leftCell >= 0 ? cells[cell.leftCell].rightBorderIndices : NullRange;
                     Range bottom = cell.bottomCell >= 0 ? cells[cell.bottomCell].topBorderIndices : NullRange;
 
-                    GenerateGrid(cell.coord, left, bottom, cell.rightBorderIndices, cell.topBorderIndices, cell.startVertex, cell.connectedDirection);
+                    GenerateGrid(left, bottom, cell.startVertex, cell.connectedDirection);
                 }
 
-                private void GenerateGrid(int3 coord, Range left, Range bottom, Range right, Range top, int vertexIndex, byte connectedDirection)
+                private void GenerateGrid(Range left, Range bottom, int vertexIndex, byte connectedDirection)
                 {
                     int c0, c1, c2, c3;
                     int width = cellResolution + 1;
@@ -965,21 +988,21 @@ namespace MeshBuilder
                     }
                 }
 
-                private void SetHeightLerpValues(int v0, int v1, int v2, int v3, byte adjacentDirection, int x, int y, int cellResolution)
+                private void SetHeightLerpValues(int v0, int v1, int v2, int v3, byte adjacentDirection, int col, int row, int cellResolution)
                 {
-                    heightLerpValues[v0] = CalcHeightLerpValue(adjacentDirection, x, y, cellResolution);
-                    heightLerpValues[v1] = CalcHeightLerpValue(adjacentDirection, x, y + 1, cellResolution);
-                    heightLerpValues[v2] = CalcHeightLerpValue(adjacentDirection, x + 1, y, cellResolution);
-                    heightLerpValues[v3] = CalcHeightLerpValue(adjacentDirection, x + 1, y + 1, cellResolution);
+                    heightLerpValues[v0] = CalcHeightLerpValue(adjacentDirection, col, row, cellResolution);
+                    heightLerpValues[v1] = CalcHeightLerpValue(adjacentDirection, col, row + 1, cellResolution);
+                    heightLerpValues[v2] = CalcHeightLerpValue(adjacentDirection, col + 1, row, cellResolution);
+                    heightLerpValues[v3] = CalcHeightLerpValue(adjacentDirection, col + 1, row + 1, cellResolution);
                 }
 
-                private float CalcHeightLerpValue(byte adjacentDirection, int x, int y, int cellResolution)
+                private float CalcHeightLerpValue(byte adjacentDirection, int col, int row, int cellResolution)
                 {
-                    if ((adjacentDirection & (byte)Direction.XMinus) == 0 && x == 0) { return 0f; }
-                    if ((adjacentDirection & (byte)Direction.XPlus) == 0 && x == cellResolution) { return 0f; }
+                    if ((adjacentDirection & (byte)Direction.XMinus) == 0 && col == 0) { return 0f; }
+                    if ((adjacentDirection & (byte)Direction.XPlus) == 0 && col == cellResolution) { return 0f; }
 
-                    if ((adjacentDirection & (byte)Direction.YMinus) == 0 && y == 0) { return 0f; }
-                    if ((adjacentDirection & (byte)Direction.YPlus) == 0 && y == cellResolution) { return 0f; }
+                    if ((adjacentDirection & (byte)Direction.ZMinus) == 0 && row == 0) { return 0f; }
+                    if ((adjacentDirection & (byte)Direction.ZPlus) == 0 && row == cellResolution) { return 0f; }
 
                     return 1f;
                 }
@@ -997,7 +1020,6 @@ namespace MeshBuilder
 
                 [ReadOnly] public NativeArray<Color32> colors;
                 [ReadOnly] public NativeArray<float2> uvs;
-                [ReadOnly] public NativeArray<float> heightLerpValues;
                 public NativeArray<float3> vertices;
 
                 public void Execute(int index)
@@ -1008,7 +1030,34 @@ namespace MeshBuilder
                     int colorIndex = y * heightmapWidth + x;
                     Color32 color = colors[colorIndex];
                     float height = heightValues[ValueScaleIndex] * color.r + heightValues[ValueOffsetIndex];
-                    height *= heightLerpValues[index];
+                    vertices[index] += new float3(0, height, 0);
+                }
+            }
+
+            [BurstCompile]
+            public struct ApplyHeightMapWithEdgeLerpJob : IJobParallelFor
+            {
+                public int heightmapWidth;
+                public int heightmapHeight;
+                public float uScale;
+                public float vScale;
+
+                [ReadOnly] public NativeArray<float> heightValues;
+
+                [ReadOnly] public NativeArray<Color32> colors;
+                [ReadOnly] public NativeArray<float2> uvs;
+                [ReadOnly] public NativeArray<float> heightEdgeLerpValues;
+                public NativeArray<float3> vertices;
+
+                public void Execute(int index)
+                {
+                    int x = (int)(heightmapWidth * uvs[index].x * uScale) % heightmapWidth;
+                    int y = (int)(heightmapHeight * uvs[index].y * vScale) % heightmapHeight;
+
+                    int colorIndex = y * heightmapWidth + x;
+                    Color32 color = colors[colorIndex];
+                    float height = heightValues[ValueScaleIndex] * color.r + heightValues[ValueOffsetIndex];
+                    height *= heightEdgeLerpValues[index];
                     vertices[index] += new float3(0, height, 0);
                 }
             }

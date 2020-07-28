@@ -113,6 +113,7 @@ namespace MeshBuilder
             Culled = 1 << 7
         }
 
+        [System.Flags]
         public enum Direction : byte
         {
             None = 0,
@@ -135,6 +136,7 @@ namespace MeshBuilder
         /// These transformations could lead to different outcomes depending the order of the mirroring, rotation,
         /// but the way it's used by the TileConfigurationBuilder and the meshers takes this into consideration.
         /// </summary>
+        [System.Flags]
         public enum PieceTransform : byte
         {
             None = 0,

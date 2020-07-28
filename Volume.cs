@@ -80,7 +80,7 @@ namespace MeshBuilder
             // generally the meshers use the Data directly, so this check doesn't really matter but helps in testing,
             // an out of bounds coordinate can still be inside the data length interval, which would be a silent error,
             // still checking for boundaries for every lookup doesn't feel right
-            if (Extents.IsInBounds(x, y, z))
+            if (!Extents.IsInBounds(x, y, z))
             {
                 Debug.LogErrorFormat("index coordinates out of bounds ({0}, {1}, {2})", x, y, z);
             }
