@@ -11,7 +11,7 @@ namespace MeshBuilder
     /// Manages generating a Mesh from a Spline and CrossSection. Optionally it can use 
     /// unity Transforms at affect the mesh generation (scaling and rotation).
     /// </summary>
-    public class SplineMesh
+    public class SplineMeshBuilder
     {
         private Builder meshBuilder;
         private TransformLookupTable transformLookup;
@@ -26,7 +26,7 @@ namespace MeshBuilder
         // out
         public Mesh Mesh { get; private set; }
 
-        public SplineMesh(Spline spline, CrossSectionData crossSection, Transform[] controlTransforms = null)
+        public SplineMeshBuilder(Spline spline, CrossSectionData crossSection, Transform[] controlTransforms = null)
         {
             Spline = spline;
             CrossSection = crossSection;

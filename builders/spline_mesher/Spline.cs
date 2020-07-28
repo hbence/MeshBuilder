@@ -20,22 +20,27 @@ namespace MeshBuilder
             abstract public void Calculate(Vector3[] outPositions, int aIndex, int bIndex, Vector3[] controlPoints, float tStart, float tStep);
         }
 
+        [SerializeField] private bool autoRecalculate = true;
+        public bool AutoRecalculate { get => autoRecalculate; set => autoRecalculate = value; }
+
+        public bool IsDirty { get; private set; }
+
         [SerializeField] private Vector3[] controlPoints;
-        public Vector3[] ControlPoints { get => controlPoints; set { controlPoints = value; Recalculate(); } }
+        public Vector3[] ControlPoints { get => controlPoints; set { controlPoints = value; SetDirty(); } }
 
         [SerializeField] private bool closed = false;
-        public bool IsClosed { get => closed; set { if (closed != value) { closed = value; Recalculate(); } } }
+        public bool IsClosed { get => closed; set { if (closed != value) { closed = value; SetDirty(); } } }
 
         [SerializeField] private int lookupPerSegment = 10;
         public int LookupPerSegment { get => lookupPerSegment; }
 
         [SerializeField] private ArcCalculator arcCalculator;
-        public ArcCalculator Calculator { get => arcCalculator; }
+        public ArcCalculator Arc { get => arcCalculator; set { arcCalculator = value; SetDirty(); } }
 
         [HideInInspector, SerializeField] private PositionLookupTable lookupTable;
         public PositionLookupTable LookupTable { get => lookupTable; }
 
-        public Spline(ArcCalculator arcCalculator, Vector3[] controlPoints = null, bool closed = false)
+        public Spline(ArcCalculator arcCalculator = null, Vector3[] controlPoints = null, bool closed = false)
         {
             this.controlPoints = controlPoints;
             this.arcCalculator = arcCalculator;
@@ -46,9 +51,22 @@ namespace MeshBuilder
             Recalculate();
         }
 
+        private void SetDirty()
+        {
+            IsDirty = true;
+            if (autoRecalculate)
+            {
+                Recalculate();
+            }
+        }
+
         public void Recalculate()
         {
-            lookupTable.UpdatePoints(this);
+            bool wasUpdated = lookupTable.UpdatePoints(this);
+            if (wasUpdated)
+            {
+                IsDirty = false;
+            }
         }
 
         public Vector3 CalcAtDistance(float distance)
@@ -77,7 +95,7 @@ namespace MeshBuilder
         [Serializable]
         public class PositionLookupTable : DistanceLookupTable<Vector3>
         {
-            public void UpdatePoints(Spline spline)
+            public bool UpdatePoints(Spline spline)
             {
                 var controlPoints = spline.controlPoints;
                 var arc = spline.arcCalculator;
@@ -85,7 +103,7 @@ namespace MeshBuilder
                 if (arc == null || controlPoints == null || controlPoints.Length < 2)
                 {
                     Clear();
-                    return;
+                    return false;
                 }
                 else
                 {
@@ -133,6 +151,7 @@ namespace MeshBuilder
                         SetElemDistance(i, sum);
                     }
                 }
+                return true;
             }
 
             override protected Vector3 Lerp(Vector3 a, Vector3 b, float t)
@@ -147,6 +166,8 @@ namespace MeshBuilder
         [Serializable]
         public class Linear : ArcCalculator
         {
+            public static readonly Linear Instance = new Linear(); 
+
             public override Vector3 Calculate(float t, int aIndex, int bIndex, Vector3[] controlPoints)
             {
                 return Vector3.Lerp(controlPoints[aIndex], controlPoints[bIndex], t);
