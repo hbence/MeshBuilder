@@ -30,24 +30,28 @@ namespace MeshBuilder
 
         public int YLevel { get; private set; }
 
+        public float3 cellSize;
+
         // GENERATED DATA
         private Volume<MeshTile> tileMeshes;
 
-        public void Init(DataVolume dataVolume, int yLevel, int themeIndex, TileThemePalette themePalette, Settings settings = null)
+        public void Init(DataVolume dataVolume, int yLevel, int themeIndex, TileThemePalette themePalette, float3 cellSize = default(float3), Settings settings = null)
         {
             var theme = themePalette.Get(themeIndex);
             int fillValue = themePalette.GetFillValue(themeIndex);
-            Init(dataVolume, yLevel, fillValue, theme, themePalette, settings);
+            Init(dataVolume, yLevel, fillValue, theme, themePalette, cellSize, settings);
         }
 
-        public void Init(DataVolume dataVolume, int yLevel, int fillValue, TileTheme theme, Settings settings = null)
+        public void Init(DataVolume dataVolume, int yLevel, int fillValue, TileTheme theme, float3 cellSize = default(float3), Settings settings = null)
         {
-            Init(dataVolume, yLevel, fillValue, theme, null, settings);
+            Init(dataVolume, yLevel, fillValue, theme, null, cellSize, settings);
         }
 
-        public void Init(DataVolume dataVolume, int yLevel, int fillValue, TileTheme theme, TileThemePalette themePalette, Settings settings = null)
+        public void Init(DataVolume dataVolume, int yLevel, int fillValue, TileTheme theme, TileThemePalette themePalette, float3 cellSize = default(float3), Settings settings = null)
         {
             Dispose();
+
+            this.cellSize = cellSize;
 
             theme.Init();
             if (theme.Configs.Length < TileTheme.Type2DConfigCount)
@@ -142,6 +146,7 @@ namespace MeshBuilder
             var tileGeneration = new GenerateMeshDataJob
             {
                 tileExtents = tileExtents,
+                cellSize = cellSize,
                 tiles = tiles.Data,
                 meshTiles = resultMeshTiles.Data
             };
@@ -209,10 +214,10 @@ namespace MeshBuilder
 
                 if (emptyBoundaries != Direction.All)
                 {
-                    if (dc.x == 0 && !emptyBoundaries.HasFlag(Direction.XMinus)) { hasLF = true; hasLB = true; }
-                    if (dc.x == dataExtents.X && !emptyBoundaries.HasFlag(Direction.XPlus)) { hasRF = true; hasRB = true; }
-                    if (dc.z == 0 && !emptyBoundaries.HasFlag(Direction.ZMinus)) { hasLB = true; hasRB = true; }
-                    if (dc.z == dataExtents.Z && !emptyBoundaries.HasFlag(Direction.ZPlus)) { hasLF = true; hasRF = true; }
+                    if (dc.x == 0 && !HasFlag(emptyBoundaries, Direction.XMinus)) { hasLF = true; hasLB = true; }
+                    if (dc.x == dataExtents.X && !HasFlag(emptyBoundaries, Direction.XPlus)) { hasRF = true; hasRB = true; }
+                    if (dc.z == 0 && !HasFlag(emptyBoundaries, Direction.ZMinus)) { hasLB = true; hasRB = true; }
+                    if (dc.z == dataExtents.Z && !HasFlag(emptyBoundaries, Direction.ZPlus)) { hasLF = true; hasRF = true; }
                 }
 
                 if (hasLF) configuration |= Tile.LeftForward;
@@ -265,6 +270,7 @@ namespace MeshBuilder
         private struct GenerateMeshDataJob : IJobParallelFor
         {
             public Extents tileExtents;
+            public float3 cellSize;
             [ReadOnly] public NativeArray<TileMeshData> tiles;
             [WriteOnly] public NativeArray<MeshTile> meshTiles;
 
@@ -275,6 +281,9 @@ namespace MeshBuilder
                 if (group.Count > 0 && tile.type == TileType.Normal)
                 {
                     float3 pos = CoordFromIndex(index, tileExtents);
+                    pos.x *= cellSize.x;
+                    pos.y *= cellSize.y;
+                    pos.z *= cellSize.z;
 
                     if (group.Count == 2)
                     {
@@ -379,6 +388,13 @@ namespace MeshBuilder
                     transform = inst.transform
                 };
             }
+        }
+
+        // using this instead of Enum.HasFlag to avoid value boxing
+        // (the Burst compiler complained about it)
+        public static bool HasFlag(Direction value, Direction flag)
+        {
+            return ((uint)value & (uint)flag) != 0;
         }
 
         [System.Serializable]
