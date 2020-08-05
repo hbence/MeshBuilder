@@ -24,6 +24,15 @@ namespace MeshBuilder
     {
         public enum UVMode { Normalized, NoScaling }
 
+        private const byte AdjacentXPlus = 1;
+        private const byte AdjacentXMinus = 1 << 1;
+        private const byte AdjacentZPlus = 1 << 2;
+        private const byte AdjacentZMinus = 1 << 3;
+        private const byte AdjacentXPlusZPlus = 1 << 4;
+        private const byte AdjacentXPlusZMinus = 1 << 5;
+        private const byte AdjacentXMinusZPlus = 1 << 6;
+        private const byte AdjacentXMinusZMinus = 1 << 7;
+
         private const uint MeshDataBufferFlags = (uint)MeshData.Buffer.Vertex | (uint)MeshData.Buffer.Triangle | (uint)MeshData.Buffer.UV;
 
         private const int VertexLengthIndex = 0;
@@ -416,11 +425,28 @@ namespace MeshBuilder
                 int i = extent.ToIndexAt(x, y, z);
                 byte res = 0;
 
-                if (x > 0 && HasTop(i - 1, y, data, filledValue, extent)) { res |= (byte)Tile.Direction.XMinus; }
-                if (x < extent.X - 1 && HasTop(i + 1, y, data, filledValue, extent)) { res |= (byte)Tile.Direction.XPlus; }
+                if (x > 0 && HasTop(i - 1, y, data, filledValue, extent)) { res |= AdjacentXMinus; }
+                if (x < extent.X - 1 && HasTop(i + 1, y, data, filledValue, extent)) { res |= AdjacentXPlus; }
 
-                if (z > 0 && HasTop(i - extent.X, y, data, filledValue, extent)) { res |= (byte)Tile.Direction.ZMinus; }
-                if (z < extent.Z - 1 && HasTop(i + extent.X, y, data, filledValue, extent)) { res |= (byte)Tile.Direction.ZPlus; }
+                if (z > 0 && HasTop(i - extent.X, y, data, filledValue, extent)) { res |= AdjacentZMinus; }
+                if (z < extent.Z - 1 && HasTop(i + extent.X, y, data, filledValue, extent)) { res |= AdjacentZPlus; }
+
+                if (x > 0 && z > 0 && HasTop(i - extent.X - 1, y, data, filledValue, extent))
+                {
+                    res |= AdjacentXMinusZMinus;
+                }
+                if (x > 0 && z < extent.Z - 1 && HasTop(i + extent.X - 1, y, data, filledValue, extent))
+                {
+                    res |= AdjacentXMinusZPlus;
+                }
+                if (x < extent.X - 1 && z > 0 && HasTop(i - extent.X + 1, y, data, filledValue, extent))
+                {
+                    res |= AdjacentXPlusZMinus;
+                }
+                if (x < extent.X - 1 && z < extent.Z - 1 && HasTop(i + extent.X + 1, y, data, filledValue, extent))
+                {
+                    res |= AdjacentXPlusZPlus;
+                }
 
                 return res;
             }
@@ -998,11 +1024,29 @@ namespace MeshBuilder
 
                 private float CalcHeightLerpValue(byte adjacentDirection, int col, int row, int cellResolution)
                 {
-                    if ((adjacentDirection & (byte)Direction.XMinus) == 0 && col == 0) { return 0f; }
-                    if ((adjacentDirection & (byte)Direction.XPlus) == 0 && col == cellResolution) { return 0f; }
+                    if (col == 0 &&
+                        ((adjacentDirection & AdjacentXMinus) == 0 ||
+                        (adjacentDirection & AdjacentXMinusZMinus) == 0 ||
+                        (adjacentDirection & AdjacentXMinusZPlus) == 0))
+                    { return 0f; }
 
-                    if ((adjacentDirection & (byte)Direction.ZMinus) == 0 && row == 0) { return 0f; }
-                    if ((adjacentDirection & (byte)Direction.ZPlus) == 0 && row == cellResolution) { return 0f; }
+                    if (col == cellResolution &&
+                        ((adjacentDirection & AdjacentXPlus) == 0 ||
+                        (adjacentDirection & AdjacentXPlusZMinus) == 0 ||
+                        (adjacentDirection & AdjacentXPlusZPlus) == 0))
+                    { return 0f; }
+
+                    if (row == 0 &&
+                        ((adjacentDirection & AdjacentZMinus) == 0 ||
+                        (adjacentDirection & AdjacentXMinusZMinus) == 0 ||
+                        (adjacentDirection & AdjacentXPlusZMinus) == 0))
+                    { return 0f; }
+
+                    if (row == cellResolution &&
+                        ((adjacentDirection & AdjacentZPlus) == 0 ||
+                        (adjacentDirection & AdjacentXMinusZPlus) == 0 ||
+                        (adjacentDirection & AdjacentXPlusZPlus) == 0))
+                    { return 0f; }
 
                     return 1f;
                 }
