@@ -33,10 +33,10 @@ namespace MeshBuilder
                 snapShot = value;
             }
         }
-        private Transform originalGridTransform;
-        private Transform meshTransform;
 
-        private Transform targetGridTransform;
+        private Matrix4x4 GridWorldToLocal;
+        private Matrix4x4 MeshLocalToWorld; 
+
         private LatticeGridData targetGrid;
         private LatticeGridData TargetGrid
         {
@@ -69,8 +69,9 @@ namespace MeshBuilder
             mode = WorkMode.TakeSnapshot;
 
             SnapShot = new SnapShotData(gridExtents, gridCellSize);
-            originalGridTransform = gridTransform;
-            this.meshTransform = meshTransform;
+
+            GridWorldToLocal = gridTransform.worldToLocalMatrix;
+            MeshLocalToWorld = meshTransform.localToWorldMatrix;
 
             Inited();
         }
@@ -89,13 +90,19 @@ namespace MeshBuilder
             TargetGrid = new LatticeGridData(grid);
             var m = ToFloat3x4(meshTransform.worldToLocalMatrix * gridTransform.localToWorldMatrix);
             TargetGrid.TransformVertices(m);
-            targetGridTransform = gridTransform;
-            this.meshTransform = meshTransform;
+
+            GridWorldToLocal = gridTransform.worldToLocalMatrix;
+            MeshLocalToWorld = meshTransform.localToWorldMatrix;
 
             Inited();
         }
 
         public void InitLatticeChange(Transform originalGridTransform, int3 gridExtents, float3 gridCellSize, Transform targetGridTransform, VertexGrid targetGrid, Transform meshTransform)
+        {
+            InitLatticeChange(originalGridTransform.worldToLocalMatrix, gridExtents, gridCellSize, targetGridTransform.localToWorldMatrix, targetGrid, meshTransform.localToWorldMatrix);
+        }
+
+        public void InitLatticeChange(Matrix4x4 originalGridWorldToLocal, int3 gridExtents, float3 gridCellSize, Matrix4x4 targetLocalToWorld, VertexGrid targetGrid, Matrix4x4 meshLocalToWorld)
         {
             if (!IsGridDataValid(gridExtents, gridCellSize))
             {
@@ -105,13 +112,40 @@ namespace MeshBuilder
 
             mode = WorkMode.ApplyChange;
 
+            GridWorldToLocal = originalGridWorldToLocal;
+            MeshLocalToWorld = meshLocalToWorld;
+
             SnapShot = new SnapShotData(gridExtents, gridCellSize);
             TargetGrid = new LatticeGridData(targetGrid);
-            var m = ToFloat3x4(meshTransform.worldToLocalMatrix * targetGridTransform.localToWorldMatrix);
+            var m = ToFloat3x4(meshLocalToWorld * targetLocalToWorld);
             TargetGrid.TransformVertices(m);
-            this.originalGridTransform = originalGridTransform;
-            this.targetGridTransform = targetGridTransform;
-            this.meshTransform = meshTransform;
+
+            Inited();
+        }
+
+        public void InitRandomLatticeChange(Matrix4x4 originalGridWorldToLocal, int3 gridExtents, float3 gridCellSize, Matrix4x4 targetLocalToWorld, Matrix4x4 meshLocalToWorld, float3 maxDisplacement)
+        {
+            InitRandomLatticeChange(originalGridWorldToLocal, gridExtents, gridCellSize, targetLocalToWorld, meshLocalToWorld, -maxDisplacement, maxDisplacement);
+        }
+
+        public void InitRandomLatticeChange(Matrix4x4 originalGridWorldToLocal, int3 gridExtents, float3 gridCellSize, Matrix4x4 targetLocalToWorld, Matrix4x4 meshLocalToWorld, float3 displacementRangeMin, float3 displacementRangeMax)
+        {
+            if (!IsGridDataValid(gridExtents, gridCellSize))
+            {
+                Uninitialized();
+                return;
+            }
+
+            mode = WorkMode.ApplyChange;
+
+            GridWorldToLocal = originalGridWorldToLocal;
+            MeshLocalToWorld = meshLocalToWorld;
+
+            SnapShot = new SnapShotData(gridExtents, gridCellSize);
+            TargetGrid = new LatticeGridData(gridExtents, gridCellSize);
+            targetGrid.RandomDisplacement(displacementRangeMin, displacementRangeMax);
+            var m = ToFloat3x4(meshLocalToWorld * targetLocalToWorld);
+            TargetGrid.TransformVertices(m);
 
             Inited();
         }
@@ -130,8 +164,6 @@ namespace MeshBuilder
             }
             return true;
         }
-
-        private bool DoesMatch(int3 c, VertexGrid grid) { return c.x == grid.XLength && c.y == grid.YLength && c.z == grid.ZLength; }
 
         public override void Dispose()
         {
@@ -155,16 +187,16 @@ namespace MeshBuilder
             var res = dependOn;
             if (mode == WorkMode.TakeSnapshot)
             {
-                res = SnapShot.ScheduleCoordinateGenaration(originalGridTransform, meshTransform, meshData, dependOn);
+                res = SnapShot.ScheduleCoordinateGenaration(GridWorldToLocal, MeshLocalToWorld, meshData, dependOn);
             }
             else if (mode == WorkMode.Evaluate)
             {
-                res = SnapShot.ScheduleEvaluation(targetGridTransform, TargetGrid, meshTransform, meshData, dependOn);
+                res = SnapShot.ScheduleEvaluation(TargetGrid, meshData, dependOn);
             }
             else if (mode == WorkMode.ApplyChange)
             {
-                res = SnapShot.ScheduleCoordinateGenaration(originalGridTransform, meshTransform, meshData, dependOn);
-                res = SnapShot.ScheduleEvaluation(targetGridTransform, TargetGrid, meshTransform, meshData, res);
+                res = SnapShot.ScheduleCoordinateGenaration(GridWorldToLocal, MeshLocalToWorld, meshData, dependOn);
+                res = SnapShot.ScheduleEvaluation(TargetGrid, meshData, res);
             }
 
             return res;
@@ -230,7 +262,7 @@ namespace MeshBuilder
                 SafeDispose(ref coordinates);
             }
 
-            public JobHandle ScheduleCoordinateGenaration(Transform gridTransform, Transform meshTransform, MeshData meshData, JobHandle dependOn = default)
+            public JobHandle ScheduleCoordinateGenaration(Matrix4x4 gridWorldToLocal, Matrix4x4 meshLocalToWorld, MeshData meshData, JobHandle dependOn = default)
             {
                 SafeDispose(ref coordinates);
 
@@ -242,7 +274,7 @@ namespace MeshBuilder
                 
                 coordinates = new NativeArray<VertexData>(meshData.VerticesLength, Allocator.Persistent);
 
-                var transformMatrix = gridTransform.worldToLocalMatrix * meshTransform.localToWorldMatrix;
+                var transformMatrix = gridWorldToLocal * meshLocalToWorld;
 
                 float3 cellSize = gridData.CellSize;
                 float3 cellOffset = new float3(0.5f * cellSize.x * (gridData.Extents.X - 1),
@@ -264,7 +296,7 @@ namespace MeshBuilder
                 return job.Schedule(meshData.VerticesLength, 1024, dependOn);
             }
 
-            public JobHandle ScheduleEvaluation(Transform gridTransform, LatticeGridData targetGrid, Transform meshTransform, MeshData meshData, JobHandle dependOn = default)
+            public JobHandle ScheduleEvaluation(LatticeGridData targetGrid, MeshData meshData, JobHandle dependOn = default)
             {
                 if (meshData.VerticesLength != coordinates.Length)
                 {
@@ -407,6 +439,18 @@ namespace MeshBuilder
                         pos.z += CellSize.z;
                     }
                     pos.y += CellSize.y;
+                }
+            }
+
+            public void RandomDisplacement(float3 rangeMin, float3 rangeMax)
+            {
+                for (int i = 0; i < vertices.Length; ++i)
+                {
+                    float3 offset = new float3();
+                    offset.x = UnityEngine.Random.Range(rangeMin.x, rangeMax.x);
+                    offset.y = UnityEngine.Random.Range(rangeMin.y, rangeMax.y);
+                    offset.z = UnityEngine.Random.Range(rangeMin.z, rangeMax.z);
+                    vertices[i] += offset;
                 }
             }
 
