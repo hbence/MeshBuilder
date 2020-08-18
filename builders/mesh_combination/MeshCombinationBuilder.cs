@@ -11,16 +11,28 @@ namespace MeshBuilder
     using Offset = Utils.Offset;
     using static Utils;
 
-    public class MeshCombinationBuilder : Builder
+    public partial class MeshCombinationBuilder : Builder
     {
+        private enum SourceType
+        {
+            FromTheme,
+            FromMeshes
+        }
+
+        private SourceType sourceType;
+
         private bool deferred = false;
         private MeshData SourceMeshData { get; set; }
+
+        private MeshFilter[] meshFilters;
 
         private Immediate immediateHandler;
         private Deferred deferredHandler;
 
         public void Init(NativeArray<DataInstance> instanceArray, TileTheme theme)
         {
+            sourceType = SourceType.FromTheme;
+
             deferred = false;
             immediateHandler = new Immediate(instanceArray);
             deferredHandler = null;
@@ -32,6 +44,8 @@ namespace MeshBuilder
 
         public void InitDeferred(NativeList<DataInstance> instanceList, TileTheme theme)
         {
+            sourceType = SourceType.FromTheme;
+
             deferred = true;
             deferredHandler = new Deferred(instanceList);
             immediateHandler = null;
@@ -41,10 +55,42 @@ namespace MeshBuilder
             Inited();
         }
 
+        public void Init(MeshFilter[] meshFilters)
+        {
+            sourceType = SourceType.FromMeshes;
+
+            this.meshFilters = meshFilters;
+
+            deferred = false;
+            deferredHandler = null;
+            immediateHandler = null;
+
+            SourceMeshData = default;
+
+            Inited();
+        }
+
         protected override JobHandle StartGeneration(JobHandle dependOn)
         {
-            return deferred ? deferredHandler.ScheduleDeferredJobs(SourceMeshData, Temps, dependOn) : 
-                                immediateHandler.ScheduleImmediateJobs(SourceMeshData, Temps, dependOn);
+            if (sourceType == SourceType.FromTheme)
+            {
+                return deferred ? deferredHandler.ScheduleDeferredJobs(SourceMeshData, Temps, dependOn) :
+                            immediateHandler.ScheduleImmediateJobs(SourceMeshData, Temps, dependOn);
+            }
+            else if (sourceType == SourceType.FromMeshes)
+            {
+                MeshCache meshCache;
+                NativeArray<DataInstance> dataInstances;
+                MeshCache.CreateCombinationData(meshFilters, out meshCache, Allocator.TempJob, out dataInstances, Allocator.TempJob);
+
+                Temps.Add(meshCache);
+                Temps.Add(dataInstances);
+
+                immediateHandler = new Immediate(dataInstances);
+                return immediateHandler.ScheduleImmediateJobs(meshCache.MeshData, Temps, dependOn);
+            }
+
+            return dependOn;
         }
 
         private class Immediate
@@ -347,6 +393,45 @@ namespace MeshBuilder
                 }
                 return 0;
             }
+        }
+
+        static public void CopyData(MeshData data, Mesh mesh, MeshDataOffsets offset)
+        {
+            int vStart = offset.vertices.index;
+            int vLength = offset.vertices.length;
+
+            Copy3V(mesh.vertices, data.Vertices);
+            NativeArray<int>.Copy(mesh.triangles, 0, data.Triangles, offset.triangles.index, offset.triangles.length);
+
+            if (Has(data.HasNormals, mesh.normals)) { Copy3V(mesh.normals, data.Normals); }
+            if (Has(data.HasColors, mesh.colors)) { NativeArray<Color>.Copy(mesh.colors, 0, data.Colors, vStart, vLength); }
+            if (Has(data.HasTangents, mesh.tangents)) { Copy4V(mesh.tangents, data.Tangents); }
+            if (Has(data.HasUVs, mesh.uv)) { Copy2V(mesh.uv, data.UVs); }
+            if (Has(data.HasUVs2, mesh.uv2)) { Copy2V(mesh.uv2, data.UVs2); }
+            if (Has(data.HasUVs3, mesh.uv3)) { Copy2V(mesh.uv3, data.UVs3); }
+            if (Has(data.HasUVs4, mesh.uv4)) { Copy2V(mesh.uv4, data.UVs4); }
+
+            bool Has<T>(bool hasData, T[] a) { return hasData && a != null && a.Length > 0; }
+
+            void Copy2V(Vector2[] src, NativeArray<float2> dst) { NativeArray<float2>.Copy(ToFloat2Array(src), 0, dst, vStart, vLength); }
+            void Copy3V(Vector3[] src, NativeArray<float3> dst) { NativeArray<float3>.Copy(ToFloat3Array(src), 0, dst, vStart, vLength); }
+            void Copy4V(Vector4[] src, NativeArray<float4> dst) { NativeArray<float4>.Copy(ToFloat4Array(src), 0, dst, vStart, vLength); }
+        }
+
+        static public MeshDataOffsets CreateMeshDataOffset(Mesh mesh, int startVertexIndex, int startTriangleIndex)
+        {
+            return new MeshDataOffsets
+            {
+                vertices = new Offset { index = startVertexIndex, length = mesh.vertexCount },
+                triangles = new Offset { index = startTriangleIndex, length = mesh.triangles.Length },
+                submeshOffset1 = (mesh.subMeshCount > 1) ? (int)mesh.GetIndexStart(1) : 0,
+                submeshOffset2 = (mesh.subMeshCount > 2) ? (int)mesh.GetIndexStart(2) : 0,
+                submeshOffset3 = (mesh.subMeshCount > 3) ? (int)mesh.GetIndexStart(3) : 0,
+                submeshOffset4 = (mesh.subMeshCount > 4) ? (int)mesh.GetIndexStart(4) : 0,
+                submeshOffset5 = (mesh.subMeshCount > 5) ? (int)mesh.GetIndexStart(5) : 0,
+                submeshOffset6 = (mesh.subMeshCount > 6) ? (int)mesh.GetIndexStart(6) : 0,
+                submeshOffset7 = (mesh.subMeshCount > 7) ? (int)mesh.GetIndexStart(7) : 0,
+            };
         }
 
         public struct CombineTransformedBufferJob : IJob
