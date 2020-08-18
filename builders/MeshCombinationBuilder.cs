@@ -14,7 +14,7 @@ namespace MeshBuilder
     public class MeshCombinationBuilder : Builder
     {
         private bool deferred = false;
-        private TileTheme theme;
+        private MeshData SourceMeshData { get; set; }
 
         private Immediate immediateHandler;
         private Deferred deferredHandler;
@@ -25,9 +25,7 @@ namespace MeshBuilder
             immediateHandler = new Immediate(instanceArray);
             deferredHandler = null;
 
-            this.theme?.Release();
-            this.theme = theme;
-            this.theme.Retain();
+            SourceMeshData = theme.TileThemeCache.MeshData;
 
             Inited();
         }
@@ -38,17 +36,15 @@ namespace MeshBuilder
             deferredHandler = new Deferred(instanceList);
             immediateHandler = null;
 
-            this.theme?.Release();
-            this.theme = theme;
-            this.theme.Retain();
+            SourceMeshData = theme.TileThemeCache.MeshData;
 
             Inited();
         }
 
         protected override JobHandle StartGeneration(JobHandle dependOn)
         {
-            return deferred ? deferredHandler.ScheduleDeferredJobs(theme, Temps, dependOn) : 
-                                immediateHandler.ScheduleImmediateJobs(theme, Temps, dependOn);
+            return deferred ? deferredHandler.ScheduleDeferredJobs(SourceMeshData, Temps, dependOn) : 
+                                immediateHandler.ScheduleImmediateJobs(SourceMeshData, Temps, dependOn);
         }
 
         private class Immediate
@@ -66,9 +62,9 @@ namespace MeshBuilder
                 combinedMesh.UpdateMesh(mesh, MeshData.UpdateMode.Clear);
             }
 
-            public JobHandle ScheduleImmediateJobs(TileTheme theme, List<System.IDisposable> tempList, JobHandle dependOn)
+            public JobHandle ScheduleImmediateJobs(MeshData sourceMeshData, List<System.IDisposable> tempList, JobHandle dependOn)
             {
-                var combinedInfo = CalcCombinedMeshInfo(instanceArray, theme.TileThemeCache.MeshDataBufferFlags);
+                var combinedInfo = CalcCombinedMeshInfo(instanceArray, sourceMeshData.BufferFlags);
                 combinedMesh = combinedInfo.CreateMeshData(Allocator.TempJob);
                 tempList.Add(combinedMesh);
 
@@ -76,59 +72,58 @@ namespace MeshBuilder
                 tempList.Add(submeshOffsets);
 
                 JobHandle combined = default;
-                MeshData source = theme.TileThemeCache.MeshData;
 
                 if (combinedMesh.HasVertices)
                 {
-                    var h = CombineTransformedBufferJob.Schedule(BufferType.Vertex, source.Vertices, combinedMesh.Vertices, instanceArray, dependOn);
+                    var h = CombineTransformedBufferJob.Schedule(BufferType.Vertex, sourceMeshData.Vertices, combinedMesh.Vertices, instanceArray, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
                 if (combinedMesh.HasTriangles)
                 {
-                    var h = CombineTriangleBufferJob.Schedule(source.Triangles, combinedMesh.Triangles, submeshOffsets, instanceArray, dependOn);
+                    var h = CombineTriangleBufferJob.Schedule(sourceMeshData.Triangles, combinedMesh.Triangles, submeshOffsets, instanceArray, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
                 if (combinedMesh.HasNormals)
                 {
-                    var h = CombineTransformedBufferJob.Schedule(BufferType.Normal, source.Normals, combinedMesh.Normals, instanceArray, dependOn);
+                    var h = CombineTransformedBufferJob.Schedule(BufferType.Normal, sourceMeshData.Normals, combinedMesh.Normals, instanceArray, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
                 if (combinedMesh.HasColors)
                 {
-                    var h = CombineBufferJob<Color>.Schedule(source.Colors, combinedMesh.Colors, instanceArray, dependOn);
+                    var h = CombineBufferJob<Color>.Schedule(sourceMeshData.Colors, combinedMesh.Colors, instanceArray, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
                 if (combinedMesh.HasTangents)
                 {
-                    var h = CombineBufferJob<float4>.Schedule(source.Tangents, combinedMesh.Tangents, instanceArray, dependOn);
+                    var h = CombineBufferJob<float4>.Schedule(sourceMeshData.Tangents, combinedMesh.Tangents, instanceArray, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
                 if (combinedMesh.HasUVs)
                 {
-                    var h = CombineBufferJob<float2>.Schedule(source.UVs, combinedMesh.UVs, instanceArray, dependOn);
+                    var h = CombineBufferJob<float2>.Schedule(sourceMeshData.UVs, combinedMesh.UVs, instanceArray, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
                 if (combinedMesh.HasUVs2)
                 {
-                    var h = CombineBufferJob<float2>.Schedule(source.UVs2, combinedMesh.UVs2, instanceArray, dependOn);
+                    var h = CombineBufferJob<float2>.Schedule(sourceMeshData.UVs2, combinedMesh.UVs2, instanceArray, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
                 if (combinedMesh.HasUVs3)
                 {
-                    var h = CombineBufferJob<float2>.Schedule(source.UVs3, combinedMesh.UVs3, instanceArray, dependOn);
+                    var h = CombineBufferJob<float2>.Schedule(sourceMeshData.UVs3, combinedMesh.UVs3, instanceArray, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
                 if (combinedMesh.HasUVs4)
                 {
-                    var h = CombineBufferJob<float2>.Schedule(source.UVs4, combinedMesh.UVs4, instanceArray, dependOn);
+                    var h = CombineBufferJob<float2>.Schedule(sourceMeshData.UVs4, combinedMesh.UVs4, instanceArray, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
@@ -151,66 +146,65 @@ namespace MeshBuilder
                 deferredCombinedMesh.UpdateMesh(mesh, meshInfo);
             }
 
-            public JobHandle ScheduleDeferredJobs(TileTheme theme, List<System.IDisposable> tempList, JobHandle dependOn)
+            public JobHandle ScheduleDeferredJobs(MeshData sourceMeshData, List<System.IDisposable> tempList, JobHandle dependOn)
             {
-                uint meshFlags = theme.TileThemeCache.MeshDataBufferFlags;
+                uint meshFlags = sourceMeshData.BufferFlags;
                 deferredCombinedMesh = new DeferredMeshData(meshFlags, Allocator.TempJob);
                 tempList.Add(deferredCombinedMesh);
 
                 JobHandle combined = default;
-                MeshData source = theme.TileThemeCache.MeshData;
 
                 if (deferredCombinedMesh.HasVertices)
                 {
-                    var h = CombineTransformedBufferJob.ScheduleDeferred(BufferType.Vertex, source.Vertices, deferredCombinedMesh.Vertices, instanceList, dependOn);
+                    var h = CombineTransformedBufferJob.ScheduleDeferred(BufferType.Vertex, sourceMeshData.Vertices, deferredCombinedMesh.Vertices, instanceList, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
                 if (deferredCombinedMesh.HasTriangles)
                 {
-                    var h = CombineTriangleBufferJob.ScheduleDeferred(source.Triangles, deferredCombinedMesh.Triangles, meshFlags, instanceList, dependOn);
+                    var h = CombineTriangleBufferJob.ScheduleDeferred(sourceMeshData.Triangles, deferredCombinedMesh.Triangles, meshFlags, instanceList, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
                 if (deferredCombinedMesh.HasNormals)
                 {
-                    var h = CombineTransformedBufferJob.ScheduleDeferred(BufferType.Normal, source.Normals, deferredCombinedMesh.Normals, instanceList, dependOn);
+                    var h = CombineTransformedBufferJob.ScheduleDeferred(BufferType.Normal, sourceMeshData.Normals, deferredCombinedMesh.Normals, instanceList, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
                 if (deferredCombinedMesh.HasColors)
                 {
-                    var h = CombineBufferJob<Color>.ScheduleDeferred(source.Colors, deferredCombinedMesh.Colors, instanceList, dependOn);
+                    var h = CombineBufferJob<Color>.ScheduleDeferred(sourceMeshData.Colors, deferredCombinedMesh.Colors, instanceList, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
                 if (deferredCombinedMesh.HasTangents)
                 {
-                    var h = CombineBufferJob<float4>.ScheduleDeferred(source.Tangents, deferredCombinedMesh.Tangents, instanceList, dependOn);
+                    var h = CombineBufferJob<float4>.ScheduleDeferred(sourceMeshData.Tangents, deferredCombinedMesh.Tangents, instanceList, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
                 if (deferredCombinedMesh.HasUVs)
                 {
-                    var h = CombineBufferJob<float2>.ScheduleDeferred(source.UVs, deferredCombinedMesh.UVs, instanceList, dependOn);
+                    var h = CombineBufferJob<float2>.ScheduleDeferred(sourceMeshData.UVs, deferredCombinedMesh.UVs, instanceList, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
                 if (deferredCombinedMesh.HasUVs2)
                 {
-                    var h = CombineBufferJob<float2>.ScheduleDeferred(source.UVs2, deferredCombinedMesh.UVs2, instanceList, dependOn);
+                    var h = CombineBufferJob<float2>.ScheduleDeferred(sourceMeshData.UVs2, deferredCombinedMesh.UVs2, instanceList, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
                 if (deferredCombinedMesh.HasUVs3)
                 {
-                    var h = CombineBufferJob<float2>.ScheduleDeferred(source.UVs3, deferredCombinedMesh.UVs3, instanceList, dependOn);
+                    var h = CombineBufferJob<float2>.ScheduleDeferred(sourceMeshData.UVs3, deferredCombinedMesh.UVs3, instanceList, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
                 if (deferredCombinedMesh.HasUVs4)
                 {
-                    var h = CombineBufferJob<float2>.ScheduleDeferred(source.UVs4, deferredCombinedMesh.UVs4, instanceList, dependOn);
+                    var h = CombineBufferJob<float2>.ScheduleDeferred(sourceMeshData.UVs4, deferredCombinedMesh.UVs4, instanceList, dependOn);
                     combined = JobHandle.CombineDependencies(combined, h);
                 }
 
@@ -222,7 +216,7 @@ namespace MeshBuilder
         {
             if (deferred)
             {
-                var meshInfo = CalcCombinedMeshInfo(deferredHandler.instanceList, theme.TileThemeCache.MeshDataBufferFlags);
+                var meshInfo = CalcCombinedMeshInfo(deferredHandler.instanceList, SourceMeshData.BufferFlags);
                 deferredHandler.UpdateMesh(mesh, meshInfo);
             }
             else
