@@ -212,7 +212,7 @@ namespace MeshBuilder
                 bool hasLB = dc.x > 0 && dc.z > 0 && IsFilled(dc.x - 1, yLevel, dc.z - 1);
                 bool hasRB = dc.x < dataExtents.X && dc.z > 0 && IsFilled(dc.x, yLevel, dc.z - 1);
 
-                if (emptyBoundaries != Direction.All)
+                if (emptyBoundaries != Direction.All && (hasLF || hasRF || hasLB || hasRB))
                 {
                     if (dc.x == 0 && !HasFlag(emptyBoundaries, Direction.XMinus)) { hasLF = true; hasLB = true; }
                     if (dc.x == dataExtents.X && !HasFlag(emptyBoundaries, Direction.XPlus)) { hasRF = true; hasRB = true; }
