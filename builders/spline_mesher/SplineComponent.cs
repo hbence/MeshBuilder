@@ -6,7 +6,8 @@ using UnityEngine;
 namespace MeshBuilder
 {
     [ExecuteInEditMode]
-    public class SplineComponent : MonoBehaviour
+    [Serializable]
+    public class SplineComponent : ScriptableObject
     {
         public enum ArcType
         {
@@ -15,53 +16,58 @@ namespace MeshBuilder
             Bezier
         }
 
-        [SerializeField] private bool autoRedraw = false;
-        public bool AutoRedraw { get => autoRedraw; set => autoRedraw = value; }
-
         [Header("mesh")]
         [SerializeField] private MeshFilter meshFilter;
 
         [Header("spline")]
         [SerializeField] private bool isClosed;
-        public bool IsClosed { get; private set; }
+        public bool IsClosed { get => isClosed; private set { isClosed = value; IsDirty = true; } }
 
         [SerializeField] private ArcType arcType = ArcType.CatmullRom;
-        public ArcType Type { get => arcType; set { arcType = value; SetDirty(); } }
+        public ArcType Type { get => arcType; set { arcType = value; IsDirty = true; } }
 
         [SerializeField] private Spline.CatmullRom catmullRomArc = null;
-        public Spline.CatmullRom CatmullRomArc { get => catmullRomArc; set { catmullRomArc = value; SetDirty(); } }
+        public Spline.CatmullRom CatmullRomArc { get => catmullRomArc; set { catmullRomArc = value; IsDirty = true; } }
 
         [SerializeField] private Spline.Bezier bezierArc = null;
-        public Spline.Bezier BezerArc { get => BezerArc; set { bezierArc = value; SetDirty(); } }
+        public Spline.Bezier BezerArc { get => BezerArc; set { bezierArc = value; IsDirty = true; } }
 
-        private Vector3[] controlPoints;
-        private SplineMeshBuilder.CrossSectionData crossSection;
-        private Spline spline;
+        [HideInInspector, SerializeField] private Vector3[] controlPoints;
+        [HideInInspector, SerializeField] private Spline spline;
 
-        public bool IsDirty { get; private set; }
+        [SerializeField] private bool autoRecalculate = false;
+        public bool AutoRecalculate { get => autoRecalculate; set => autoRecalculate = value; }
 
-        void Awake()
+        private bool isDirty = false;
+        public bool IsDirty
         {
-            spline = new Spline();
-            spline.AutoRecalculate = false;
-        }
-
-        private void SetDirty() 
-        { 
-            IsDirty = true; 
-            if (autoRedraw)
+            get => isDirty;
+            private set
             {
-                Redraw();
+                isDirty = value;
+                if (isDirty && autoRecalculate)
+                {
+                    Recalculate();
+                }
             }
         }
 
-        public void Redraw()
+        void Awake()
+        {
+            if (spline == null)
+            {
+                spline = new Spline();
+                spline.AutoRecalculate = false;
+            }
+        }
+
+        public void Recalculate()
         {
             if (controlPoints != null)
             {
                 spline.ControlPoints = controlPoints;
                 spline.Arc = SelectArc();
-
+                spline.Recalculate();
             }
             IsDirty = false;
         }
@@ -91,20 +97,13 @@ namespace MeshBuilder
                 newControlPoints[i] = controlPoints[controlPoints.Length];
             }
             controlPoints = newControlPoints;
-            SetDirty();
+            IsDirty = true;
         }
 
         public void SetControlPoint(int index, Vector3 pos)
         {
             controlPoints[index] = pos;
-            SetDirty();
-        }
-        
-        public void SetCrossSection(Vector3[] points, float[] uCoords = null)
-        {
-            var array = Utils.ToFloat3Array(points);
-            crossSection = new SplineMeshBuilder.CrossSectionData(array, uCoords);
-            SetDirty();
+            IsDirty = true;
         }
     }
 }
