@@ -77,6 +77,7 @@ namespace MeshBuilder
             return (((int)top) << 4) | (int)bottom;
         }
 
+        [System.Serializable]
         public struct Data
         {
             public byte themeIndex;

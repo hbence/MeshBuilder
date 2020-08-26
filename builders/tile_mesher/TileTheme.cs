@@ -419,9 +419,12 @@ namespace MeshBuilder
             }
         }
 
-        public static readonly ConfigTransform NullTransform = new ConfigTransform(-1, PieceTransform.None);
+        // The Burst compiler complained about a circular static initialization, so NullTransform is a static property now
+        // public static readonly ConfigTransform NullTransform = new ConfigTransform(-1, PieceTransform.None);
+        public static ConfigTransform NullTransform { get => new ConfigTransform(-1, PieceTransform.None); }
         public static readonly ConfigTransformGroup NullTransformGroup = new ConfigTransformGroup(new ConfigTransform(-1, PieceTransform.None)); 
 
+        
         /// <summary>
         /// Multiple meshes can be used to handle a configuration. For example, the "diagonal corners" case
         /// can be handled automatically by using a single corner twice with different transformations.
