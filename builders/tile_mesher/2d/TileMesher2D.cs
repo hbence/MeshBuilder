@@ -35,23 +35,28 @@ namespace MeshBuilder
         // GENERATED DATA
         private Volume<MeshTile> tileMeshes;
 
-        public void Init(DataVolume dataVolume, int yLevel, int themeIndex, TileThemePalette themePalette, float3 cellSize = default(float3), Settings settings = null)
+        public void Init(DataVolume dataVolume, int yLevel, int themeIndex, TileThemePalette themePalette, float3 cellSize = default, Settings settings = null)
         {
             var theme = themePalette.Get(themeIndex);
             int fillValue = themePalette.GetFillValue(themeIndex);
             Init(dataVolume, yLevel, fillValue, theme, themePalette, cellSize, settings);
         }
 
-        public void Init(DataVolume dataVolume, int yLevel, int fillValue, TileTheme theme, float3 cellSize = default(float3), Settings settings = null)
+        public void Init(DataVolume dataVolume, int yLevel, int fillValue, TileTheme theme, float3 cellSize = default, Settings settings = null)
         {
             Init(dataVolume, yLevel, fillValue, theme, null, cellSize, settings);
         }
 
-        public void Init(DataVolume dataVolume, int yLevel, int fillValue, TileTheme theme, TileThemePalette themePalette, float3 cellSize = default(float3), Settings settings = null)
+        public void Init(DataVolume dataVolume, int yLevel, int fillValue, TileTheme theme, TileThemePalette themePalette, float3 cellSize = default, Settings settings = null)
         {
             Dispose();
 
             this.cellSize = cellSize;
+
+            if (cellSize.x == 0 && cellSize.y == 0 && cellSize.z == 0)
+            {
+                this.cellSize = new float3(1, 1, 1);
+            }
 
             theme.Init();
             if (theme.Configs.Length < TileTheme.Type2DConfigCount)

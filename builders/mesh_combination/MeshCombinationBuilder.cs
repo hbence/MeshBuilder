@@ -15,8 +15,8 @@ namespace MeshBuilder
     {
         private enum SourceType
         {
-            FromTheme,
-            FromMeshes
+            FromTheme, // themes have mesh caches so that can be used
+            FromMeshes // for other meshes we need to generate a cache
         }
 
         private SourceType sourceType;

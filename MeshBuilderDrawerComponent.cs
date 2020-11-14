@@ -5,6 +5,7 @@ namespace MeshBuilder
 {
     public class MeshBuilderDrawerComponent : MonoBehaviour
     {
+        public bool IsVisible { get; set; } = true;
         public List<MeshBuilderDrawer> Drawers { get; private set; } 
 
         private void OnEnable()
@@ -58,11 +59,14 @@ namespace MeshBuilder
 
         private void DrawWithCamera(Camera camera)
         {
-            if (camera && Drawers != null)
+            if (IsVisible)
             {
-                foreach(var drawer in Drawers)
+                if (camera && Drawers != null)
                 {
-                    drawer.Render(camera, transform, gameObject.layer);
+                    foreach (var drawer in Drawers)
+                    {
+                        drawer.Render(camera, transform, gameObject.layer);
+                    }
                 }
             }
         }
