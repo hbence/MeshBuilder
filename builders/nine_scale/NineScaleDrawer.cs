@@ -13,7 +13,7 @@ namespace MeshBuilder
         [SerializeField] private NineScale nineScale = null;
         [SerializeField] private RenderInfo renderInfo = null;
 
-        public bool debug = false;
+        [SerializeField] private bool forceRecalculation = false;
 
         private void OnEnable()
         {
@@ -28,7 +28,7 @@ namespace MeshBuilder
 
         private void Update()
         {
-            if (debug)
+            if (nineScale.ShouldRecalculate(transform.position, transform.rotation, transform.lossyScale) || forceRecalculation)
             {
                 nineScale.Recalculate(transform.position, transform.rotation, transform.lossyScale);
             }

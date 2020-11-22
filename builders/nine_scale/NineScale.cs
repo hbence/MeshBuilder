@@ -66,14 +66,32 @@ namespace MeshBuilder
 
         private int middleLayerCounter = 0;
 
+        private int seed = (int)System.DateTime.Now.ToBinary();
+
+        private Vector3 lastCenter = Vector3.zero;
+        private Quaternion lastRot = Quaternion.identity;
+        private Vector3 lastSize = Vector3.zero;
+
         public NineScale()
         {
             TopLayer = new Layer();
             BottomLayer = new Layer();
         }
 
+        public bool ShouldRecalculate(Vector3 center, Quaternion rot, Vector3 size)
+        {
+            return lastCenter != center || lastRot != rot || lastSize != size;
+        }
+
         public void Recalculate(Vector3 center, Quaternion rot, Vector3 size)
         {
+            Random.InitState(seed);
+            middleLayerCounter = 0;
+
+            lastCenter = center;
+            lastRot = rot;
+            lastSize = size;
+
             Vector3 pos = center;
             if (hasTop)
             {
@@ -83,10 +101,11 @@ namespace MeshBuilder
             }
             if (hasMiddle)
             {
+                float height = size.y - (hasTop ? topHeight : 0) - (hasBottom ? bottomHeight : 0);
+
                 if (middleVerticalScale == ScaleType.Stretch)
                 {
                     pos.y = center.y;
-                    float height = size.y - topHeight - bottomHeight;
                     if (hasTop)
                     {
                         pos.y = center.y + size.y * 0.5f - topHeight - height / 2;
@@ -96,7 +115,10 @@ namespace MeshBuilder
                         pos.y = center.y - size.y * 0.5f + bottomHeight + height / 2;
                     }
 
-                    MiddleLayers = new Layer[1];
+                    if (MiddleLayers == null)
+                    {
+                        MiddleLayers = new Layer[1];
+                    }
                     MiddleLayers[0] = new Layer();
                     LayerSettings midSetting = Get(MiddeLayerSetting, ref middleLayerCounter, middleSettingsGetter);
                     if (midSetting != null)
@@ -108,7 +130,42 @@ namespace MeshBuilder
                 }
                 else
                 {
+                    pos.y = center.y - size.y * 0.5f;
+                    pos.y += hasBottom ? bottomHeight : 0;
 
+                    List<LayerSettings> mids = new List<LayerSettings>();
+                    LayerSettings midSetting = Get(MiddeLayerSetting, ref middleLayerCounter, middleSettingsGetter);
+                    float heightLeft = height;
+                    if (heightLeft > midSetting.CornerSize.y)
+                    {
+                        while (heightLeft > midSetting.CornerSize.y)
+                        {
+                            mids.Add(midSetting);
+                            heightLeft -= midSetting.CornerSize.y;
+                            midSetting = Get(MiddeLayerSetting, ref middleLayerCounter, middleSettingsGetter);
+                        }
+                    }
+                    else
+                    {
+                        mids.Add(midSetting);
+                    }
+
+                    if (MiddleLayers == null || MiddleLayers.Length != mids.Count)
+                    {
+                        MiddleLayers = new Layer[mids.Count];
+                    }
+
+                    float remaining = heightLeft / mids.Count;
+                    Vector3 midSize = size;
+                    for(int i = 0; i < mids.Count; ++i)
+                    {
+                        MiddleLayers[i] = new Layer();
+                        mids[i].Reset();
+                        midSize.y = (mids.Count == 1) ? height : mids[i].CornerSize.y + remaining;
+                        pos.y += midSize.y * 0.5f;
+                        MiddleLayers[i].Recalculate(pos, rot, midSize, mids[i]);
+                        pos.y += midSize.y * 0.5f;
+                    }
                 }
             }
             if (hasBottom)
@@ -188,25 +245,82 @@ namespace MeshBuilder
                 float centerTargetSizeX = size.x - scaledCornerSize.x;
                 float centerTargetSizeZ = size.z - scaledCornerSize.z;
 
-                Vector3 centerScale = new Vector3(centerTargetSizeX / layerSettings.CenterSize.x, 1, centerTargetSizeZ / layerSettings.CenterSize.z);
-
                 var parts = new List<Part>();
 
                 // center
-                Matrix4x4 scale = Scale(centerScale);
-                AddPart(layerSettings.GetCenter(), origin, 0, 0, scale, parts);
+                Vector3 centerScale = new Vector3(centerTargetSizeX / layerSettings.CenterSize.x, 1, centerTargetSizeZ / layerSettings.CenterSize.z);
+                Matrix4x4 scale;
 
-                // side
                 float sideX = size.x * 0.5f;
                 float sideZ = size.z * 0.5f;
                 float borderY = size.y / scaledCornerSize.y;
 
-                scale = Scale(layerSettings.CornerScale.x, borderY, centerScale.z);
-                AddPart(layerSettings.GetRightSide(), origin, sideX, 0, scale, parts);
-                AddPart(layerSettings.GetLeftSide(), origin, -sideX, 0, Rotate180 * scale, parts);
-                scale = Scale(layerSettings.CornerScale.z, borderY, centerScale.x);
-                AddPart(layerSettings.GetFrontSide(), origin, 0, sideZ, Rotate270 * scale, parts);
-                AddPart(layerSettings.GetBackSide(), origin, 0, -sideZ, Rotate90 * scale, parts);
+                int countX = Mathf.CeilToInt(centerTargetSizeX / layerSettings.CenterSize.x);
+                int countZ = Mathf.CeilToInt(centerTargetSizeZ / layerSettings.CenterSize.z);
+                float pieceScaleX = centerScale.x / countX;
+                float pieceScaleZ = centerScale.z / countZ;
+                float stepX = centerTargetSizeX / countX;
+                float stepZ = centerTargetSizeZ / countZ;
+                float startX = -sideX + stepX * 0.5f;
+                float startZ = -sideZ + stepZ * 0.5f;
+
+                if (layerSettings.CenterScale == ScaleType.Stretch)
+                {
+                    scale = Scale(centerScale);
+                    AddPart(layerSettings.GetCenter(), origin, 0, 0, scale, parts);
+                }
+                else
+                {
+                    scale = Scale(pieceScaleX, centerScale.y, pieceScaleZ);
+                    for (int z = 0; z < countZ; ++z)
+                    {
+                        for (int x = 0; x < countX; ++x)
+                        {
+                            float xPos = startX + x * stepX;
+                            float zPos = startZ + z * stepZ;
+                            AddPart(layerSettings.GetCenter(), origin, xPos, zPos, scale, parts);
+                        }
+                    }
+                }
+
+                if (layerSettings.EdgeScale == ScaleType.Stretch)
+                {
+                    scale = Scale(layerSettings.CornerScale.x, borderY, centerScale.z);
+                    AddPart(layerSettings.GetRightSide(), origin, sideX, 0, scale, parts);
+                    AddPart(layerSettings.GetLeftSide(), origin, -sideX, 0, Rotate180 * scale, parts);
+                    scale = Scale(layerSettings.CornerScale.z, borderY, centerScale.x);
+                    AddPart(layerSettings.GetFrontSide(), origin, 0, sideZ, Rotate270 * scale, parts);
+                    AddPart(layerSettings.GetBackSide(), origin, 0, -sideZ, Rotate90 * scale, parts);
+                }
+                else
+                {
+                    // the sides are looped separately so the pieces are placed the same way on every side
+                    // for example if you have two pieces then 0101|0101 instead if 0000|1111
+                    // perhaps I could just pass an offset to the Getter function insted?
+                    scale = Scale(layerSettings.CornerScale.x, borderY, pieceScaleZ);
+                    for (int i = 0; i < countZ; ++i)
+                    {
+                        float z = startZ + i * stepZ;
+                        AddPart(layerSettings.GetRightSide(), origin, sideX, z, scale, parts);
+                    }
+                    for (int i = 0; i < countZ; ++i)
+                    {
+                        float z = startZ + i * stepZ;
+                        AddPart(layerSettings.GetLeftSide(), origin, -sideX, z, Rotate180 * scale, parts);
+                    }
+
+                    scale = Scale(layerSettings.CornerScale.z, borderY, pieceScaleX);
+                    for (int i = 0; i < countX; ++i)
+                    {
+                        float x = startX + i * stepX;
+                        AddPart(layerSettings.GetFrontSide(), origin, x, sideZ, Rotate270 * scale, parts);
+                    }
+                    for (int i = 0; i < countX; ++i)
+                    {
+                        float x = startX + i * stepX;
+                        AddPart(layerSettings.GetBackSide(), origin, x, -sideZ, Rotate90 * scale, parts);
+                    }
+                }
 
                 // corner
                 scale = Scale(layerSettings.CornerScale.x, borderY, layerSettings.CornerScale.z);
@@ -251,7 +365,9 @@ namespace MeshBuilder
 
             [SerializeField] private Type settingsType = Type.Simple;
             [SerializeField] private ScaleType edgeScale = ScaleType.Stretch;
+            public ScaleType EdgeScale => edgeScale;
             [SerializeField] private ScaleType centerScale = ScaleType.Stretch;
+            public ScaleType CenterScale => centerScale;
 
             [SerializeField] private Simple simple = null;
             public Simple SimpleSettings => simple;
@@ -279,7 +395,7 @@ namespace MeshBuilder
 
             public abstract class MeshCollection
             {
-                private GetterType meshGetter = GetterType.Sequential;
+                [SerializeField] private GetterType meshGetter = GetterType.Sequential;
                 public GetterType MeshGetter { get => meshGetter; set => meshGetter = value; }
 
                 public abstract void Reset();
