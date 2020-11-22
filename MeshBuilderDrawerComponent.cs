@@ -61,7 +61,7 @@ namespace MeshBuilder
         {
             if (IsVisible)
             {
-                if (camera && Drawers != null)
+                if (camera != null && DoesAllowCamera(camera) && Drawers != null)
                 {
                     foreach (var drawer in Drawers)
                     {
@@ -71,5 +71,9 @@ namespace MeshBuilder
             }
         }
 
+        private static bool DoesAllowCamera(Camera cam)
+        {
+            return cam.cameraType == CameraType.Game || cam.cameraType == CameraType.SceneView;
+        }
     }
 }
