@@ -195,6 +195,47 @@ namespace MeshBuilder
             }
         }
 
+        public Part[] GatherParts()
+        {
+            int count = TopLayer.PartCount + BottomLayer.PartCount;
+            if (MiddleLayers != null && MiddleLayers.Length > 0)
+            {
+                foreach (var layer in MiddleLayers)
+                {
+                    count += layer.PartCount;
+                }
+            }
+
+            if (count == 0)
+            {
+                return null;
+            }
+
+            Part[] parts = new Part[count];
+            int start = 0;
+
+            CopyLayerParts(TopLayer, parts, ref start);
+            if (MiddleLayers != null && MiddleLayers.Length > 0)
+            {
+                foreach (var layer in MiddleLayers)
+                {
+                    CopyLayerParts(layer, parts, ref start);
+                }
+            }
+            CopyLayerParts(BottomLayer, parts, ref start);
+
+            return parts;
+        }
+
+        static private void CopyLayerParts(Layer layer, Part[] buffer, ref int bufferStartIndex)
+        {
+            if (layer.PartCount > 0)
+            {
+                System.Array.Copy(layer.Parts, 0, buffer, bufferStartIndex, layer.Parts.Length);
+                bufferStartIndex += layer.Parts.Length;
+            }
+        }
+
         public class Part
         {
             public Mesh Mesh;
@@ -224,6 +265,8 @@ namespace MeshBuilder
         {
             public Part[] Parts = null;
 
+            public int PartCount => Parts == null ? 0 : Parts.Length;
+
             public void Render(RenderInfo renderInfo, Camera cam, int layer)
             {
                 if (Parts != null)
@@ -242,8 +285,8 @@ namespace MeshBuilder
                 Vector3 scaledCornerSize = layerSettings.CornerSize;
                 scaledCornerSize.Scale(layerSettings.CornerScale);
 
-                float centerTargetSizeX = size.x - scaledCornerSize.x;
-                float centerTargetSizeZ = size.z - scaledCornerSize.z;
+                float centerTargetSizeX = size.x - scaledCornerSize.x * 2;
+                float centerTargetSizeZ = size.z - scaledCornerSize.z * 2;
 
                 var parts = new List<Part>();
 
@@ -261,8 +304,8 @@ namespace MeshBuilder
                 float pieceScaleZ = centerScale.z / countZ;
                 float stepX = centerTargetSizeX / countX;
                 float stepZ = centerTargetSizeZ / countZ;
-                float startX = -sideX + stepX * 0.5f;
-                float startZ = -sideZ + stepZ * 0.5f;
+                float startX = -centerTargetSizeX * 0.5f + pieceScaleX;
+                float startZ = -centerTargetSizeZ * 0.5f + pieceScaleZ;
 
                 if (layerSettings.CenterScale == ScaleType.Stretch)
                 {
