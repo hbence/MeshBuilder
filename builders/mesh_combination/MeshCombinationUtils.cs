@@ -44,7 +44,6 @@ namespace MeshBuilder
 
                     var groupGo = CreateMerged(group.CreateName(), filters, group.Materials, group.Layer, group.ReceiveShadow, group.CastShadow);
                     groupGo.transform.SetParent(root.transform);
-
                 }
             }
 

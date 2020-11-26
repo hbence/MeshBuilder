@@ -113,6 +113,38 @@ namespace MeshBuilder
                     };
                 }
             }
+
+            static public void CreateCombinationData(Mesh[] meshes, Matrix4x4[] transforms,
+                out MeshCache meshCache, Allocator meshCacheAllocator,
+                out NativeArray<DataInstance> dataInstances, Allocator instanceArrayAllocator)
+            {
+                List<Mesh> uniqueMeshes = new List<Mesh>(meshes);
+
+                uniqueMeshes.Sort((Mesh a, Mesh b) => { return a.GetHashCode() - b.GetHashCode(); });
+
+                for (int i = uniqueMeshes.Count - 1; i > 0; --i)
+                {
+                    if (uniqueMeshes[i] == uniqueMeshes[i - 1])
+                    {
+                        uniqueMeshes.RemoveAt(i);
+                    }
+                }
+
+                meshCache = new MeshCache(uniqueMeshes.ToArray(), meshCacheAllocator);
+
+                dataInstances = new NativeArray<DataInstance>(meshes.Length, instanceArrayAllocator, NativeArrayOptions.UninitializedMemory);
+
+                for (int i = 0; i < dataInstances.Length; ++i)
+                {
+                    // TODO: this index could be cached, and wouldn't need to be searched for
+                    int uniqueIndex = uniqueMeshes.FindIndex((Mesh mesh) => (mesh == meshes[i]));
+                    dataInstances[i] = new DataInstance()
+                    {
+                        dataOffsets = meshCache.GetMeshDataOffset(uniqueIndex),
+                        transform = transforms[i]
+                    };
+                }
+            }
         }
     }
 }

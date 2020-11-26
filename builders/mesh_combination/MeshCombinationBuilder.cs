@@ -16,7 +16,8 @@ namespace MeshBuilder
         private enum SourceType
         {
             FromTheme, // themes have mesh caches so that can be used
-            FromMeshes // for other meshes we need to generate a cache
+            FromMeshFilters, // for other meshes we need to generate a cache
+            FromMeshesAndMatrices
         }
 
         private SourceType sourceType;
@@ -26,12 +27,19 @@ namespace MeshBuilder
 
         private MeshFilter[] meshFilters;
 
+        private Mesh[] meshes;
+        private Matrix4x4[] matrices;
+
         private Immediate immediateHandler;
         private Deferred deferredHandler;
 
         public void Init(NativeArray<DataInstance> instanceArray, TileTheme theme)
         {
             sourceType = SourceType.FromTheme;
+
+            meshFilters = null;
+            meshes = null;
+            matrices = null;
 
             deferred = false;
             immediateHandler = new Immediate(instanceArray);
@@ -46,6 +54,10 @@ namespace MeshBuilder
         {
             sourceType = SourceType.FromTheme;
 
+            meshFilters = null;
+            meshes = null;
+            matrices = null;
+
             deferred = true;
             deferredHandler = new Deferred(instanceList);
             immediateHandler = null;
@@ -57,9 +69,30 @@ namespace MeshBuilder
 
         public void Init(MeshFilter[] meshFilters)
         {
-            sourceType = SourceType.FromMeshes;
+            sourceType = SourceType.FromMeshFilters;
 
             this.meshFilters = meshFilters;
+
+            meshes = null;
+            matrices = null;
+
+            deferred = false;
+            deferredHandler = null;
+            immediateHandler = null;
+
+            SourceMeshData = default;
+
+            Inited();
+        }
+
+        public void Init(Mesh[] meshes, Matrix4x4[] matrices)
+        {
+            sourceType = SourceType.FromMeshesAndMatrices;
+
+            meshFilters = null;
+
+            this.meshes = meshes;
+            this.matrices = matrices;
 
             deferred = false;
             deferredHandler = null;
@@ -77,11 +110,23 @@ namespace MeshBuilder
                 return deferred ? deferredHandler.ScheduleDeferredJobs(SourceMeshData, Temps, dependOn) :
                             immediateHandler.ScheduleImmediateJobs(SourceMeshData, Temps, dependOn);
             }
-            else if (sourceType == SourceType.FromMeshes)
+            else if (sourceType == SourceType.FromMeshFilters)
             {
                 MeshCache meshCache;
                 NativeArray<DataInstance> dataInstances;
                 MeshCache.CreateCombinationData(meshFilters, out meshCache, Allocator.TempJob, out dataInstances, Allocator.TempJob);
+
+                Temps.Add(meshCache);
+                Temps.Add(dataInstances);
+
+                immediateHandler = new Immediate(dataInstances);
+                return immediateHandler.ScheduleImmediateJobs(meshCache.MeshData, Temps, dependOn);
+            }
+            else if (sourceType == SourceType.FromMeshesAndMatrices)
+            {
+                MeshCache meshCache;
+                NativeArray<DataInstance> dataInstances;
+                MeshCache.CreateCombinationData(meshes, matrices, out meshCache, Allocator.TempJob, out dataInstances, Allocator.TempJob);
 
                 Temps.Add(meshCache);
                 Temps.Add(dataInstances);
@@ -321,7 +366,7 @@ namespace MeshBuilder
             return new ResultMeshInfo(meshDataFlags, vertexCount, triangleLength, submeshTriangleOffsets);
         }
         
-        // TODO: float4x4 could be replaced to float3x4
+        // TODO: float4x4 could be replaced with float3x4
         public struct DataInstance
         {
             public MeshDataOffsets dataOffsets;

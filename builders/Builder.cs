@@ -21,13 +21,13 @@ namespace MeshBuilder
         {
             if (State == BuilderState.Uninitialized)
             {
-                Debug.LogError("modifier was not inited!");
+                Debug.LogError("builder was not inited!");
                 return dependOn;
             }
 
             if (State == BuilderState.Generating)
             {
-                Debug.LogError("modifier is already generating!");
+                Debug.LogError("builder is already generating!");
                 return dependOn;
             }
 
@@ -49,7 +49,7 @@ namespace MeshBuilder
             }
             else
             {
-                Debug.LogError("modifier can't complete, it wasn't generating");
+                Debug.LogError("builder can't complete, it wasn't generating");
             }
 
             DisposeTemps();

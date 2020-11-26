@@ -143,6 +143,12 @@ namespace MeshBuilder
 
         public void UpdateMesh(Mesh mesh, UpdateMode mode = UpdateMode.DontClear, uint bufferFlags = AllFlags)
         {
+            if (mesh == null)
+            {
+                Debug.LogError("mesh is null!");
+                return;
+            }
+
             if (mode == UpdateMode.Clear)
             {
                 mesh.Clear();
