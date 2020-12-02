@@ -491,16 +491,16 @@ namespace MeshBuilder
             {
                 switch (bufferType)
                 {
-                    case BufferType.Vertex: CombineTransformed(source, destination, 1, instances); break;
-                    case BufferType.Normal: CombineTransformed(source, destination, 0, instances); break;
+                    case BufferType.Vertex: CombineVertices(source, destination, instances); break;
+                    case BufferType.Normal: CombineNormals(source, destination, instances); break;
                     default: Debug.LogError("not handled:" + bufferType); break;
                 }
             }
 
-            static private void CombineTransformed(NativeArray<float3> source, NativeArray<float3> destination, float w, NativeArray<DataInstance> instances)
+            static private void CombineVertices(NativeArray<float3> source, NativeArray<float3> destination, NativeArray<DataInstance> instances)
             {
                 int nextVertex = 0;
-                float4 vertex = new float4(0, 0, 0, w);
+                float4 vertex = new float4(0, 0, 0, 1);
                 foreach (var instance in instances)
                 {
                     var vOffsets = instance.dataOffsets.vertices;
@@ -511,6 +511,31 @@ namespace MeshBuilder
                         ++nextVertex;
                     }
                 }
+            }
+
+            static private void CombineNormals(NativeArray<float3> source, NativeArray<float3> destination, NativeArray<DataInstance> instances)
+            {
+                int nextVertex = 0;
+                foreach (var instance in instances)
+                {
+                    float3x3 m = To3x3(instance.transform);
+                    m = math.inverse(m);
+                    m = math.transpose(m);
+
+                    var vOffsets = instance.dataOffsets.vertices;
+                    for (int i = vOffsets.Start; i < vOffsets.End; ++i)
+                    {
+                        destination[nextVertex] = math.mul(m, source[i]);
+                        ++nextVertex;
+                    }
+                }
+            }
+
+            static private float3x3 To3x3(float4x4 m)
+            {
+                return new float3x3(m[0][0], m[1][0], m[2][0],
+                                    m[0][1], m[1][1], m[2][1],
+                                    m[0][2], m[1][2], m[2][2]);
             }
 
             static public JobHandle Schedule(BufferType type, NativeArray<float3> source, NativeArray<float3> destination, NativeArray<DataInstance> instanceArray, JobHandle dependOn)
@@ -551,8 +576,8 @@ namespace MeshBuilder
                     destination.ResizeUninitialized(vertexCount);
                     switch (bufferType)
                     {
-                        case BufferType.Vertex: CombineTransformed(source, destination, 1, instances); break;
-                        case BufferType.Normal: CombineTransformed(source, destination, 0, instances); break;
+                        case BufferType.Vertex: CombineVertices(source, destination, instances); break;
+                        case BufferType.Normal: CombineNormals(source, destination, instances); break;
                         default: Debug.LogError("not handled:" + bufferType); break;
                     }
                 }
@@ -575,7 +600,7 @@ namespace MeshBuilder
             static private void CombineTriangles<T>(NativeArray<int> source, NativeArray<int> destination, NativeArray<DataInstance> instances, T submeshOffsets) where T : IEnumerable<Offset>
             {
                 var destSubmeshStart = new List<int>();
-                foreach(var elem in submeshOffsets)
+                foreach (var elem in submeshOffsets)
                 {
                     destSubmeshStart.Add(elem.Start);
                 }
@@ -583,40 +608,54 @@ namespace MeshBuilder
                 int offset = 0;
                 foreach (var instance in instances)
                 {
-                    var triOffset = instance.dataOffsets.triangles;
+                    bool flipped = math.determinant(instance.transform) < 0;
 
-                    int submeshCount = instance.dataOffsets.SubmeshCount;
-                    for (int submesh = 0; submesh < submeshCount; ++submesh)
+                    if (flipped)
                     {
-                        int srcOffset = instance.dataOffsets.SubmeshStart(submesh);
-                        int srcLength = instance.dataOffsets.SubmeshLength(submesh);
-                        int destOffset = destSubmeshStart[submesh];
-                        // some pieces can be mirrored, in those cases the triangles will have to be flipped 
-                        // or they will show backface and will be culled
-                        // TODO: this check seems to work with the limited amount of transformation the tile mesher does
-                        // but I should probably figure out a general version
-                        float xSign = math.sign(instance.transform.c0.x);
-                        float zSign = math.sign(instance.transform.c2.z);
-                        bool forward = (instance.transform.c1.y > 0) ? xSign == zSign : xSign != zSign;
-                        if (forward)
-                        {
-                            for (int i = 0; i < srcLength; ++i)
-                            {
-                                destination[destOffset + i] = source[srcOffset + i] + offset;
-                            }
-                        }
-                        else
-                        {
-                            for (int i = 0; i < srcLength; ++i)
-                            {
-                                destination[destOffset + i] = source[srcOffset + srcLength - 1 - i] + offset;
-                            }
-                        }
-
-                        destSubmeshStart[submesh] += srcLength;
+                        CopyFlippedTriangles(instance, source, destination, offset, destSubmeshStart);
+                    }
+                    else
+                    {
+                        CopyTriangles(instance, source, destination, offset, destSubmeshStart);
                     }
 
                     offset += instance.dataOffsets.vertices.length;
+                }
+            }
+
+            static private void CopyTriangles(DataInstance instance, NativeArray<int> source, NativeArray<int> destination, int destinationOffset, List<int> destinationSubmeshStart)
+            {
+                int submeshCount = instance.dataOffsets.SubmeshCount;
+                for (int submesh = 0; submesh < submeshCount; ++submesh)
+                {
+                    int srcOffset = instance.dataOffsets.SubmeshStart(submesh);
+                    int srcLength = instance.dataOffsets.SubmeshLength(submesh);
+                    int destOffset = destinationSubmeshStart[submesh];
+
+                    for (int i = 0; i < srcLength; ++i)
+                    {
+                        destination[destOffset + i] = source[srcOffset + i] + destinationOffset;
+                    }
+
+                    destinationSubmeshStart[submesh] += srcLength;
+                }
+            }
+
+            static private void CopyFlippedTriangles(DataInstance instance, NativeArray<int> source, NativeArray<int> destination, int destinationOffset, List<int> destinationSubmeshStart)
+            {
+                int submeshCount = instance.dataOffsets.SubmeshCount;
+                for (int submesh = 0; submesh < submeshCount; ++submesh)
+                {
+                    int srcOffset = instance.dataOffsets.SubmeshStart(submesh);
+                    int srcLength = instance.dataOffsets.SubmeshLength(submesh);
+                    int destOffset = destinationSubmeshStart[submesh];
+
+                    for (int i = 0; i < srcLength; ++i)
+                    {
+                        destination[destOffset + i] = source[srcOffset + srcLength - 1 - i] + destinationOffset;
+                    }
+
+                    destinationSubmeshStart[submesh] += srcLength;
                 }
             }
 
