@@ -182,7 +182,7 @@ namespace MeshBuilder
                     }
                 }
             }
-
+ 
             private static float SQ(float x) => x * x;
         }
 
@@ -202,6 +202,7 @@ namespace MeshBuilder
             public int triIndexLength;
         }
 
+        [BurstCompile]
         private struct GenerateCorners : IJob
         {
             private const bool Inner = false;
@@ -263,6 +264,7 @@ namespace MeshBuilder
             }
         }
 
+        [BurstCompile]
         private struct CalculateVertices : IJobParallelFor
         {
             public int cornerColNum;
@@ -282,6 +284,7 @@ namespace MeshBuilder
             }
         }
 
+        [BurstCompile]
         private struct CalculateTriangles : IJobParallelFor
         {
             public int cornerColNum;
