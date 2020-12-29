@@ -171,18 +171,62 @@ namespace MeshBuilder
 
             public void ApplyCircle(float x, float y, float rad, float cellSize)
             {
-                for (int row = 0; row < RowNum; ++row)
+                Apply(x - rad, y - rad, x + rad, y + rad, cellSize, (float cx, float cy) => CircleDist(cx, cy, x, y, rad, cellSize));
+            }
+
+            public void RemoveCircle(float x, float y, float rad, float cellSize)
+            {
+                Remove(x - rad, y - rad, x + rad, y + rad, cellSize, (float cx, float cy) => CircleDist(cx, cy, x, y, rad, cellSize));
+            }
+
+            public void Apply(float left, float bottom, float right, float top, float cellSize, Func<float, float, float> CalcValue)
+            {
+                RangeInt cols, rows;
+                CalcAABBRanges(left, bottom, right, top, cellSize, out cols, out rows);
+                for (int row = rows.start; row < rows.end; ++row)
                 {
                     float cy = row * cellSize;
-                    for (int col = 0; col < ColNum; ++col)
+                    for (int col = cols.start; col < cols.end; ++col)
                     {
                         float cx = col * cellSize;
-                        float dist = (rad - Mathf.Sqrt(SQ(cx - x) + SQ(cy - y))) / cellSize;
+                        float dist = CalcValue(cx, cy);
                         distances[col, 0, row] = Mathf.Max(dist, distances[col, 0, row]);
                     }
                 }
             }
- 
+
+            public void Remove(float left, float bottom, float right, float top, float cellSize, Func<float, float, float> CalcValue)
+            {
+                RangeInt cols, rows;
+                CalcAABBRanges(left, bottom, right, top, cellSize, out cols, out rows);
+                for (int row = rows.start; row < rows.end; ++row)
+                {
+                    float cy = row * cellSize;
+                    for (int col = cols.start; col < cols.end; ++col)
+                    {
+                        float cx = col * cellSize;
+                        float dist = CalcValue(cx, cy);
+                        distances[col, 0, row] -= Mathf.Max(dist, 0);
+                    }
+                }
+            }
+
+            private static float CircleDist(float cx, float cy, float x, float y, float rad, float cellSize) 
+                => (rad - Mathf.Sqrt(SQ(cx - x) + SQ(cy - y))) / cellSize;
+
+            private const int AABBBoundary = 2;
+
+            private void CalcAABBRanges(float left, float bottom, float right, float top, float cellSize, out RangeInt cols, out RangeInt rows)
+            {
+                int xStart = Mathf.Clamp(Mathf.FloorToInt(left / cellSize) - AABBBoundary, 0, ColNum - 1);
+                int xEnd = Mathf.Clamp(Mathf.FloorToInt(right / cellSize) + AABBBoundary, 0, ColNum - 1);
+                cols = new RangeInt(xStart, xEnd - xStart);
+
+                int yStart = Mathf.Clamp(Mathf.FloorToInt(bottom / cellSize) - AABBBoundary, 0, RowNum - 1);
+                int yEnd = Mathf.Clamp(Mathf.FloorToInt(top / cellSize) + AABBBoundary, 0, RowNum - 1);
+                rows = new RangeInt(yStart, yEnd - yStart);
+            }
+
             private static float SQ(float x) => x * x;
         }
 
