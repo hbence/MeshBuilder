@@ -1,20 +1,21 @@
-﻿using UnityEngine;
+﻿using System;
+using UnityEngine;
 using Unity.Jobs;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Mathematics;
 
 using static MeshBuilder.Utils;
-using System;
-using JetBrains.Annotations;
-using UnityEditor.Tilemaps;
-using UnityEngine.Experimental.GlobalIllumination;
+using MeshBuffer = MeshBuilder.MeshData.Buffer;
 
 namespace MeshBuilder
 {
     public class MarchingSquaresMesher : Builder
     {
-        private const uint DefMeshDataBufferFlags = (uint)MeshData.Buffer.Vertex | (uint)MeshData.Buffer.Triangle;
+        private const uint DefMeshDataBufferFlags = (uint)MeshBuffer.Vertex | (uint)MeshBuffer.Triangle;
+
+        private const int CalculateVertexBatchNum = 128;
+        private const int MeshTriangleBatchNum = 128;
 
         public float CellSize { get; private set; }
         public Data DistanceData { get; private set; }
@@ -49,33 +50,43 @@ namespace MeshBuilder
 
             CellMesher cellMesher = new CellMesher();
 
-            var cornerJob = new GenerateCornersJob
+            var cornerJob = new GenerateCorners
             {
                 distanceColNum = ColNum,
                 distanceRowNum = RowNum,
-                cellSize = CellSize,
                 
                 cellMesher = cellMesher,
 
                 distances = DistanceData.RawData,
                 corners = corners,
-                vertices = vertices
+
+                vertices = vertices,
+                indices = triangles
             };
             lastHandle = cornerJob.Schedule(lastHandle);
 
-            var generateMesh = new GenerateMesh
+            var vertexJob = new CalculateVertices
             {
                 cornerColNum = ColNum,
-                cornerRowNum = RowNum,
-                cornerInfos = corners,
-
+                cellSize = CellSize,
                 cellMesher = cellMesher,
 
-                triangles = triangles
+                cornerInfos = corners,
+                vertices = vertices.AsDeferredJobArray()
             };
-            lastHandle = generateMesh.Schedule(lastHandle);
+            var vertexHandle = vertexJob.Schedule(corners.Length, CalculateVertexBatchNum, lastHandle);
+            
+            var trianglesJob = new CalculateTriangles
+            {
+                cornerColNum = ColNum,
+                cellMesher = cellMesher,
+                cornerInfos = corners,
+                triangles = triangles.AsDeferredJobArray()
+            };
+            int cellCount = (ColNum - 1) * (RowNum - 1);
+            var trianglesHandle = trianglesJob.Schedule(cellCount, MeshTriangleBatchNum, lastHandle);
 
-            return lastHandle;
+            return JobHandle.CombineDependencies(vertexHandle, trianglesHandle);
         }
 
         protected override void EndGeneration(Mesh mesh)
@@ -99,8 +110,6 @@ namespace MeshBuilder
 
         public class Data : IDisposable
         {
-            private const float MaxDist = 100;
-
             private Volume<float> distances;
             public NativeArray<float> RawData => distances.Data;
 
@@ -168,12 +177,6 @@ namespace MeshBuilder
                     for (int col = 0; col < ColNum; ++col)
                     {
                         float cx = col * cellSize;
-                        /*
-                        float centerDist = Mathf.Max(SQ(cx - x) + SQ(cy - y), Mathf.Epsilon);
-                        float dist = SQ(rad) / centerDist;
-                        dist = Mathf.Min(dist, MaxDist);
-                        distances[col, 0, row] = Mathf.Max(dist, distances[col, 0, row]);
-                        */
                         float dist = (rad - Mathf.Sqrt(SQ(cx - x) + SQ(cy - y))) / cellSize;
                         distances[col, 0, row] = Mathf.Max(dist, distances[col, 0, row]);
                     }
@@ -186,250 +189,343 @@ namespace MeshBuilder
         private struct CornerInfo
         {
             public byte config;
-            public float3 position;
+
+            public float cornerDist;
+            public float rightDist;
+            public float topDist;
+
             public int vertexIndex;
-            public float3 bottomEdge;
             public int bottomEdgeIndex;
-            public float3 leftEdge;
             public int leftEdgeIndex;
+
+            public int triIndexStart;
+            public int triIndexLength;
         }
 
-        private struct GenerateCornersJob : IJob
+        private struct GenerateCorners : IJob
         {
+            private const bool Inner = false;
+            private const bool OnBorder = true;
+
             public int distanceColNum;
             public int distanceRowNum;
+            
+            public CellMesher cellMesher;
+
+            [ReadOnly] public NativeArray<float> distances;
+            
+            [WriteOnly] public NativeArray<CornerInfo> corners;
+            
+            public NativeList<float3> vertices;
+            public NativeList<int> indices;
+
+            public void Execute()
+            {
+                int nextVertex = 0;
+                int nextTriangleIndex = 0;
+                // the border cases are separated to avoid boundary checking
+                // not sure if it's worth it...
+                // inner
+                for (int y = 0; y < distanceRowNum - 1; ++y)
+                {
+                    for (int x = 0; x < distanceColNum - 1; ++x)
+                    {
+                        int index = y * distanceColNum + x;
+                        float corner = distances[index];
+                        float right = distances[index + 1];
+                        float topRight = distances[index + 1 + distanceColNum];
+                        float top = distances[index + distanceColNum];
+                        corners[index] = cellMesher.GenerateInfo(corner, right, topRight, top, ref nextVertex, ref nextTriangleIndex, Inner);
+                    }
+                }
+                // top border
+                for (int x = 0, y = distanceRowNum - 1; x < distanceColNum - 1; ++x)
+                {
+                    int index = y * distanceColNum + x;
+                    float corner = distances[index];
+                    float right = distances[index + 1];
+                    corners[index] = cellMesher.GenerateInfo(corner, right, -1, -1, ref nextVertex, ref nextTriangleIndex, OnBorder);
+                }
+                // right border
+                for (int x = distanceColNum - 1, y = 0; y < distanceRowNum - 1; ++y)
+                {
+                    int index = y * distanceColNum + x;
+                    float corner = distances[index];
+                    float top = distances[index + distanceColNum];
+                    corners[index] = cellMesher.GenerateInfo(corner, -1, -1, top, ref nextVertex, ref nextTriangleIndex, OnBorder);
+                }
+                // top right corner
+                int last = distanceColNum * distanceRowNum - 1;
+                corners[last] = cellMesher.GenerateInfo(distances[last], -1, -1, -1, ref nextVertex, ref nextTriangleIndex, OnBorder);
+                
+                vertices.ResizeUninitialized(nextVertex);
+                indices.ResizeUninitialized(nextTriangleIndex);
+            }
+        }
+
+        private struct CalculateVertices : IJobParallelFor
+        {
+            public int cornerColNum;
             public float cellSize;
 
             public CellMesher cellMesher;
 
-            [ReadOnly] public NativeArray<float> distances;
-            [WriteOnly] public NativeArray<CornerInfo> corners;
-            public NativeList<float3> vertices;
+            [ReadOnly] public NativeArray<CornerInfo> cornerInfos;
+            [NativeDisableParallelForRestriction] [WriteOnly] public NativeArray<float3> vertices;
 
-            public void Execute()
+            public void Execute(int index)
             {
-                for (int y = 0; y < distanceRowNum; ++y)
-                {
-                    for (int x = 0; x < distanceColNum; ++x)
-                    {
-                        float corner = GetDistance(x, y);
-                        float right = GetDistance(x + 1, y);
-                        float topRight = GetDistance(x + 1, y + 1);
-                        float top = GetDistance(x, y + 1);
-                        corners[y * distanceColNum + x] = cellMesher.GenerateInfo(
-                            corner, right, topRight, top,
-                            x, y, cellSize,
-                            vertices
-                        );
-                    }
-                }
-            }
-
-            private float GetDistance(int x, int y)
-            {
-                return (x < distanceColNum && y < distanceRowNum) ? distances[y * distanceColNum + x] : 0;
+                CornerInfo info = cornerInfos[index];
+                int x = index % cornerColNum;
+                int y = index / cornerColNum;
+                cellMesher.CalculateVertices(x, y, cellSize, info, vertices);
             }
         }
 
-        private struct GenerateMesh : IJob
+        private struct CalculateTriangles : IJobParallelFor
         {
             public int cornerColNum;
-            public int cornerRowNum;
-            [ReadOnly] public NativeArray<CornerInfo> cornerInfos;
-
+            
             public CellMesher cellMesher;
 
-            [WriteOnly] public NativeList<int> triangles;
+            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<CornerInfo> cornerInfos;
+            [NativeDisableParallelForRestriction] [WriteOnly] public NativeArray<int> triangles;
 
-            public void Execute()
+            public void Execute(int index)
             {
                 int cellColNum = cornerColNum - 1;
-                int cellRowNum = cornerRowNum - 1;
+                int x = index % cellColNum;
+                int y = index / cellColNum;
+                index = y * cornerColNum + x;
 
-                for (int row = 0; row < cellRowNum; ++row)
-                {
-                    for (int col = 0; col < cellColNum; ++col)
-                    {
-                        CornerInfo bl = GetCorner(col, row);
-                        CornerInfo br = GetCorner(col + 1, row);
-                        CornerInfo tr = GetCorner(col + 1, row + 1);
-                        CornerInfo tl = GetCorner(col, row + 1);
-                        cellMesher.BuildCell(bl, br, tr, tl, triangles);
-                    }
-                }
+                CornerInfo bl = cornerInfos[index];
+                CornerInfo br = cornerInfos[index + 1];
+                CornerInfo tr = cornerInfos[index + 1 + cornerColNum];
+                CornerInfo tl = cornerInfos[index + cornerColNum];
+                cellMesher.CalculateIndices(bl, br, tr, tl, triangles);
             }
-
-            private CornerInfo GetCorner(int x, int y) => cornerInfos[y * cornerColNum + x];
         }
-
-        private const float DistanceLimit = 0f;
 
         private struct CellMesher
         {
             public CornerInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
-                                    int x, int y, float cellSize,
-                                    NativeList<float3> vertices)
+                                            ref int nextVertices, ref int nextTriIndex, bool onBorder)
             {
                 CornerInfo info = new CornerInfo
                 {
                     config = CalcConfiguration(cornerDistance, rightDistance, topRightDistance, topDistance),
+
+                    cornerDist = cornerDistance,
+                    rightDist = rightDistance,
+                    topDist = topDistance,
+
                     vertexIndex = -1,
                     leftEdgeIndex = -1,
                     bottomEdgeIndex = -1,
-                    position = new float3(x * cellSize, 0, y * cellSize),
-                    leftEdge = new float3(x * cellSize, 0, y * cellSize + cellSize * 0.5f),
-                    bottomEdge = new float3(x * cellSize + cellSize * 0.5f, 0, y * cellSize)
+
+                    triIndexStart = nextTriIndex,
+                    triIndexLength = 0
                 };
+
+                if (!onBorder)
+                {
+                    info.triIndexLength = CalcTriIndexCount(info.config);
+                    nextTriIndex += info.triIndexLength;
+                }
 
                 bool hasBL = HasMask(info.config, MaskBL);
                 if (hasBL)
                 {
-                    vertices.Add(info.position);
-                    info.vertexIndex = vertices.Length - 1;
+                    info.vertexIndex = nextVertices;
+                    ++nextVertices;
                 }
 
                 if (hasBL != HasMask(info.config, MaskTL))
                 {
-                    info.leftEdge = info.position + new float3(0, 0, cellSize * LerpT(cornerDistance, topDistance) );
-
-                    vertices.Add(info.leftEdge);
-                    info.leftEdgeIndex = vertices.Length - 1;
+                    info.leftEdgeIndex = nextVertices;
+                    ++nextVertices;
                 }
 
                 if (hasBL != HasMask(info.config, MaskBR))
                 {
-                    info.bottomEdge = info.position + new float3(cellSize * LerpT(cornerDistance, rightDistance), 0, 0);
-
-                    vertices.Add(info.bottomEdge);
-                    info.bottomEdgeIndex = vertices.Length - 1;
+                    info.bottomEdgeIndex = nextVertices;
+                    ++nextVertices;
                 }
-
+                
                 return info;
             }
 
-            static private float LerpT(float a, float b)
+            public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, NativeArray<float3> vertices)
             {
-                return Mathf.Abs(a) / (Mathf.Abs(a) + Mathf.Abs(b));
+                float3 pos = new float3(x * cellSize, 0, y * cellSize);
+                if (info.vertexIndex >= 0)
+                {
+                    vertices[info.vertexIndex] = pos;
+                }
+                if (info.leftEdgeIndex >= 0)
+                {
+                    vertices[info.leftEdgeIndex] = pos + new float3(0, 0, cellSize * LerpT(info.cornerDist, info.topDist));
+                }
+                if (info.bottomEdgeIndex >= 0)
+                {
+                    vertices[info.bottomEdgeIndex] = pos + new float3(cellSize * LerpT(info.cornerDist, info.rightDist), 0, 0);
+                }
             }
 
-            public void BuildCell(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, 
-                                  NativeList<int> triangles)
+            static private float LerpT(float a, float b) => Mathf.Abs(a) / (Mathf.Abs(a) + Mathf.Abs(b));
+
+            private static int CalcTriIndexCount(byte config)
             {
+                switch (config)
+                {
+                    // full
+                    case MaskBL | MaskBR | MaskTR | MaskTL: return 2 * 3;
+                    // corners
+                    case MaskBL: return 1 * 3;
+                    case MaskBR: return 1 * 3;
+                    case MaskTR: return 1 * 3;
+                    case MaskTL: return 1 * 3;
+                    // halves
+                    case MaskBL | MaskBR: return 2 * 3;
+                    case MaskTL | MaskTR: return 2 * 3;
+                    case MaskBL | MaskTL: return 2 * 3;
+                    case MaskBR | MaskTR: return 2 * 3;
+                    // diagonals
+                    case MaskBL | MaskTR: return 4 * 3;
+                    case MaskTL | MaskBR: return 4 * 3;
+                    // three quarters
+                    case MaskBL | MaskTR | MaskBR: return 3 * 3;
+                    case MaskBL | MaskTL | MaskBR: return 3 * 3;
+                    case MaskBL | MaskTL | MaskTR: return 3 * 3;
+                    case MaskTL | MaskTR | MaskBR: return 3 * 3;
+                }
+                return 0;
+            }
+
+            public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, 
+                                  NativeArray<int> triangles)
+            {
+                int triangleIndex = bl.triIndexStart;
                 switch (bl.config)
                 {
                     // full
                     case MaskBL | MaskBR | MaskTR | MaskTL:
                         {
-                            AddTri(triangles, Vertex(bl), Vertex(tl), Vertex(tr));
-                            AddTri(triangles, Vertex(bl), Vertex(tr), Vertex(br));
+                            AddTri(triangles, ref triangleIndex, Vertex(bl), Vertex(tl), Vertex(tr));
+                            AddTri(triangles, ref triangleIndex, Vertex(bl), Vertex(tr), Vertex(br));
                             break;
                         }
                     // corners
                     case MaskBL:
                         {
-                            AddTri(triangles, Vertex(bl), LeftEdge(bl), BottomEdge(bl));
+                            AddTri(triangles, ref triangleIndex, Vertex(bl), LeftEdge(bl), BottomEdge(bl));
                             break;
                         }
                     case MaskBR:
                         {
-                            AddTri(triangles, BottomEdge(bl), LeftEdge(br), Vertex(br));
+                            AddTri(triangles, ref triangleIndex, BottomEdge(bl), LeftEdge(br), Vertex(br));
                             break;
                         }
                     case MaskTR:
                         {
-                            AddTri(triangles, BottomEdge(tl), Vertex(tr), LeftEdge(br));
+                            AddTri(triangles, ref triangleIndex, BottomEdge(tl), Vertex(tr), LeftEdge(br));
                             break;
                         }
                     case MaskTL:
                         {
-                            AddTri(triangles, Vertex(tl), BottomEdge(tl), LeftEdge(bl));
+                            AddTri(triangles, ref triangleIndex, Vertex(tl), BottomEdge(tl), LeftEdge(bl));
                             break;
                         }
                     // halves
                     case MaskBL | MaskBR:
                         {
-                            AddTri(triangles, Vertex(bl), LeftEdge(bl), Vertex(br));
-                            AddTri(triangles, Vertex(br), LeftEdge(bl), LeftEdge(br));
+                            AddTri(triangles, ref triangleIndex, Vertex(bl), LeftEdge(bl), Vertex(br));
+                            AddTri(triangles, ref triangleIndex, Vertex(br), LeftEdge(bl), LeftEdge(br));
                             break;
                         }
                     case MaskTL | MaskTR:
                         {
-                            AddTri(triangles, Vertex(tl), Vertex(tr), LeftEdge(bl));
-                            AddTri(triangles, LeftEdge(bl), Vertex(tr), LeftEdge(br));
+                            AddTri(triangles, ref triangleIndex, Vertex(tl), Vertex(tr), LeftEdge(bl));
+                            AddTri(triangles, ref triangleIndex, LeftEdge(bl), Vertex(tr), LeftEdge(br));
                             break;
                         }
                     case MaskBL | MaskTL:
                         {
-                            AddTri(triangles, Vertex(bl), BottomEdge(tl), BottomEdge(bl));
-                            AddTri(triangles, Vertex(bl), Vertex(tl), BottomEdge(tl));
+                            AddTri(triangles, ref triangleIndex, Vertex(bl), BottomEdge(tl), BottomEdge(bl));
+                            AddTri(triangles, ref triangleIndex, Vertex(bl), Vertex(tl), BottomEdge(tl));
                             break;
                         }
                     case MaskBR | MaskTR:
                         {
-                            AddTri(triangles, BottomEdge(bl), Vertex(tr), Vertex(br));
-                            AddTri(triangles, BottomEdge(bl), BottomEdge(tl), Vertex(tr));
+                            AddTri(triangles, ref triangleIndex, BottomEdge(bl), Vertex(tr), Vertex(br));
+                            AddTri(triangles, ref triangleIndex, BottomEdge(bl), BottomEdge(tl), Vertex(tr));
                             break;
                         }
                     // diagonals
                     case MaskBL | MaskTR:
                         {
-                            AddTri(triangles, BottomEdge(bl), Vertex(bl), LeftEdge(bl));
-                            AddTri(triangles, BottomEdge(bl), LeftEdge(bl), LeftEdge(br));
-                            AddTri(triangles, LeftEdge(br), LeftEdge(bl), BottomEdge(tl));
-                            AddTri(triangles, BottomEdge(tl), Vertex(tr), LeftEdge(br));
+                            AddTri(triangles, ref triangleIndex, BottomEdge(bl), Vertex(bl), LeftEdge(bl));
+                            AddTri(triangles, ref triangleIndex, BottomEdge(bl), LeftEdge(bl), LeftEdge(br));
+                            AddTri(triangles, ref triangleIndex, LeftEdge(br), LeftEdge(bl), BottomEdge(tl));
+                            AddTri(triangles, ref triangleIndex, BottomEdge(tl), Vertex(tr), LeftEdge(br));
                             break;
                         }
                     case MaskTL | MaskBR:
                         {
-                            AddTri(triangles, LeftEdge(bl), Vertex(tl), BottomEdge(tl));
-                            AddTri(triangles, LeftEdge(bl), BottomEdge(tl), BottomEdge(bl));
-                            AddTri(triangles, BottomEdge(bl), BottomEdge(tl), LeftEdge(br));
-                            AddTri(triangles, BottomEdge(bl), LeftEdge(br), Vertex(br));
+                            AddTri(triangles, ref triangleIndex, LeftEdge(bl), Vertex(tl), BottomEdge(tl));
+                            AddTri(triangles, ref triangleIndex, LeftEdge(bl), BottomEdge(tl), BottomEdge(bl));
+                            AddTri(triangles, ref triangleIndex, BottomEdge(bl), BottomEdge(tl), LeftEdge(br));
+                            AddTri(triangles, ref triangleIndex, BottomEdge(bl), LeftEdge(br), Vertex(br));
                             break;
                         }
                     // three quarters
                     case MaskBL | MaskTR | MaskBR:
                         {
-                            AddTri(triangles, Vertex(br), Vertex(bl), LeftEdge(bl));
-                            AddTri(triangles, Vertex(br), LeftEdge(bl), BottomEdge(tl));
-                            AddTri(triangles, Vertex(br), BottomEdge(tl), Vertex(tr));
+                            AddTri(triangles, ref triangleIndex, Vertex(br), Vertex(bl), LeftEdge(bl));
+                            AddTri(triangles, ref triangleIndex, Vertex(br), LeftEdge(bl), BottomEdge(tl));
+                            AddTri(triangles, ref triangleIndex, Vertex(br), BottomEdge(tl), Vertex(tr));
                             break;
                         }
                     case MaskBL | MaskTL | MaskBR:
                         {
-                            AddTri(triangles, Vertex(bl), Vertex(tl), BottomEdge(tl));
-                            AddTri(triangles, Vertex(bl), BottomEdge(tl), LeftEdge(br));
-                            AddTri(triangles, Vertex(bl), LeftEdge(br), Vertex(br));
+                            AddTri(triangles, ref triangleIndex, Vertex(bl), Vertex(tl), BottomEdge(tl));
+                            AddTri(triangles, ref triangleIndex, Vertex(bl), BottomEdge(tl), LeftEdge(br));
+                            AddTri(triangles, ref triangleIndex, Vertex(bl), LeftEdge(br), Vertex(br));
                             break;
                         }
                     case MaskBL | MaskTL | MaskTR:
                         {
-                            AddTri(triangles, Vertex(tl), BottomEdge(bl), Vertex(bl));
-                            AddTri(triangles, Vertex(tl), LeftEdge(br), BottomEdge(bl));
-                            AddTri(triangles, Vertex(tl), Vertex(tr), LeftEdge(br));
+                            AddTri(triangles, ref triangleIndex, Vertex(tl), BottomEdge(bl), Vertex(bl));
+                            AddTri(triangles, ref triangleIndex, Vertex(tl), LeftEdge(br), BottomEdge(bl));
+                            AddTri(triangles, ref triangleIndex, Vertex(tl), Vertex(tr), LeftEdge(br));
                             break;
                         }
                     case MaskTL | MaskTR | MaskBR:
                         {
-                            AddTri(triangles, Vertex(tr), LeftEdge(bl), Vertex(tl));
-                            AddTri(triangles, Vertex(tr), BottomEdge(bl), LeftEdge(bl));
-                            AddTri(triangles, Vertex(tr), Vertex(br), BottomEdge(bl));
+                            AddTri(triangles, ref triangleIndex, Vertex(tr), LeftEdge(bl), Vertex(tl));
+                            AddTri(triangles, ref triangleIndex, Vertex(tr), BottomEdge(bl), LeftEdge(bl));
+                            AddTri(triangles, ref triangleIndex, Vertex(tr), Vertex(br), BottomEdge(bl));
                             break;
                         }
                 }
             }
 
-            private static void AddTri(NativeList<int> triangles, int a, int b, int c)
+            private static void AddTri(NativeArray<int> triangles, ref int nextIndex, int a, int b, int c)
             {
-                triangles.Add(a);
-                triangles.Add(b);
-                triangles.Add(c);
+                triangles[nextIndex] = a;
+                ++nextIndex;
+                triangles[nextIndex] = b;
+                ++nextIndex;
+                triangles[nextIndex] = c;
+                ++nextIndex;
             }
 
             private static int Vertex(CornerInfo info) => info.vertexIndex;
             private static int LeftEdge(CornerInfo info) => info.leftEdgeIndex;
             private static int BottomEdge(CornerInfo info) => info.bottomEdgeIndex;
         }
+
+        private const float DistanceLimit = 0f;
 
         private const byte MaskZero = 0;
         private const byte MaskBL = 1 << 0;
