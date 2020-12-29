@@ -8,17 +8,20 @@ using static MeshBuilder.Utils;
 using System;
 using JetBrains.Annotations;
 using UnityEditor.Tilemaps;
+using UnityEngine.Experimental.GlobalIllumination;
 
 namespace MeshBuilder
 {
     public class MarchingSquaresMesher : Builder
     {
-        private const uint DefMeshDataBufferFlags = (uint)MeshData.Buffer.Vertex | (uint)MeshData.Buffer.Triangle | (uint)MeshData.Buffer.UV;
+        private const uint DefMeshDataBufferFlags = (uint)MeshData.Buffer.Vertex | (uint)MeshData.Buffer.Triangle;
 
         public float CellSize { get; private set; }
         public Data DistanceData { get; private set; }
         public int ColNum => DistanceData.ColNum;
         public int RowNum => DistanceData.RowNum;
+
+        public uint MeshDataBufferFlags { get; set; } = DefMeshDataBufferFlags;
 
         private NativeList<float3> vertices;
         private NativeList<int> triangles;
@@ -77,7 +80,7 @@ namespace MeshBuilder
 
         protected override void EndGeneration(Mesh mesh)
         {
-            using (MeshData data = new MeshData(vertices.Length, triangles.Length, Allocator.Temp, (uint)MeshData.Buffer.Vertex | (uint)MeshData.Buffer.Triangle))
+            using (MeshData data = new MeshData(vertices.Length, triangles.Length, Allocator.Temp, MeshDataBufferFlags))
             {
                 NativeArray<float3>.Copy(vertices, data.Vertices);
                 NativeArray<int>.Copy(triangles, data.Triangles);
@@ -121,7 +124,12 @@ namespace MeshBuilder
                     else
                     {
                         Debug.LogError("distance data length mismatch!");
+                        Clear();
                     }
+                }
+                else
+                {
+                    Clear();
                 }
             }
 
@@ -148,7 +156,7 @@ namespace MeshBuilder
             {
                 for (int i = 0; i < distances.Length; ++i)
                 {
-                    distances[i] = 0;
+                    distances[i] = -1;
                 }
             }
 
@@ -160,9 +168,13 @@ namespace MeshBuilder
                     for (int col = 0; col < ColNum; ++col)
                     {
                         float cx = col * cellSize;
+                        /*
                         float centerDist = Mathf.Max(SQ(cx - x) + SQ(cy - y), Mathf.Epsilon);
                         float dist = SQ(rad) / centerDist;
                         dist = Mathf.Min(dist, MaxDist);
+                        distances[col, 0, row] = Mathf.Max(dist, distances[col, 0, row]);
+                        */
+                        float dist = (rad - Mathf.Sqrt(SQ(cx - x) + SQ(cy - y))) / cellSize;
                         distances[col, 0, row] = Mathf.Max(dist, distances[col, 0, row]);
                     }
                 }
@@ -250,11 +262,10 @@ namespace MeshBuilder
             private CornerInfo GetCorner(int x, int y) => cornerInfos[y * cornerColNum + x];
         }
 
-        private const float DistanceLimit = 0.99f;
+        private const float DistanceLimit = 0f;
 
         private struct CellMesher
         {
-
             public CornerInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
                                     int x, int y, float cellSize,
                                     NativeList<float3> vertices)
@@ -279,17 +290,26 @@ namespace MeshBuilder
 
                 if (hasBL != HasMask(info.config, MaskTL))
                 {
+                    info.leftEdge = info.position + new float3(0, 0, cellSize * LerpT(cornerDistance, topDistance) );
+
                     vertices.Add(info.leftEdge);
                     info.leftEdgeIndex = vertices.Length - 1;
                 }
 
                 if (hasBL != HasMask(info.config, MaskBR))
                 {
+                    info.bottomEdge = info.position + new float3(cellSize * LerpT(cornerDistance, rightDistance), 0, 0);
+
                     vertices.Add(info.bottomEdge);
                     info.bottomEdgeIndex = vertices.Length - 1;
                 }
 
                 return info;
+            }
+
+            static private float LerpT(float a, float b)
+            {
+                return Mathf.Abs(a) / (Mathf.Abs(a) + Mathf.Abs(b));
             }
 
             public void BuildCell(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, 
