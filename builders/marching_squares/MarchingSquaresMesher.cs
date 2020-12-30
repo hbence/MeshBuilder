@@ -1,16 +1,14 @@
-﻿using System;
-using UnityEngine;
+﻿using UnityEngine;
 using Unity.Jobs;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Mathematics;
 
-using static MeshBuilder.Utils;
 using MeshBuffer = MeshBuilder.MeshData.Buffer;
 
 namespace MeshBuilder
 {
-    public class MarchingSquaresMesher : Builder
+    public partial class MarchingSquaresMesher : Builder
     {
         private const uint DefMeshDataBufferFlags = (uint)MeshBuffer.Vertex | (uint)MeshBuffer.Triangle;
 
@@ -39,7 +37,16 @@ namespace MeshBuilder
 
         override protected JobHandle StartGeneration(JobHandle lastHandle)
         {
-            NativeArray<CornerInfo> corners = new NativeArray<CornerInfo>(ColNum * RowNum, Allocator.TempJob);
+            return StartGeneration<SimpleTopCellMesher.CornerInfo, SimpleTopCellMesher>(lastHandle);
+        }
+
+        private JobHandle StartGeneration<InfoType, MesherType>(JobHandle lastHandle)
+            where InfoType : struct
+            where MesherType : struct, ICellMesher<InfoType>
+        {
+            var cellMesher = new MesherType();
+
+            NativeArray<InfoType> corners = new NativeArray<InfoType>(ColNum * RowNum, Allocator.TempJob);
             AddTemp(corners);
 
             vertices = new NativeList<float3>(Allocator.TempJob);
@@ -48,9 +55,7 @@ namespace MeshBuilder
             triangles = new NativeList<int>(Allocator.TempJob);
             AddTemp(triangles);
 
-            CellMesher cellMesher = new CellMesher();
-
-            var cornerJob = new GenerateCorners
+            var cornerJob = new GenerateCorners<InfoType, MesherType>
             {
                 distanceColNum = ColNum,
                 distanceRowNum = RowNum,
@@ -65,7 +70,7 @@ namespace MeshBuilder
             };
             lastHandle = cornerJob.Schedule(lastHandle);
 
-            var vertexJob = new CalculateVertices
+            var vertexJob = new CalculateVertices<InfoType, MesherType>
             {
                 cornerColNum = ColNum,
                 cellSize = CellSize,
@@ -76,7 +81,7 @@ namespace MeshBuilder
             };
             var vertexHandle = vertexJob.Schedule(corners.Length, CalculateVertexBatchNum, lastHandle);
             
-            var trianglesJob = new CalculateTriangles
+            var trianglesJob = new CalculateTriangles<InfoType, MesherType>
             {
                 cornerColNum = ColNum,
                 cellMesher = cellMesher,
@@ -108,159 +113,10 @@ namespace MeshBuilder
             DistanceData = null;
         }
 
-        public class Data : IDisposable
-        {
-            private Volume<float> distances;
-            public NativeArray<float> RawData => distances.Data;
-
-            public int ColNum => distances.Extents.X;
-            public int RowNum => distances.Extents.Z;
-
-            public float DistanceAt(int x, int y) => distances[x, 0, y];
-
-            public Data(int col, int row, float[] distanceData = null)
-            {
-                distances = new Volume<float>(col, 1, row);
-                if (distanceData != null)
-                {
-                    if (distances.Length == distanceData.Length)
-                    {
-                        for (int i = 0; i < distanceData.Length; ++i)
-                        {
-                            distances[i] = distanceData[i];
-                        }
-                    }
-                    else
-                    {
-                        Debug.LogError("distance data length mismatch!");
-                        Clear();
-                    }
-                }
-                else
-                {
-                    Clear();
-                }
-            }
-
-            public void Dispose()
-            {
-                SafeDispose(ref distances);
-            }
-
-            public void UpdateData(float[] distanceData)
-            {
-                if (distances.Length != distanceData.Length)
-                {
-                    Debug.LogWarning("distance data mismatch, clamped");
-                }
-
-                int length = Mathf.Min(distanceData.Length, distances.Length);
-                for (int i = 0; i < length; ++i)
-                {
-                    distances[i] = distanceData[i];
-                }
-            }
-
-            public void Clear()
-            {
-                for (int i = 0; i < distances.Length; ++i)
-                {
-                    distances[i] = -1;
-                }
-            }
-
-            public void ApplyCircle(float x, float y, float rad, float cellSize)
-            {
-                Apply(x - rad, y - rad, x + rad, y + rad, cellSize, (float cx, float cy) => CircleDist(cx, cy, x, y, rad, cellSize));
-            }
-
-            public void RemoveCircle(float x, float y, float rad, float cellSize)
-            {
-                Remove(x - rad, y - rad, x + rad, y + rad, cellSize, (float cx, float cy) => CircleDist(cx, cy, x, y, rad, cellSize));
-            }
-
-            public void ApplyRectangle(float x, float y, float halfWidth, float halfHeight, float cellSize)
-            {
-                Apply(x - halfWidth, y - halfHeight, x + halfWidth, y + halfHeight, cellSize, (float cx, float cy) => RectangleDist(cx, cy, x, y, halfWidth, halfHeight, cellSize));
-            }
-
-            public void RemoveRectangle(float x, float y, float halfWidth, float halfHeight, float cellSize)
-            {
-                Remove(x - halfWidth, y - halfHeight, x + halfWidth, y + halfHeight, cellSize, (float cx, float cy) => RectangleDist(cx, cy, x, y, halfWidth, halfHeight, cellSize));
-            }
-
-            public void Apply(float left, float bottom, float right, float top, float cellSize, Func<float, float, float> CalcValue)
-            {
-                RangeInt cols, rows;
-                CalcAABBRanges(left, bottom, right, top, cellSize, out cols, out rows);
-                for (int row = rows.start; row < rows.end; ++row)
-                {
-                    float cy = row * cellSize;
-                    for (int col = cols.start; col < cols.end; ++col)
-                    {
-                        float cx = col * cellSize;
-                        float dist = CalcValue(cx, cy);
-                        distances[col, 0, row] = Mathf.Max(dist, distances[col, 0, row]);
-                    }
-                }
-            }
-
-            public void Remove(float left, float bottom, float right, float top, float cellSize, Func<float, float, float> CalcValue)
-            {
-                RangeInt cols, rows;
-                CalcAABBRanges(left, bottom, right, top, cellSize, out cols, out rows);
-                for (int row = rows.start; row < rows.end; ++row)
-                {
-                    float cy = row * cellSize;
-                    for (int col = cols.start; col < cols.end; ++col)
-                    {
-                        float cx = col * cellSize;
-                        float dist = CalcValue(cx, cy);
-                        distances[col, 0, row] -= Mathf.Max(dist, 0);
-                    }
-                }
-            }
-
-            private static float CircleDist(float cx, float cy, float x, float y, float rad, float cellSize) 
-                => (rad - Mathf.Sqrt(SQ(cx - x) + SQ(cy - y))) / cellSize;
-
-            private static float RectangleDist(float cx, float cy, float x, float y, float halfWidth, float halfHeight, float cellSize)
-                => Mathf.Min(halfWidth - Mathf.Abs(cx - x), halfHeight - Mathf.Abs(cy - y)) / cellSize;
-
-            private const int AABBBoundary = 2;
-
-            private void CalcAABBRanges(float left, float bottom, float right, float top, float cellSize, out RangeInt cols, out RangeInt rows)
-            {
-                int xStart = Mathf.Clamp(Mathf.FloorToInt(left / cellSize) - AABBBoundary, 0, ColNum - 1);
-                int xEnd = Mathf.Clamp(Mathf.FloorToInt(right / cellSize) + AABBBoundary, 0, ColNum - 1);
-                cols = new RangeInt(xStart, xEnd - xStart);
-
-                int yStart = Mathf.Clamp(Mathf.FloorToInt(bottom / cellSize) - AABBBoundary, 0, RowNum - 1);
-                int yEnd = Mathf.Clamp(Mathf.FloorToInt(top / cellSize) + AABBBoundary, 0, RowNum - 1);
-                rows = new RangeInt(yStart, yEnd - yStart);
-            }
-
-            private static float SQ(float x) => x * x;
-        }
-
-        private struct CornerInfo
-        {
-            public byte config;
-
-            public float cornerDist;
-            public float rightDist;
-            public float topDist;
-
-            public int vertexIndex;
-            public int bottomEdgeIndex;
-            public int leftEdgeIndex;
-
-            public int triIndexStart;
-            public int triIndexLength;
-        }
-
         [BurstCompile]
-        private struct GenerateCorners : IJob
+        private struct GenerateCorners<InfoType, MesherType> : IJob 
+            where InfoType : struct 
+            where MesherType : struct, ICellMesher<InfoType>
         {
             private const bool Inner = false;
             private const bool OnBorder = true;
@@ -268,11 +124,11 @@ namespace MeshBuilder
             public int distanceColNum;
             public int distanceRowNum;
             
-            public CellMesher cellMesher;
+            public MesherType cellMesher;
 
             [ReadOnly] public NativeArray<float> distances;
             
-            [WriteOnly] public NativeArray<CornerInfo> corners;
+            [WriteOnly] public NativeArray<InfoType> corners;
             
             public NativeList<float3> vertices;
             public NativeList<int> indices;
@@ -322,19 +178,21 @@ namespace MeshBuilder
         }
 
         [BurstCompile]
-        private struct CalculateVertices : IJobParallelFor
+        private struct CalculateVertices<InfoType, MesherType> : IJobParallelFor
+            where InfoType : struct
+            where MesherType : struct, ICellMesher<InfoType>
         {
             public int cornerColNum;
             public float cellSize;
 
-            public CellMesher cellMesher;
+            public MesherType cellMesher;
 
-            [ReadOnly] public NativeArray<CornerInfo> cornerInfos;
+            [ReadOnly] public NativeArray<InfoType> cornerInfos;
             [NativeDisableParallelForRestriction] [WriteOnly] public NativeArray<float3> vertices;
 
             public void Execute(int index)
             {
-                CornerInfo info = cornerInfos[index];
+                InfoType info = cornerInfos[index];
                 int x = index % cornerColNum;
                 int y = index / cornerColNum;
                 cellMesher.CalculateVertices(x, y, cellSize, info, vertices);
@@ -342,13 +200,15 @@ namespace MeshBuilder
         }
 
         [BurstCompile]
-        private struct CalculateTriangles : IJobParallelFor
+        private struct CalculateTriangles<InfoType, MesherType> : IJobParallelFor
+            where InfoType : struct
+            where MesherType : struct, ICellMesher<InfoType>
         {
             public int cornerColNum;
             
-            public CellMesher cellMesher;
+            public MesherType cellMesher;
 
-            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<CornerInfo> cornerInfos;
+            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<InfoType> cornerInfos;
             [NativeDisableParallelForRestriction] [WriteOnly] public NativeArray<int> triangles;
 
             public void Execute(int index)
@@ -358,231 +218,19 @@ namespace MeshBuilder
                 int y = index / cellColNum;
                 index = y * cornerColNum + x;
 
-                CornerInfo bl = cornerInfos[index];
-                CornerInfo br = cornerInfos[index + 1];
-                CornerInfo tr = cornerInfos[index + 1 + cornerColNum];
-                CornerInfo tl = cornerInfos[index + cornerColNum];
+                InfoType bl = cornerInfos[index];
+                InfoType br = cornerInfos[index + 1];
+                InfoType tr = cornerInfos[index + 1 + cornerColNum];
+                InfoType tl = cornerInfos[index + cornerColNum];
                 cellMesher.CalculateIndices(bl, br, tr, tl, triangles);
             }
         }
 
-        private struct CellMesher
+        private interface ICellMesher<InfoType> where InfoType : struct
         {
-            public CornerInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
-                                            ref int nextVertices, ref int nextTriIndex, bool onBorder)
-            {
-                CornerInfo info = new CornerInfo
-                {
-                    config = CalcConfiguration(cornerDistance, rightDistance, topRightDistance, topDistance),
-
-                    cornerDist = cornerDistance,
-                    rightDist = rightDistance,
-                    topDist = topDistance,
-
-                    vertexIndex = -1,
-                    leftEdgeIndex = -1,
-                    bottomEdgeIndex = -1,
-
-                    triIndexStart = nextTriIndex,
-                    triIndexLength = 0
-                };
-
-                if (!onBorder)
-                {
-                    info.triIndexLength = CalcTriIndexCount(info.config);
-                    nextTriIndex += info.triIndexLength;
-                }
-
-                bool hasBL = HasMask(info.config, MaskBL);
-                if (hasBL)
-                {
-                    info.vertexIndex = nextVertices;
-                    ++nextVertices;
-                }
-
-                if (hasBL != HasMask(info.config, MaskTL))
-                {
-                    info.leftEdgeIndex = nextVertices;
-                    ++nextVertices;
-                }
-
-                if (hasBL != HasMask(info.config, MaskBR))
-                {
-                    info.bottomEdgeIndex = nextVertices;
-                    ++nextVertices;
-                }
-                
-                return info;
-            }
-
-            public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, NativeArray<float3> vertices)
-            {
-                float3 pos = new float3(x * cellSize, 0, y * cellSize);
-                if (info.vertexIndex >= 0)
-                {
-                    vertices[info.vertexIndex] = pos;
-                }
-                if (info.leftEdgeIndex >= 0)
-                {
-                    vertices[info.leftEdgeIndex] = pos + new float3(0, 0, cellSize * LerpT(info.cornerDist, info.topDist));
-                }
-                if (info.bottomEdgeIndex >= 0)
-                {
-                    vertices[info.bottomEdgeIndex] = pos + new float3(cellSize * LerpT(info.cornerDist, info.rightDist), 0, 0);
-                }
-            }
-
-            static private float LerpT(float a, float b) => Mathf.Abs(a) / (Mathf.Abs(a) + Mathf.Abs(b));
-
-            private static int CalcTriIndexCount(byte config)
-            {
-                switch (config)
-                {
-                    // full
-                    case MaskBL | MaskBR | MaskTR | MaskTL: return 2 * 3;
-                    // corners
-                    case MaskBL: return 1 * 3;
-                    case MaskBR: return 1 * 3;
-                    case MaskTR: return 1 * 3;
-                    case MaskTL: return 1 * 3;
-                    // halves
-                    case MaskBL | MaskBR: return 2 * 3;
-                    case MaskTL | MaskTR: return 2 * 3;
-                    case MaskBL | MaskTL: return 2 * 3;
-                    case MaskBR | MaskTR: return 2 * 3;
-                    // diagonals
-                    case MaskBL | MaskTR: return 4 * 3;
-                    case MaskTL | MaskBR: return 4 * 3;
-                    // three quarters
-                    case MaskBL | MaskTR | MaskBR: return 3 * 3;
-                    case MaskBL | MaskTL | MaskBR: return 3 * 3;
-                    case MaskBL | MaskTL | MaskTR: return 3 * 3;
-                    case MaskTL | MaskTR | MaskBR: return 3 * 3;
-                }
-                return 0;
-            }
-
-            public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, 
-                                  NativeArray<int> triangles)
-            {
-                int triangleIndex = bl.triIndexStart;
-                switch (bl.config)
-                {
-                    // full
-                    case MaskBL | MaskBR | MaskTR | MaskTL:
-                        {
-                            AddTri(triangles, ref triangleIndex, Vertex(bl), Vertex(tl), Vertex(tr));
-                            AddTri(triangles, ref triangleIndex, Vertex(bl), Vertex(tr), Vertex(br));
-                            break;
-                        }
-                    // corners
-                    case MaskBL:
-                        {
-                            AddTri(triangles, ref triangleIndex, Vertex(bl), LeftEdge(bl), BottomEdge(bl));
-                            break;
-                        }
-                    case MaskBR:
-                        {
-                            AddTri(triangles, ref triangleIndex, BottomEdge(bl), LeftEdge(br), Vertex(br));
-                            break;
-                        }
-                    case MaskTR:
-                        {
-                            AddTri(triangles, ref triangleIndex, BottomEdge(tl), Vertex(tr), LeftEdge(br));
-                            break;
-                        }
-                    case MaskTL:
-                        {
-                            AddTri(triangles, ref triangleIndex, Vertex(tl), BottomEdge(tl), LeftEdge(bl));
-                            break;
-                        }
-                    // halves
-                    case MaskBL | MaskBR:
-                        {
-                            AddTri(triangles, ref triangleIndex, Vertex(bl), LeftEdge(bl), Vertex(br));
-                            AddTri(triangles, ref triangleIndex, Vertex(br), LeftEdge(bl), LeftEdge(br));
-                            break;
-                        }
-                    case MaskTL | MaskTR:
-                        {
-                            AddTri(triangles, ref triangleIndex, Vertex(tl), Vertex(tr), LeftEdge(bl));
-                            AddTri(triangles, ref triangleIndex, LeftEdge(bl), Vertex(tr), LeftEdge(br));
-                            break;
-                        }
-                    case MaskBL | MaskTL:
-                        {
-                            AddTri(triangles, ref triangleIndex, Vertex(bl), BottomEdge(tl), BottomEdge(bl));
-                            AddTri(triangles, ref triangleIndex, Vertex(bl), Vertex(tl), BottomEdge(tl));
-                            break;
-                        }
-                    case MaskBR | MaskTR:
-                        {
-                            AddTri(triangles, ref triangleIndex, BottomEdge(bl), Vertex(tr), Vertex(br));
-                            AddTri(triangles, ref triangleIndex, BottomEdge(bl), BottomEdge(tl), Vertex(tr));
-                            break;
-                        }
-                    // diagonals
-                    case MaskBL | MaskTR:
-                        {
-                            AddTri(triangles, ref triangleIndex, BottomEdge(bl), Vertex(bl), LeftEdge(bl));
-                            AddTri(triangles, ref triangleIndex, BottomEdge(bl), LeftEdge(bl), LeftEdge(br));
-                            AddTri(triangles, ref triangleIndex, LeftEdge(br), LeftEdge(bl), BottomEdge(tl));
-                            AddTri(triangles, ref triangleIndex, BottomEdge(tl), Vertex(tr), LeftEdge(br));
-                            break;
-                        }
-                    case MaskTL | MaskBR:
-                        {
-                            AddTri(triangles, ref triangleIndex, LeftEdge(bl), Vertex(tl), BottomEdge(tl));
-                            AddTri(triangles, ref triangleIndex, LeftEdge(bl), BottomEdge(tl), BottomEdge(bl));
-                            AddTri(triangles, ref triangleIndex, BottomEdge(bl), BottomEdge(tl), LeftEdge(br));
-                            AddTri(triangles, ref triangleIndex, BottomEdge(bl), LeftEdge(br), Vertex(br));
-                            break;
-                        }
-                    // three quarters
-                    case MaskBL | MaskTR | MaskBR:
-                        {
-                            AddTri(triangles, ref triangleIndex, Vertex(br), Vertex(bl), LeftEdge(bl));
-                            AddTri(triangles, ref triangleIndex, Vertex(br), LeftEdge(bl), BottomEdge(tl));
-                            AddTri(triangles, ref triangleIndex, Vertex(br), BottomEdge(tl), Vertex(tr));
-                            break;
-                        }
-                    case MaskBL | MaskTL | MaskBR:
-                        {
-                            AddTri(triangles, ref triangleIndex, Vertex(bl), Vertex(tl), BottomEdge(tl));
-                            AddTri(triangles, ref triangleIndex, Vertex(bl), BottomEdge(tl), LeftEdge(br));
-                            AddTri(triangles, ref triangleIndex, Vertex(bl), LeftEdge(br), Vertex(br));
-                            break;
-                        }
-                    case MaskBL | MaskTL | MaskTR:
-                        {
-                            AddTri(triangles, ref triangleIndex, Vertex(tl), BottomEdge(bl), Vertex(bl));
-                            AddTri(triangles, ref triangleIndex, Vertex(tl), LeftEdge(br), BottomEdge(bl));
-                            AddTri(triangles, ref triangleIndex, Vertex(tl), Vertex(tr), LeftEdge(br));
-                            break;
-                        }
-                    case MaskTL | MaskTR | MaskBR:
-                        {
-                            AddTri(triangles, ref triangleIndex, Vertex(tr), LeftEdge(bl), Vertex(tl));
-                            AddTri(triangles, ref triangleIndex, Vertex(tr), BottomEdge(bl), LeftEdge(bl));
-                            AddTri(triangles, ref triangleIndex, Vertex(tr), Vertex(br), BottomEdge(bl));
-                            break;
-                        }
-                }
-            }
-
-            private static void AddTri(NativeArray<int> triangles, ref int nextIndex, int a, int b, int c)
-            {
-                triangles[nextIndex] = a;
-                ++nextIndex;
-                triangles[nextIndex] = b;
-                ++nextIndex;
-                triangles[nextIndex] = c;
-                ++nextIndex;
-            }
-
-            private static int Vertex(CornerInfo info) => info.vertexIndex;
-            private static int LeftEdge(CornerInfo info) => info.leftEdgeIndex;
-            private static int BottomEdge(CornerInfo info) => info.bottomEdgeIndex;
+            InfoType GenerateInfo(float cornerDist, float rightDist, float topRightDist, float topDist, ref int nextVertices, ref int nextTriIndex, bool onBorder);
+            void CalculateVertices(int x, int y, float cellSize, InfoType info, NativeArray<float3> vertices);
+            void CalculateIndices(InfoType bl, InfoType br, InfoType tr, InfoType tl, NativeArray<int> triangles);
         }
 
         private const float DistanceLimit = 0f;
