@@ -179,6 +179,16 @@ namespace MeshBuilder
                 Remove(x - rad, y - rad, x + rad, y + rad, cellSize, (float cx, float cy) => CircleDist(cx, cy, x, y, rad, cellSize));
             }
 
+            public void ApplyRectangle(float x, float y, float halfWidth, float halfHeight, float cellSize)
+            {
+                Apply(x - halfWidth, y - halfHeight, x + halfWidth, y + halfHeight, cellSize, (float cx, float cy) => RectangleDist(cx, cy, x, y, halfWidth, halfHeight, cellSize));
+            }
+
+            public void RemoveRectangle(float x, float y, float halfWidth, float halfHeight, float cellSize)
+            {
+                Remove(x - halfWidth, y - halfHeight, x + halfWidth, y + halfHeight, cellSize, (float cx, float cy) => RectangleDist(cx, cy, x, y, halfWidth, halfHeight, cellSize));
+            }
+
             public void Apply(float left, float bottom, float right, float top, float cellSize, Func<float, float, float> CalcValue)
             {
                 RangeInt cols, rows;
@@ -213,6 +223,9 @@ namespace MeshBuilder
 
             private static float CircleDist(float cx, float cy, float x, float y, float rad, float cellSize) 
                 => (rad - Mathf.Sqrt(SQ(cx - x) + SQ(cy - y))) / cellSize;
+
+            private static float RectangleDist(float cx, float cy, float x, float y, float halfWidth, float halfHeight, float cellSize)
+                => Mathf.Min(halfWidth - Mathf.Abs(cx - x), halfHeight - Mathf.Abs(cy - y)) / cellSize;
 
             private const int AABBBoundary = 2;
 
