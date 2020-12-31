@@ -34,14 +34,22 @@ namespace MeshBuilder
 
             Inited();
         }
-
+        
+        /*
         override protected JobHandle StartGeneration(JobHandle lastHandle)
         {
             SimpleFullCellMesher cellMesher = new SimpleFullCellMesher();
             cellMesher.height = 0.3f;
-            return StartGeneration<SimpleFullCellMesher.FullCornerInfo, SimpleFullCellMesher>(lastHandle, cellMesher);
+            return StartGeneration<SimpleSideMesher.CornerInfo, SimpleFullCellMesher>(lastHandle, cellMesher);
         }
-
+        */
+        
+        override protected JobHandle StartGeneration(JobHandle lastHandle)
+        {
+            var cellMesher = CreateFullCellMesher(0.6f);
+            return cellMesher.StartGeneration(lastHandle, this);
+        }
+        
         private JobHandle StartGeneration<InfoType, MesherType>(JobHandle lastHandle, MesherType cellMesher)
             where InfoType : struct
             where MesherType : struct, ICellMesher<InfoType>
@@ -118,8 +126,8 @@ namespace MeshBuilder
             where InfoType : struct 
             where MesherType : struct, ICellMesher<InfoType>
         {
-            private const bool Inner = false;
-            private const bool OnBorder = true;
+            private const bool HasCellTriangles = true;
+            private const bool NoCellTriangles = false;
 
             public int distanceColNum;
             public int distanceRowNum;
@@ -149,7 +157,7 @@ namespace MeshBuilder
                         float right = distances[index + 1];
                         float topRight = distances[index + 1 + distanceColNum];
                         float top = distances[index + distanceColNum];
-                        corners[index] = cellMesher.GenerateInfo(corner, right, topRight, top, ref nextVertex, ref nextTriangleIndex, Inner);
+                        corners[index] = cellMesher.GenerateInfo(corner, right, topRight, top, ref nextVertex, ref nextTriangleIndex, HasCellTriangles);
                     }
                 }
                 // top border
@@ -158,7 +166,7 @@ namespace MeshBuilder
                     int index = y * distanceColNum + x;
                     float corner = distances[index];
                     float right = distances[index + 1];
-                    corners[index] = cellMesher.GenerateInfo(corner, right, -1, -1, ref nextVertex, ref nextTriangleIndex, OnBorder);
+                    corners[index] = cellMesher.GenerateInfo(corner, right, -1, -1, ref nextVertex, ref nextTriangleIndex, NoCellTriangles);
                 }
                 // right border
                 for (int x = distanceColNum - 1, y = 0; y < distanceRowNum - 1; ++y)
@@ -166,11 +174,11 @@ namespace MeshBuilder
                     int index = y * distanceColNum + x;
                     float corner = distances[index];
                     float top = distances[index + distanceColNum];
-                    corners[index] = cellMesher.GenerateInfo(corner, -1, -1, top, ref nextVertex, ref nextTriangleIndex, OnBorder);
+                    corners[index] = cellMesher.GenerateInfo(corner, -1, -1, top, ref nextVertex, ref nextTriangleIndex, NoCellTriangles);
                 }
                 // top right corner
                 int last = distanceColNum * distanceRowNum - 1;
-                corners[last] = cellMesher.GenerateInfo(distances[last], -1, -1, -1, ref nextVertex, ref nextTriangleIndex, OnBorder);
+                corners[last] = cellMesher.GenerateInfo(distances[last], -1, -1, -1, ref nextVertex, ref nextTriangleIndex, NoCellTriangles);
                 
                 vertices.ResizeUninitialized(nextVertex);
                 indices.ResizeUninitialized(nextTriangleIndex);
@@ -226,11 +234,11 @@ namespace MeshBuilder
             }
         }
 
-        private interface ICellMesher<InfoType> where InfoType : struct
+        public interface ICellMesher<InfoType> where InfoType : struct
         {
             //bool CanGenerateNormals { get; }
             //bool CanGenerateUvs { get; }
-            InfoType GenerateInfo(float cornerDist, float rightDist, float topRightDist, float topDist, ref int nextVertices, ref int nextTriIndex, bool onBorder);
+            InfoType GenerateInfo(float cornerDist, float rightDist, float topRightDist, float topDist, ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles);
             void CalculateVertices(int x, int y, float cellSize, InfoType info, NativeArray<float3> vertices);
             void CalculateIndices(InfoType bl, InfoType br, InfoType tr, InfoType tl, NativeArray<int> triangles);
             //void CalculateNormals(InfoType blCornerInfo, NativeArray<float3> normals); 

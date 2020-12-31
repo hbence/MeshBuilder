@@ -7,7 +7,10 @@ namespace MeshBuilder
 {
     public partial class MarchingSquaresMesher : Builder
     {
-        private struct SimpleTopCellMesher : ICellMesher<SimpleTopCellMesher.CornerInfo>
+        /// <summary>
+        /// Generates an XZ aligned flat mesh.
+        /// </summary>
+        public struct SimpleTopCellMesher : ICellMesher<SimpleTopCellMesher.CornerInfo>
         {
             public struct CornerInfo
             {
@@ -28,7 +31,7 @@ namespace MeshBuilder
             public float heightOffset;
 
             public CornerInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
-                                            ref int nextVertices, ref int nextTriIndex, bool onBorder)
+                                            ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles)
             {
                 CornerInfo info = new CornerInfo
                 {
@@ -46,7 +49,7 @@ namespace MeshBuilder
                     triIndexLength = 0
                 };
 
-                if (!onBorder)
+                if (hasCellTriangles)
                 {
                     info.triIndexLength = CalcTriIndexCount(info.config);
                     nextTriIndex += info.triIndexLength;
@@ -91,9 +94,12 @@ namespace MeshBuilder
                 }
             }
 
+            public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
+             => CalculateIndicesNormal(bl, br, tr, tl, triangles);
+
             static private float LerpT(float a, float b) => Mathf.Abs(a) / (Mathf.Abs(a) + Mathf.Abs(b));
                 
-            private static int CalcTriIndexCount(byte config)
+            public static int CalcTriIndexCount(byte config)
             {
                 switch (config)
                 {
@@ -121,7 +127,7 @@ namespace MeshBuilder
                 return 0;
             }
 
-            public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
+            public static void CalculateIndicesNormal(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
             {
                 int triangleIndex = bl.triIndexStart;
                 switch (bl.config)
@@ -240,7 +246,7 @@ namespace MeshBuilder
 
             // NOTE: burst can't handle function pointers or delegates and I didn't want branching
             // so this is just a copy of the calculate Indices with a different triangle function
-            public void CalculateIndicesReverse(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
+            public static void CalculateIndicesReverse(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
             {
                 int triangleIndex = bl.triIndexStart;
                 switch (bl.config)
@@ -361,6 +367,5 @@ namespace MeshBuilder
             private static int LeftEdge(CornerInfo info) => info.leftEdgeIndex;
             private static int BottomEdge(CornerInfo info) => info.bottomEdgeIndex;
         }
-
     }
 }
