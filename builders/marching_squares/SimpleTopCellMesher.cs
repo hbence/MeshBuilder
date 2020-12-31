@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using Unity.Collections;
 using Unity.Mathematics;
+using System;
 
 namespace MeshBuilder
 {
@@ -23,6 +24,8 @@ namespace MeshBuilder
                 public int triIndexStart;
                 public int triIndexLength;
             }
+
+            public float heightOffset;
 
             public CornerInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
                                             ref int nextVertices, ref int nextTriIndex, bool onBorder)
@@ -73,7 +76,7 @@ namespace MeshBuilder
 
             public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, NativeArray<float3> vertices)
             {
-                float3 pos = new float3(x * cellSize, 0, y * cellSize);
+                float3 pos = new float3(x * cellSize, heightOffset, y * cellSize);
                 if (info.vertexIndex >= 0)
                 {
                     vertices[info.vertexIndex] = pos;
@@ -89,7 +92,7 @@ namespace MeshBuilder
             }
 
             static private float LerpT(float a, float b) => Mathf.Abs(a) / (Mathf.Abs(a) + Mathf.Abs(b));
-
+                
             private static int CalcTriIndexCount(byte config)
             {
                 switch (config)
@@ -232,6 +235,125 @@ namespace MeshBuilder
                 triangles[nextIndex] = b;
                 ++nextIndex;
                 triangles[nextIndex] = c;
+                ++nextIndex;
+            }
+
+            // NOTE: burst can't handle function pointers or delegates and I didn't want branching
+            // so this is just a copy of the calculate Indices with a different triangle function
+            public void CalculateIndicesReverse(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
+            {
+                int triangleIndex = bl.triIndexStart;
+                switch (bl.config)
+                {
+                    // full
+                    case MaskBL | MaskBR | MaskTR | MaskTL:
+                        {
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(bl), Vertex(tl), Vertex(tr));
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(bl), Vertex(tr), Vertex(br));
+                            break;
+                        }
+                    // corners
+                    case MaskBL:
+                        {
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(bl), LeftEdge(bl), BottomEdge(bl));
+                            break;
+                        }
+                    case MaskBR:
+                        {
+                            AddTriReverse(triangles, ref triangleIndex, BottomEdge(bl), LeftEdge(br), Vertex(br));
+                            break;
+                        }
+                    case MaskTR:
+                        {
+                            AddTriReverse(triangles, ref triangleIndex, BottomEdge(tl), Vertex(tr), LeftEdge(br));
+                            break;
+                        }
+                    case MaskTL:
+                        {
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(tl), BottomEdge(tl), LeftEdge(bl));
+                            break;
+                        }
+                    // halves
+                    case MaskBL | MaskBR:
+                        {
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(bl), LeftEdge(bl), Vertex(br));
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(br), LeftEdge(bl), LeftEdge(br));
+                            break;
+                        }
+                    case MaskTL | MaskTR:
+                        {
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(tl), Vertex(tr), LeftEdge(bl));
+                            AddTriReverse(triangles, ref triangleIndex, LeftEdge(bl), Vertex(tr), LeftEdge(br));
+                            break;
+                        }
+                    case MaskBL | MaskTL:
+                        {
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(bl), BottomEdge(tl), BottomEdge(bl));
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(bl), Vertex(tl), BottomEdge(tl));
+                            break;
+                        }
+                    case MaskBR | MaskTR:
+                        {
+                            AddTriReverse(triangles, ref triangleIndex, BottomEdge(bl), Vertex(tr), Vertex(br));
+                            AddTriReverse(triangles, ref triangleIndex, BottomEdge(bl), BottomEdge(tl), Vertex(tr));
+                            break;
+                        }
+                    // diagonals
+                    case MaskBL | MaskTR:
+                        {
+                            AddTriReverse(triangles, ref triangleIndex, BottomEdge(bl), Vertex(bl), LeftEdge(bl));
+                            AddTriReverse(triangles, ref triangleIndex, BottomEdge(bl), LeftEdge(bl), LeftEdge(br));
+                            AddTriReverse(triangles, ref triangleIndex, LeftEdge(br), LeftEdge(bl), BottomEdge(tl));
+                            AddTriReverse(triangles, ref triangleIndex, BottomEdge(tl), Vertex(tr), LeftEdge(br));
+                            break;
+                        }
+                    case MaskTL | MaskBR:
+                        {
+                            AddTriReverse(triangles, ref triangleIndex, LeftEdge(bl), Vertex(tl), BottomEdge(tl));
+                            AddTriReverse(triangles, ref triangleIndex, LeftEdge(bl), BottomEdge(tl), BottomEdge(bl));
+                            AddTriReverse(triangles, ref triangleIndex, BottomEdge(bl), BottomEdge(tl), LeftEdge(br));
+                            AddTriReverse(triangles, ref triangleIndex, BottomEdge(bl), LeftEdge(br), Vertex(br));
+                            break;
+                        }
+                    // three quarters
+                    case MaskBL | MaskTR | MaskBR:
+                        {
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(br), Vertex(bl), LeftEdge(bl));
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(br), LeftEdge(bl), BottomEdge(tl));
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(br), BottomEdge(tl), Vertex(tr));
+                            break;
+                        }
+                    case MaskBL | MaskTL | MaskBR:
+                        {
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(bl), Vertex(tl), BottomEdge(tl));
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(bl), BottomEdge(tl), LeftEdge(br));
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(bl), LeftEdge(br), Vertex(br));
+                            break;
+                        }
+                    case MaskBL | MaskTL | MaskTR:
+                        {
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(tl), BottomEdge(bl), Vertex(bl));
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(tl), LeftEdge(br), BottomEdge(bl));
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(tl), Vertex(tr), LeftEdge(br));
+                            break;
+                        }
+                    case MaskTL | MaskTR | MaskBR:
+                        {
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(tr), LeftEdge(bl), Vertex(tl));
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(tr), BottomEdge(bl), LeftEdge(bl));
+                            AddTriReverse(triangles, ref triangleIndex, Vertex(tr), Vertex(br), BottomEdge(bl));
+                            break;
+                        }
+                }
+            }
+
+            private static void AddTriReverse(NativeArray<int> triangles, ref int nextIndex, int a, int b, int c)
+            {
+                triangles[nextIndex] = c;
+                ++nextIndex;
+                triangles[nextIndex] = b;
+                ++nextIndex;
+                triangles[nextIndex] = a;
                 ++nextIndex;
             }
 

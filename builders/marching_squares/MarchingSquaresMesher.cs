@@ -37,15 +37,15 @@ namespace MeshBuilder
 
         override protected JobHandle StartGeneration(JobHandle lastHandle)
         {
-            return StartGeneration<SimpleTopCellMesher.CornerInfo, SimpleTopCellMesher>(lastHandle);
+            SimpleFullCellMesher cellMesher = new SimpleFullCellMesher();
+            cellMesher.height = 0.3f;
+            return StartGeneration<SimpleFullCellMesher.FullCornerInfo, SimpleFullCellMesher>(lastHandle, cellMesher);
         }
 
-        private JobHandle StartGeneration<InfoType, MesherType>(JobHandle lastHandle)
+        private JobHandle StartGeneration<InfoType, MesherType>(JobHandle lastHandle, MesherType cellMesher)
             where InfoType : struct
             where MesherType : struct, ICellMesher<InfoType>
         {
-            var cellMesher = new MesherType();
-
             NativeArray<InfoType> corners = new NativeArray<InfoType>(ColNum * RowNum, Allocator.TempJob);
             AddTemp(corners);
 
@@ -228,9 +228,13 @@ namespace MeshBuilder
 
         private interface ICellMesher<InfoType> where InfoType : struct
         {
+            //bool CanGenerateNormals { get; }
+            //bool CanGenerateUvs { get; }
             InfoType GenerateInfo(float cornerDist, float rightDist, float topRightDist, float topDist, ref int nextVertices, ref int nextTriIndex, bool onBorder);
             void CalculateVertices(int x, int y, float cellSize, InfoType info, NativeArray<float3> vertices);
             void CalculateIndices(InfoType bl, InfoType br, InfoType tr, InfoType tl, NativeArray<int> triangles);
+            //void CalculateNormals(InfoType blCornerInfo, NativeArray<float3> normals); 
+            //void CalculateUvs(InfoType blCornerInfo, NativeArray<float2> uvs); 
         }
 
         private const float DistanceLimit = 0f;
