@@ -93,10 +93,10 @@ namespace MeshBuilder
             {
                 RangeInt cols, rows;
                 CalcAABBRanges(left, bottom, right, top, cellSize, out cols, out rows);
-                for (int row = rows.start; row < rows.end; ++row)
+                for (int row = rows.start; row <= rows.end; ++row)
                 {
                     float cy = row * cellSize;
-                    for (int col = cols.start; col < cols.end; ++col)
+                    for (int col = cols.start; col <= cols.end; ++col)
                     {
                         float cx = col * cellSize;
                         float dist = CalcValue(cx, cy);
@@ -109,15 +109,29 @@ namespace MeshBuilder
             {
                 RangeInt cols, rows;
                 CalcAABBRanges(left, bottom, right, top, cellSize, out cols, out rows);
-                for (int row = rows.start; row < rows.end; ++row)
+                for (int row = rows.start; row <= rows.end; ++row)
                 {
                     float cy = row * cellSize;
-                    for (int col = cols.start; col < cols.end; ++col)
+                    for (int col = cols.start; col <= cols.end; ++col)
                     {
                         float cx = col * cellSize;
                         float dist = CalcValue(cx, cy);
                         distances[col, 0, row] -= Mathf.Max(dist, 0);
                     }
+                }
+            }
+
+            public void RemoveBorder()
+            {
+                for (int col = 0; col < ColNum; ++col)
+                {
+                    distances[col, 0, 0] = -1;
+                    distances[col, 0, RowNum -1] = -1;
+                }
+                for (int row = 0; row < RowNum - 1; ++row)
+                {
+                    distances[0, 0, row] = -1;
+                    distances[ColNum - 1, 0, row] = -1;
                 }
             }
 
