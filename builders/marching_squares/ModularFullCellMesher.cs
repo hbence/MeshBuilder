@@ -10,7 +10,12 @@ namespace MeshBuilder
     using FullCellMesher = MarchingSquaresMesher.ModularFullCellMesher<
         MarchingSquaresMesher.SimpleTopCellMesher.CornerInfo,   MarchingSquaresMesher.SimpleTopCellMesher,
         MarchingSquaresMesher.SimpleSideMesher.CornerInfo,      MarchingSquaresMesher.SimpleSideMesher,
-        MarchingSquaresMesher.SimpleTopCellMesher.CornerInfo,   MarchingSquaresMesher.SimpleBottomCellMesher>;
+        MarchingSquaresMesher.SimpleTopCellMesher.CornerInfo,   MarchingSquaresMesher.SimpleTopCellMesher>;
+
+    using ScalableFullCellMesher = MarchingSquaresMesher.ModularFullCellMesher<
+        MarchingSquaresMesher.SimpleTopCellMesher.CornerInfo, MarchingSquaresMesher.SimpleTopCellMesher,
+        MarchingSquaresMesher.ScalableSideMesher.CornerInfo, MarchingSquaresMesher.ScalableSideMesher,
+        MarchingSquaresMesher.NullMesher.CornerInfo, MarchingSquaresMesher.NullMesher>;
 
     using NoBottomCellMesher = MarchingSquaresMesher.ModularFullCellMesher<
         MarchingSquaresMesher.SimpleTopCellMesher.CornerInfo, MarchingSquaresMesher.SimpleTopCellMesher,
@@ -68,6 +73,15 @@ namespace MeshBuilder
                 bottomMesher.CalculateIndices(bl.bottom, br.bottom, tr.bottom, tl.bottom, triangles);
             }
 
+            public bool NeedUpdateInfo { get => topMesher.NeedUpdateInfo || sideMesher.NeedUpdateInfo || bottomMesher.NeedUpdateInfo; }
+
+            public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref CornerInfo cell, ref CornerInfo top, ref CornerInfo right)
+            {
+                topMesher.UpdateInfo(x, y, cellColNum, cellRowNum, ref cell.top, ref top.top, ref right.top);
+                sideMesher.UpdateInfo(x, y, cellColNum, cellRowNum, ref cell.side, ref top.side, ref right.side);
+                bottomMesher.UpdateInfo(x, y, cellColNum, cellRowNum, ref cell.bottom, ref top.bottom, ref right.bottom);
+            }
+
             public JobHandle StartGeneration(JobHandle handle, MarchingSquaresMesher mesher)
             {
                 return mesher.StartGeneration<CornerInfo, ModularFullCellMesher<TopInfo, TopMesher, SideInfo, SideMesher, BottomInfo, BottomMesher>>(handle, this);
@@ -96,6 +110,13 @@ namespace MeshBuilder
             {
                 // do nothing
             }
+
+            public bool NeedUpdateInfo { get => false; }
+
+            public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref CornerInfo cell, ref CornerInfo top, ref CornerInfo right)
+            {
+                // do nothing
+            }
         }
 
         public struct SimpleBottomCellMesher : ICellMesher<TopInfo>
@@ -115,6 +136,13 @@ namespace MeshBuilder
 
             public void CalculateIndices(TopInfo bl, TopInfo br, TopInfo tr, TopInfo tl, NativeArray<int> triangles)
              => SimpleTopCellMesher.CalculateIndicesReverse(bl, br, tr, tl, triangles);
+
+            public bool NeedUpdateInfo { get => false; }
+
+            public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref TopInfo cell, ref TopInfo top, ref TopInfo right)
+            {
+                // do nothing
+            }
         }
 
         private static FullCellMesher CreateFullCellMesher(float height)
@@ -134,13 +162,23 @@ namespace MeshBuilder
             return mesher;
         }
 
-        private static ModularFullCellMesher<TopInfo, SimpleTopCellMesher,
+        private static ScalableFullCellMesher CreateScalableFullCellMesher(float height, float bottomNormalOffset)
+        {
+            var mesher = new ScalableFullCellMesher();
+            mesher.topMesher.heightOffset = height * 0.5f;
+            mesher.sideMesher.height = height;
+            mesher.sideMesher.topNormalOffset = 0;
+            mesher.sideMesher.bottomNormalOffset = bottomNormalOffset;
+            return mesher;
+        }
+
+        private static ModularFullCellMesher<ScalableTopCellMesher.CornerInfoWithNormals, ScalableTopCellMesher,
             NullMesher.CornerInfo, NullMesher,
             NullMesher.CornerInfo, NullMesher>
             CreateTestMesher(float height)
         {
             var mesher = new ModularFullCellMesher<
-                                        TopInfo, SimpleTopCellMesher,
+                                        ScalableTopCellMesher.CornerInfoWithNormals, ScalableTopCellMesher,
                                         NullMesher.CornerInfo, NullMesher,
                                         NullMesher.CornerInfo, NullMesher>();
             mesher.topMesher.heightOffset = height * 0.5f;

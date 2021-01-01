@@ -49,6 +49,13 @@ namespace MeshBuilder
                 SimpleSideMesher.CalculateSideIndices(bl, br, tr, tl, triangles);
                 SimpleTopCellMesher.CalculateIndicesReverse(bl.bottom, br.bottom, tr.bottom, tl.bottom, triangles);
             }
+
+            public bool NeedUpdateInfo { get => false; }
+
+            public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref SideInfo cell, ref SideInfo top, ref SideInfo right)
+            {
+                // do nothing
+            }
         }
     }
 }

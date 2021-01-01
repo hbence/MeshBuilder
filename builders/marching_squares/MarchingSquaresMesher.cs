@@ -34,7 +34,7 @@ namespace MeshBuilder
 
             Inited();
         }
-        
+
         /*
         override protected JobHandle StartGeneration(JobHandle lastHandle)
         {
@@ -43,10 +43,17 @@ namespace MeshBuilder
             return StartGeneration<SimpleSideMesher.CornerInfo, SimpleFullCellMesher>(lastHandle, cellMesher);
         }
         */
-        
+        /*
         override protected JobHandle StartGeneration(JobHandle lastHandle)
         {
             var cellMesher = CreateFullCellMesher(0.6f);
+            return cellMesher.StartGeneration(lastHandle, this);
+        }
+        */
+        
+        override protected JobHandle StartGeneration(JobHandle lastHandle)
+        {
+            var cellMesher = CreateScalableFullCellMesher(0.4f, 0.2f);
             return cellMesher.StartGeneration(lastHandle, this);
         }
         
@@ -63,6 +70,8 @@ namespace MeshBuilder
             triangles = new NativeList<int>(Allocator.TempJob);
             AddTemp(triangles);
 
+            int cellCount = (ColNum - 1) * (RowNum - 1);
+
             var cornerJob = new GenerateCorners<InfoType, MesherType>
             {
                 distanceColNum = ColNum,
@@ -77,6 +86,18 @@ namespace MeshBuilder
                 indices = triangles
             };
             lastHandle = cornerJob.Schedule(lastHandle);
+
+            if (cellMesher.NeedUpdateInfo)
+            {
+                var infoJob = new UpdateCorners<InfoType, MesherType>
+                {
+                    cellColNum = ColNum - 1,
+                    cellRowNum = RowNum - 1,
+                    cellMesher = cellMesher,
+                    cornerInfos = corners
+                };
+                lastHandle = infoJob.Schedule(lastHandle);
+            }
 
             var vertexJob = new CalculateVertices<InfoType, MesherType>
             {
@@ -96,7 +117,6 @@ namespace MeshBuilder
                 cornerInfos = corners,
                 triangles = triangles.AsDeferredJobArray()
             };
-            int cellCount = (ColNum - 1) * (RowNum - 1);
             var trianglesHandle = trianglesJob.Schedule(cellCount, MeshTriangleBatchNum, lastHandle);
 
             return JobHandle.CombineDependencies(vertexHandle, trianglesHandle);
@@ -186,6 +206,39 @@ namespace MeshBuilder
         }
 
         [BurstCompile]
+        private struct UpdateCorners<InfoType, MesherType> : IJob
+            where InfoType : struct
+            where MesherType : struct, ICellMesher<InfoType>
+        {
+            public int cellColNum;
+            public int cellRowNum;
+
+            public MesherType cellMesher;
+
+            [NativeDisableParallelForRestriction] public NativeArray<InfoType> cornerInfos;
+
+            public void Execute()
+            {
+                int cornerColNum = cellColNum + 1;
+                for (int y = 0; y < cellRowNum; ++y)
+                {
+                    for (int x = 0; x < cellColNum; ++x)
+                    {
+                        int index = y * cornerColNum + x;
+                        var corner = cornerInfos[index];
+                        var right = cornerInfos[index + 1];
+                        var top = cornerInfos[index + cornerColNum];
+                        cellMesher.UpdateInfo(x, y, cellColNum, cellRowNum, ref corner, ref top, ref right);
+
+                        cornerInfos[index] = corner;
+                        cornerInfos[index + 1] = right;
+                        cornerInfos[index + cornerColNum] = top;
+                    }
+                }
+            }
+        }
+
+        [BurstCompile]
         private struct CalculateVertices<InfoType, MesherType> : IJobParallelFor
             where InfoType : struct
             where MesherType : struct, ICellMesher<InfoType>
@@ -238,7 +291,11 @@ namespace MeshBuilder
         {
             //bool CanGenerateNormals { get; }
             //bool CanGenerateUvs { get; }
+
+            bool NeedUpdateInfo { get; }
+
             InfoType GenerateInfo(float cornerDist, float rightDist, float topRightDist, float topDist, ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles);
+            void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref InfoType cell, ref InfoType top, ref InfoType right);
             void CalculateVertices(int x, int y, float cellSize, InfoType info, NativeArray<float3> vertices);
             void CalculateIndices(InfoType bl, InfoType br, InfoType tr, InfoType tl, NativeArray<int> triangles);
             //void CalculateNormals(InfoType blCornerInfo, NativeArray<float3> normals); 

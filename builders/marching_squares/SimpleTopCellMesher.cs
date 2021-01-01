@@ -14,10 +14,15 @@ namespace MeshBuilder
         {
             public struct CornerInfo
             {
+                // configuration of the cell where this
+                // corner is the bottom left
                 public byte config;
 
+                // distance of the corner
                 public float cornerDist;
+                // distance of the right adjacent
                 public float rightDist;
+                // distance of the top adjacent
                 public float topDist;
 
                 public int vertexIndex;
@@ -80,6 +85,7 @@ namespace MeshBuilder
             public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, NativeArray<float3> vertices)
             {
                 float3 pos = new float3(x * cellSize, heightOffset, y * cellSize);
+
                 if (info.vertexIndex >= 0)
                 {
                     vertices[info.vertexIndex] = pos;
@@ -96,6 +102,13 @@ namespace MeshBuilder
 
             public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
              => CalculateIndicesNormal(bl, br, tr, tl, triangles);
+
+            public bool NeedUpdateInfo { get => false; }
+
+            public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref CornerInfo cell, ref CornerInfo top, ref CornerInfo right)
+            {
+                // do nothing
+            }
 
             static private float LerpT(float a, float b) => Mathf.Abs(a) / (Mathf.Abs(a) + Mathf.Abs(b));
                 

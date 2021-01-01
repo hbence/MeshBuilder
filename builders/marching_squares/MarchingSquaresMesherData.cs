@@ -17,6 +17,7 @@ namespace MeshBuilder
             public int RowNum => distances.Extents.Z;
 
             public float DistanceAt(int x, int y) => distances[x, 0, y];
+            public float SetDistanceAt(int x, int y, float dist) => distances[x, 0, y] = dist;
 
             public Data(int col, int row, float[] distanceData = null)
             {
