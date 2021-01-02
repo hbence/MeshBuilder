@@ -5,6 +5,7 @@ using Unity.Collections;
 using Unity.Mathematics;
 
 using MeshBuffer = MeshBuilder.MeshData.Buffer;
+using UnityEditor.Profiling.Memory.Experimental;
 
 namespace MeshBuilder
 {
@@ -132,7 +133,7 @@ namespace MeshBuilder
             var vertexHandle = vertexJob.Schedule(corners.Length, CalculateVertexBatchNum, lastHandle);
 
             var uvHandle = vertexHandle;
-            if (uvs.IsCreated)
+            if (generateUVs)
             {
                 var uvJob = new CalculateUvs<InfoType, MesherType>
                 {
@@ -150,7 +151,7 @@ namespace MeshBuilder
             }
 
             var normalHandle = vertexHandle;
-            if (normals.IsCreated)
+            if (generateNormals)
             {
                 var normalJob = new CalculateNormals<InfoType, MesherType>
                 {
