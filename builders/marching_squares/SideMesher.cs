@@ -191,6 +191,29 @@ namespace MeshBuilder
             private static int BottomLeftEdge(CornerInfo info) => info.bottom.leftEdgeIndex;
             private static int TopBottomEdge(CornerInfo info) => info.top.bottomEdgeIndex;
             private static int BottomBottomEdge(CornerInfo info) => info.bottom.bottomEdgeIndex;
+
+            public bool CanGenerateUvs { get => true; }
+
+            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
+            {
+                SetUV(corner.top.vertexIndex, 1f, vertices, uvs);
+                SetUV(corner.top.leftEdgeIndex, 1f, vertices, uvs);
+                SetUV(corner.top.bottomEdgeIndex, 1f, vertices, uvs);
+
+                SetUV(corner.bottom.vertexIndex, 0f, vertices, uvs);
+                SetUV(corner.bottom.leftEdgeIndex, 0f, vertices, uvs);
+                SetUV(corner.bottom.bottomEdgeIndex, 0f, vertices, uvs);
+            }
+
+            static public void SetUV(int index, float v, NativeArray<float3> vertices, NativeArray<float2> uvs)
+            {
+                if (index >= 0)
+                {
+                    float3 vert = vertices[index];
+                    float u = vert.x + vert.z;
+                    uvs[index] = new float2(u, v);
+                }
+            }
         }
 
         // NOTE: this is almost a copy paste of the SimpleSideMesher, probably I should refactor that a bit, or make it into a generic version
@@ -244,6 +267,29 @@ namespace MeshBuilder
             {
                 topMesher.UpdateInfo(x, y, cellColNum, cellRowNum, ref cell.top, ref top.top, ref right.top);
                 topMesher.UpdateInfo(x, y, cellColNum, cellRowNum, ref cell.bottom, ref top.bottom, ref right.bottom);
+            }
+
+            public bool CanGenerateUvs { get => false; }
+
+            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
+            {
+                SimpleSideMesher.SetUV(corner.top.cornerInfo.vertexIndex, 1f, vertices, uvs);
+                SimpleSideMesher.SetUV(corner.top.cornerInfo.leftEdgeIndex, 1f, vertices, uvs);
+                SimpleSideMesher.SetUV(corner.top.cornerInfo.bottomEdgeIndex, 1f, vertices, uvs);
+
+                SetUVFromDifferentVertex(corner.top.cornerInfo.vertexIndex, corner.bottom.cornerInfo.vertexIndex, 0f, vertices, uvs);
+                SetUVFromDifferentVertex(corner.top.cornerInfo.leftEdgeIndex, corner.bottom.cornerInfo.leftEdgeIndex, 0f, vertices, uvs);
+                SetUVFromDifferentVertex(corner.top.cornerInfo.bottomEdgeIndex, corner.bottom.cornerInfo.bottomEdgeIndex, 0f, vertices, uvs);
+            }
+
+            static public void SetUVFromDifferentVertex(int sourceIndex, int targetIndex, float v, NativeArray<float3> vertices, NativeArray<float2> uvs)
+            {
+                if (sourceIndex >= 0 && targetIndex >= 0)
+                {
+                    float3 vert = vertices[sourceIndex];
+                    float u = vert.x + vert.z;
+                    uvs[targetIndex] = new float2(u, v);
+                }
             }
 
             public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)

@@ -56,6 +56,13 @@ namespace MeshBuilder
             {
                 // do nothing
             }
+
+            public bool CanGenerateUvs { get => false; }
+
+            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, SideInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
+            {
+                // do nothing
+            }
         }
     }
 }

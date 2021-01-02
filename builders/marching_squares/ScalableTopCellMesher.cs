@@ -109,7 +109,7 @@ namespace MeshBuilder
                     case MaskTL | MaskTR | MaskBR: AddNormal(LerpHz(cell), 0, 0, LerpVc(cell), ref cell.leftEdgeDir, ref cell.bottomEdgeDir); break;
                 }
             }
-      
+
             private static void AddNormal(float ax, float ay, float bx, float by, ref float2 edgeDirA, ref float2 edgeDirB)
             {
                 float2 dir = new float2(ay - by, bx - ax);
@@ -147,7 +147,12 @@ namespace MeshBuilder
             }
 
             public void CalculateIndices(CornerInfoWithNormals bl, CornerInfoWithNormals br, CornerInfoWithNormals tr, CornerInfoWithNormals tl, NativeArray<int> triangles)
-             => SimpleTopCellMesher.CalculateIndicesNormal(bl.cornerInfo, br.cornerInfo, tr.cornerInfo, tl.cornerInfo, triangles);
+                => SimpleTopCellMesher.CalculateIndicesNormal(bl.cornerInfo, br.cornerInfo, tr.cornerInfo, tl.cornerInfo, triangles);
+
+            public bool CanGenerateUvs { get => true; }
+
+            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfoWithNormals corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
+                => SimpleTopCellMesher.TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner.cornerInfo, uvScale, vertices, uvs);
 
             static private float LerpT(float a, float b) => Mathf.Abs(a) / (Mathf.Abs(a) + Mathf.Abs(b));
 

@@ -82,6 +82,15 @@ namespace MeshBuilder
                 bottomMesher.UpdateInfo(x, y, cellColNum, cellRowNum, ref cell.bottom, ref top.bottom, ref right.bottom);
             }
 
+            public bool CanGenerateUvs { get => topMesher.CanGenerateUvs || sideMesher.CanGenerateUvs || bottomMesher.CanGenerateUvs; }
+
+            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
+            {
+                topMesher.CalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner.top, uvScale, vertices, uvs);
+                sideMesher.CalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner.side, uvScale, vertices, uvs);
+                bottomMesher.CalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner.bottom, uvScale, vertices, uvs);
+            }
+
             public JobHandle StartGeneration(JobHandle handle, MarchingSquaresMesher mesher)
             {
                 return mesher.StartGeneration<CornerInfo, ModularFullCellMesher<TopInfo, TopMesher, SideInfo, SideMesher, BottomInfo, BottomMesher>>(handle, this);
@@ -117,6 +126,13 @@ namespace MeshBuilder
             {
                 // do nothing
             }
+
+            public bool CanGenerateUvs { get => false; }
+
+            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
+            {
+                // do nothing
+            }
         }
 
         public struct SimpleBottomCellMesher : ICellMesher<TopInfo>
@@ -129,13 +145,13 @@ namespace MeshBuilder
             }
 
             public TopInfo GenerateInfo(float cornerDist, float rightDist, float topRightDist, float topDist, ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles)
-             => topCellMesher.GenerateInfo(cornerDist, rightDist, topRightDist, topDist, ref nextVertices, ref nextTriIndex, hasCellTriangles);
+                => topCellMesher.GenerateInfo(cornerDist, rightDist, topRightDist, topDist, ref nextVertices, ref nextTriIndex, hasCellTriangles);
 
             public void CalculateVertices(int x, int y, float cellSize, TopInfo info, NativeArray<float3> vertices)
-             => topCellMesher.CalculateVertices(x, y, cellSize, info, vertices);
+                => topCellMesher.CalculateVertices(x, y, cellSize, info, vertices);
 
             public void CalculateIndices(TopInfo bl, TopInfo br, TopInfo tr, TopInfo tl, NativeArray<int> triangles)
-             => SimpleTopCellMesher.CalculateIndicesReverse(bl, br, tr, tl, triangles);
+                => SimpleTopCellMesher.CalculateIndicesReverse(bl, br, tr, tl, triangles);
 
             public bool NeedUpdateInfo { get => false; }
 
@@ -143,6 +159,11 @@ namespace MeshBuilder
             {
                 // do nothing
             }
+
+            public bool CanGenerateUvs { get => true; }
+
+            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, TopInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
+                => SimpleTopCellMesher.TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner, uvScale, vertices, uvs);
         }
 
         private static FullCellMesher CreateFullCellMesher(float height)

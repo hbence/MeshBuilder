@@ -14,20 +14,15 @@ namespace MeshBuilder
         {
             public struct CornerInfo
             {
-                // configuration of the cell where this
-                // corner is the bottom left
-                public byte config;
+                public byte config; // configuration of the cell where this corner is the bottom left
 
-                // distance of the corner
-                public float cornerDist;
-                // distance of the right adjacent
-                public float rightDist;
-                // distance of the top adjacent
-                public float topDist;
+                public float cornerDist; // distance of the corner
+                public float rightDist; // distance of the right adjacent
+                public float topDist; // distance of the top adjacent
 
-                public int vertexIndex;
-                public int bottomEdgeIndex;
-                public int leftEdgeIndex;
+                public int vertexIndex; // in the cell this is the bottom left corner
+                public int bottomEdgeIndex; // in the cell this is the vertex on the bottom edge
+                public int leftEdgeIndex; // in the cell this is the vertex on the left edge
 
                 public int triIndexStart;
                 public int triIndexLength;
@@ -379,6 +374,35 @@ namespace MeshBuilder
             private static int Vertex(CornerInfo info) => info.vertexIndex;
             private static int LeftEdge(CornerInfo info) => info.leftEdgeIndex;
             private static int BottomEdge(CornerInfo info) => info.bottomEdgeIndex;
+
+            public bool CanGenerateUvs { get => true; }
+
+            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
+                => TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner, uvScale, vertices, uvs);
+
+            static public void TopCalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
+            {
+                float2 topRight = new float2((cellColNum + 1) * cellSize * uvScale, (cellRowNum + 1) * cellSize * uvScale);
+                float2 uv;
+                if (corner.vertexIndex >= 0)
+                {
+                    uv.x = vertices[corner.vertexIndex].x / topRight.x;
+                    uv.y = vertices[corner.vertexIndex].z / topRight.y;
+                    uvs[corner.vertexIndex] = uv;
+                }
+                if (corner.leftEdgeIndex >= 0)
+                {
+                    uv.x = vertices[corner.leftEdgeIndex].x / topRight.x;
+                    uv.y = vertices[corner.leftEdgeIndex].z / topRight.y;
+                    uvs[corner.leftEdgeIndex] = uv;
+                }
+                if (corner.bottomEdgeIndex >= 0)
+                {
+                    uv.x = vertices[corner.bottomEdgeIndex].x / topRight.x;
+                    uv.y = vertices[corner.bottomEdgeIndex].z / topRight.y;
+                    uvs[corner.bottomEdgeIndex] = uv;
+                }
+            }
         }
     }
 }
