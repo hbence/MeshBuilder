@@ -25,9 +25,12 @@ namespace MeshBuilder
         public bool ShouldGenerateUV = true;
         public float uvScale = 1f;
 
+        public bool ShouldGenerateNormals = true;
+
         private NativeList<float3> vertices;
         private NativeList<int> triangles;
         private NativeList<float2> uvs;
+        private NativeList<float3> normals;
 
         public void Init(int colNum, int rowNum, float cellSize, float[] distanceData = null)
         {
@@ -74,11 +77,14 @@ namespace MeshBuilder
             triangles = new NativeList<int>(Allocator.TempJob);
             AddTemp(triangles);
 
-            if(ShouldGenerateUV && cellMesher.CanGenerateUvs)
-            {
-                uvs = new NativeList<float2>(Allocator.TempJob);
-                AddTemp(uvs);
-            }
+            uvs = new NativeList<float2>(Allocator.TempJob);
+            AddTemp(uvs);
+
+            normals = new NativeList<float3>(Allocator.TempJob);
+            AddTemp(normals);
+
+            bool generateUVs = ShouldGenerateUV && cellMesher.CanGenerateUvs;
+            bool generateNormals = ShouldGenerateNormals && cellMesher.CanGenerateNormals;
 
             int cellCount = (ColNum - 1) * (RowNum - 1);
 
@@ -94,7 +100,11 @@ namespace MeshBuilder
 
                 vertices = vertices,
                 indices = triangles,
-                uvs = uvs
+
+                generateUVs = generateUVs,
+                uvs = uvs,
+                generateNormals = generateNormals,
+                normals = normals
             };
             lastHandle = cornerJob.Schedule(lastHandle);
 
@@ -120,13 +130,14 @@ namespace MeshBuilder
                 vertices = vertices.AsDeferredJobArray()
             };
             var vertexHandle = vertexJob.Schedule(corners.Length, CalculateVertexBatchNum, lastHandle);
-            
+
+            var uvHandle = vertexHandle;
             if (uvs.IsCreated)
             {
                 var uvJob = new CalculateUvs<InfoType, MesherType>
                 {
-                    cellColNum = ColNum - 1,
-                    cellRowNum = RowNum - 1,
+                    cornerColNum = ColNum,
+                    cornerRowNum = RowNum,
                     cellSize = CellSize,
                     uvScale = uvScale,
                     cellMesher = cellMesher,
@@ -135,8 +146,26 @@ namespace MeshBuilder
                     vertices = vertices.AsDeferredJobArray(),
                     uvs = uvs.AsDeferredJobArray()
                 };
-                vertexHandle = uvJob.Schedule(corners.Length, CalculateVertexBatchNum, vertexHandle);
+                uvHandle = uvJob.Schedule(corners.Length, CalculateVertexBatchNum, vertexHandle);
             }
+
+            var normalHandle = vertexHandle;
+            if (normals.IsCreated)
+            {
+                var normalJob = new CalculateNormals<InfoType, MesherType>
+                {
+                    cornerColNum = ColNum,
+                    cornerRowNum = RowNum,
+                    cellMesher = cellMesher,
+
+                    cornerInfos = corners,
+                    vertices = vertices.AsDeferredJobArray(),
+                    normals = normals.AsDeferredJobArray()
+                };
+                normalHandle = normalJob.Schedule(corners.Length, CalculateVertexBatchNum, vertexHandle);
+            }
+
+            vertexHandle = JobHandle.CombineDependencies(vertexHandle, uvHandle, normalHandle);
 
             var trianglesJob = new CalculateTriangles<InfoType, MesherType>
             {
@@ -154,23 +183,20 @@ namespace MeshBuilder
         {
             uint flags = MeshDataBufferFlags;
 
-            if (uvs.IsCreated)
-            {
-                flags |= (uint)MeshBuffer.UV;
-            }
+            if (uvs.Length > 0) {  flags |= (uint)MeshBuffer.UV; }
+            if (normals.Length > 0) { flags |= (uint)MeshBuffer.Normal; }
 
             using (MeshData data = new MeshData(vertices.Length, triangles.Length, Allocator.Temp, flags))
             {
                 NativeArray<float3>.Copy(vertices, data.Vertices);
                 NativeArray<int>.Copy(triangles, data.Triangles);
 
-                if (uvs.IsCreated)
-                {
-                    NativeArray<float2>.Copy(uvs, data.UVs);
-                }
+                if (uvs.Length > 0) { NativeArray<float2>.Copy(uvs, data.UVs); }
+                if (normals.Length > 0) { NativeArray<float3>.Copy(normals, data.Normals); }
 
                 data.UpdateMesh(mesh, MeshData.UpdateMode.Clear);
-                mesh.RecalculateNormals();
+
+                if (normals.Length == 0) { mesh.RecalculateNormals(); }
             }
         }
 
@@ -189,6 +215,7 @@ namespace MeshBuilder
             vertices = default;
             triangles = default;
             uvs = default;
+            normals = default;
         }
 
         [BurstCompile]
@@ -210,7 +237,11 @@ namespace MeshBuilder
             
             public NativeList<float3> vertices;
             public NativeList<int> indices;
+
+            public bool generateUVs;
             public NativeList<float2> uvs;
+            public bool generateNormals;
+            public NativeList<float3> normals;
 
             public void Execute()
             {
@@ -254,9 +285,13 @@ namespace MeshBuilder
                 vertices.ResizeUninitialized(nextVertex);
                 indices.ResizeUninitialized(nextTriangleIndex);
 
-                if (uvs.IsCreated)
+                if (generateUVs)
                 {
                     uvs.ResizeUninitialized(nextVertex);
+                }
+                if (generateNormals)
+                {
+                    normals.ResizeUninitialized(nextVertex);
                 }
             }
         }
@@ -321,8 +356,8 @@ namespace MeshBuilder
             where InfoType : struct
             where MesherType : struct, ICellMesher<InfoType>
         {
-            public int cellColNum;
-            public int cellRowNum;
+            public int cornerColNum;
+            public int cornerRowNum;
             public float cellSize;
 
             public float uvScale;
@@ -337,9 +372,37 @@ namespace MeshBuilder
             public void Execute(int index)
             {
                 InfoType info = cornerInfos[index];
-                int x = index % cellColNum;
-                int y = index / cellColNum;
-                cellMesher.CalculateUvs(x, y, cellColNum, cellRowNum, cellSize, info, uvScale, vertices, uvs);
+                int x = index % cornerColNum;
+                int y = index / cornerRowNum;
+                cellMesher.CalculateUvs(x, y, cornerColNum, cornerRowNum, cellSize, info, uvScale, vertices, uvs);
+            }
+        }
+
+        [BurstCompile]
+        private struct CalculateNormals<InfoType, MesherType> : IJobParallelFor
+            where InfoType : struct
+            where MesherType : struct, ICellMesher<InfoType>
+        {
+            public int cornerColNum;
+            public int cornerRowNum;
+
+            public MesherType cellMesher;
+
+            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<InfoType> cornerInfos;
+
+            [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<float3> vertices;
+            [NativeDisableParallelForRestriction] [WriteOnly] public NativeArray<float3> normals;
+
+            public void Execute(int index)
+            {
+                InfoType info = cornerInfos[index];
+                int x = index % cornerColNum;
+                int y = index / cornerRowNum;
+
+                InfoType right = x == (cornerColNum - 1) ? info : cornerInfos[index + 1];
+                InfoType top = y == (cornerRowNum - 1) ? info : cornerInfos[index + cornerColNum];
+
+                cellMesher.CalculateNormals(info, right, top, vertices, normals);
             }
         }
 
@@ -372,16 +435,19 @@ namespace MeshBuilder
 
         public interface ICellMesher<InfoType> where InfoType : struct
         {
-            //bool CanGenerateNormals { get; }
-            bool CanGenerateUvs { get; }
-            bool NeedUpdateInfo { get; }
-
             InfoType GenerateInfo(float cornerDist, float rightDist, float topRightDist, float topDist, ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles);
+            
+            bool NeedUpdateInfo { get; }
             void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref InfoType cell, ref InfoType top, ref InfoType right);
+            
             void CalculateVertices(int x, int y, float cellSize, InfoType info, NativeArray<float3> vertices);
             void CalculateIndices(InfoType bl, InfoType br, InfoType tr, InfoType tl, NativeArray<int> triangles);
-            //void CalculateNormals(InfoType blCornerInfo, NativeArray<float3> normals); 
+            
+            bool CanGenerateUvs { get; }
             void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, InfoType corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs); 
+            
+            bool CanGenerateNormals { get; }
+            void CalculateNormals(InfoType corner, InfoType right, InfoType top, NativeArray<float3> vertices, NativeArray<float3> normals);
         }
 
         private const float DistanceLimit = 0f;

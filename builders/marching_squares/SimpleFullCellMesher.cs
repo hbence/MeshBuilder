@@ -63,6 +63,11 @@ namespace MeshBuilder
             {
                 // do nothing
             }
+
+            public bool CanGenerateNormals { get => true; }
+
+            public void CalculateNormals(SideInfo corner, SideInfo right, SideInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
+                => SimpleSideMesher.CalculateTriangleNormals(corner, right, top, vertices, normals);
         }
     }
 }

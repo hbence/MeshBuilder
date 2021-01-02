@@ -154,6 +154,11 @@ namespace MeshBuilder
             public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfoWithNormals corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
                 => SimpleTopCellMesher.TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner.cornerInfo, uvScale, vertices, uvs);
 
+            public bool CanGenerateNormals { get => true; }
+
+            public void CalculateNormals(CornerInfoWithNormals corner, CornerInfoWithNormals right, CornerInfoWithNormals top, NativeArray<float3> vertices, NativeArray<float3> normals)
+                => SimpleTopCellMesher.TopCalculateNormals(corner.cornerInfo, right.cornerInfo, top.cornerInfo, vertices, normals);
+
             static private float LerpT(float a, float b) => Mathf.Abs(a) / (Mathf.Abs(a) + Mathf.Abs(b));
 
             private const float Epsilon = math.EPSILON;

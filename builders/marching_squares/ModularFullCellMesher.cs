@@ -91,6 +91,15 @@ namespace MeshBuilder
                 bottomMesher.CalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner.bottom, uvScale, vertices, uvs);
             }
 
+            public bool CanGenerateNormals { get => topMesher.CanGenerateNormals || sideMesher.CanGenerateNormals || bottomMesher.CanGenerateNormals; }
+
+            public void CalculateNormals(CornerInfo corner, CornerInfo right, CornerInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
+            {
+                topMesher.CalculateNormals(corner.top, right.top, top.top, vertices, normals);
+                sideMesher.CalculateNormals(corner.side, right.side, top.side, vertices, normals);
+                bottomMesher.CalculateNormals(corner.bottom, right.bottom, top.bottom, vertices, normals);
+            }
+
             public JobHandle StartGeneration(JobHandle handle, MarchingSquaresMesher mesher)
             {
                 return mesher.StartGeneration<CornerInfo, ModularFullCellMesher<TopInfo, TopMesher, SideInfo, SideMesher, BottomInfo, BottomMesher>>(handle, this);
@@ -133,6 +142,13 @@ namespace MeshBuilder
             {
                 // do nothing
             }
+
+            public bool CanGenerateNormals { get => false; }
+
+            public void CalculateNormals(CornerInfo corner, CornerInfo right, CornerInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
+            {
+                // do nothing
+            }
         }
 
         public struct SimpleBottomCellMesher : ICellMesher<TopInfo>
@@ -164,6 +180,11 @@ namespace MeshBuilder
 
             public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, TopInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
                 => SimpleTopCellMesher.TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner, uvScale, vertices, uvs);
+
+            public bool CanGenerateNormals { get => true; }
+
+            public void CalculateNormals(TopInfo corner, TopInfo right, TopInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
+                => SimpleTopCellMesher.BottomCalculateNormals(corner, right, top, vertices, normals);
         }
 
         private static FullCellMesher CreateFullCellMesher(float height)

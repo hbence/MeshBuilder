@@ -214,6 +214,95 @@ namespace MeshBuilder
                     uvs[index] = new float2(u, v);
                 }
             }
+
+            public bool CanGenerateNormals { get => true; }
+
+            // NOTE: the normal for this is not quite correct, I would either need a second pass and calculate the normal data like in the ScalableSide
+            // (but at that point it probably doesn't make sense to keep them separate)
+            // or make the normals array readable and accumulate the normals cell by cell in the CalculateNormals method. (that would probably flicker if I keep the job parallel)
+            // The diagonal case is especially off right now
+            public void CalculateNormals(CornerInfo corner, CornerInfo right, CornerInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
+                => CalculateTriangleNormals(corner, right, top, vertices, normals);
+
+            static public void CalculateTriangleNormals(CornerInfo corner, CornerInfo right, CornerInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
+            {
+                if (corner.top.vertexIndex >= 0) normals[corner.top.vertexIndex] = new float3(0, 1, 0);
+                if (corner.bottom.vertexIndex >= 0) normals[corner.bottom.vertexIndex] = new float3(0, -1, 0);
+
+                if (corner.top.leftEdgeIndex >= 0)
+                {
+                    float3 normal = CalcNormalLeft(corner, right, top, vertices);
+                    normals[corner.top.leftEdgeIndex] = normal;
+                    normals[corner.bottom.leftEdgeIndex] = normal;
+                }
+
+                if (corner.top.bottomEdgeIndex >= 0)
+                {
+                    float3 normal = CalcNormalBottom(corner, right, top, vertices);
+                    normals[corner.top.bottomEdgeIndex] = normal;
+                    normals[corner.bottom.bottomEdgeIndex] = normal;
+                }
+            }
+
+            private static float3 CalcNormalBottom(CornerInfo bl, CornerInfo br, CornerInfo tl, NativeArray<float3> vertices)
+            {
+                int triangleIndex = bl.triIndexStart;
+                switch (bl.top.config)
+                {
+                    // corners
+                    case MaskBL: return CalcNormal(TopBottomEdge(bl), TopLeftEdge(bl), vertices);
+                    case MaskBR: return CalcNormal(TopLeftEdge(br), TopBottomEdge(bl), vertices);
+                    case MaskTR: return CalcNormal(TopBottomEdge(tl), TopLeftEdge(br), vertices);
+                    case MaskTL: return CalcNormal(TopLeftEdge(bl), TopBottomEdge(tl), vertices);
+                    // halves
+                    case MaskBL | MaskBR: return CalcNormal(TopLeftEdge(br), TopLeftEdge(bl), vertices);
+                    case MaskTL | MaskTR: return CalcNormal(TopLeftEdge(bl), TopLeftEdge(br), vertices);
+                    case MaskBL | MaskTL: return CalcNormal(TopBottomEdge(bl), TopBottomEdge(tl), vertices);
+                    case MaskBR | MaskTR: return CalcNormal(TopBottomEdge(tl), TopBottomEdge(bl), vertices);
+                    // diagonals
+                    case MaskBL | MaskTR: return CalcNormal(TopBottomEdge(bl), TopLeftEdge(br), vertices);
+                    case MaskTL | MaskBR: return CalcNormal(TopLeftEdge(bl), TopBottomEdge(bl), vertices);
+                    // three quarters
+                    case MaskBL | MaskTR | MaskBR: return CalcNormal(TopBottomEdge(tl), TopLeftEdge(bl), vertices);
+                    case MaskBL | MaskTL | MaskBR: return CalcNormal(TopLeftEdge(br), TopBottomEdge(tl), vertices);
+                    case MaskBL | MaskTL | MaskTR: return CalcNormal(TopBottomEdge(bl), TopLeftEdge(br), vertices);
+                    case MaskTL | MaskTR | MaskBR: return CalcNormal(TopLeftEdge(bl), TopBottomEdge(bl), vertices);
+                }
+                return new float3(0, 1, 0);
+            }
+            private static float3 CalcNormalLeft(CornerInfo bl, CornerInfo br, CornerInfo tl, NativeArray<float3> vertices)
+            {
+                int triangleIndex = bl.triIndexStart;
+                switch (bl.top.config)
+                {
+                    // corners
+                    case MaskBL: return CalcNormal(TopBottomEdge(bl), TopLeftEdge(bl), vertices);
+                    case MaskBR: return CalcNormal(TopLeftEdge(br), TopBottomEdge(bl), vertices);
+                    case MaskTR: return CalcNormal(TopBottomEdge(tl), TopLeftEdge(br), vertices);
+                    case MaskTL: return CalcNormal(TopLeftEdge(bl), TopBottomEdge(tl), vertices);
+                    // halves
+                    case MaskBL | MaskBR: return CalcNormal(TopLeftEdge(br), TopLeftEdge(bl), vertices);
+                    case MaskTL | MaskTR: return CalcNormal(TopLeftEdge(bl), TopLeftEdge(br), vertices);
+                    case MaskBL | MaskTL: return CalcNormal(TopBottomEdge(bl), TopBottomEdge(tl), vertices);
+                    case MaskBR | MaskTR: return CalcNormal(TopBottomEdge(tl), TopBottomEdge(bl), vertices);
+                    // diagonals
+                    case MaskBL | MaskTR: return CalcNormal(TopBottomEdge(tl), TopLeftEdge(bl), vertices);
+                    case MaskTL | MaskBR: return CalcNormal(TopLeftEdge(bl), TopBottomEdge(bl), vertices);
+                    // three quarters
+                    case MaskBL | MaskTR | MaskBR: return CalcNormal(TopBottomEdge(tl), TopLeftEdge(bl), vertices);
+                    case MaskBL | MaskTL | MaskBR: return CalcNormal(TopLeftEdge(br), TopBottomEdge(tl), vertices);
+                    case MaskBL | MaskTL | MaskTR: return CalcNormal(TopBottomEdge(bl), TopLeftEdge(br), vertices);
+                    case MaskTL | MaskTR | MaskBR: return CalcNormal(TopLeftEdge(bl), TopBottomEdge(bl), vertices);
+                }
+                return new float3(0, 1, 0);
+            }
+
+            static private float3 CalcNormal(int aIndex, int bIndex, NativeArray<float3> vertices)
+            {
+                float3 dir = vertices[bIndex] - vertices[aIndex];
+                float3 normal = -math.cross(dir, new float3(0, 1, 0));
+                return math.normalize(normal);
+            }
         }
 
         // NOTE: this is almost a copy paste of the SimpleSideMesher, probably I should refactor that a bit, or make it into a generic version
@@ -280,6 +369,40 @@ namespace MeshBuilder
                 SetUVFromDifferentVertex(corner.top.cornerInfo.vertexIndex, corner.bottom.cornerInfo.vertexIndex, 0f, vertices, uvs);
                 SetUVFromDifferentVertex(corner.top.cornerInfo.leftEdgeIndex, corner.bottom.cornerInfo.leftEdgeIndex, 0f, vertices, uvs);
                 SetUVFromDifferentVertex(corner.top.cornerInfo.bottomEdgeIndex, corner.bottom.cornerInfo.bottomEdgeIndex, 0f, vertices, uvs);
+            }
+
+            public bool CanGenerateNormals { get => true; }
+
+            public void CalculateNormals(CornerInfo corner, CornerInfo right, CornerInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
+            {
+                var topInfo = corner.top.cornerInfo;
+                var bottomInfo = corner.bottom.cornerInfo;
+
+                if (topInfo.vertexIndex >= 0) { normals[topInfo.vertexIndex] = new float3(0, 1, 0); }
+                if (bottomInfo.vertexIndex >= 0) { normals[bottomInfo.vertexIndex] = new float3(0, 1, 0); }
+                
+                if (topInfo.leftEdgeIndex >= 0)
+                {
+                    float3 normal = CalculateNormal(topInfo.leftEdgeIndex, bottomInfo.leftEdgeIndex, vertices);
+                    normal = math.normalize(normal);
+                    normals[topInfo.leftEdgeIndex] = normal;
+                    normals[bottomInfo.leftEdgeIndex] = normal;
+                }
+
+                if (topInfo.bottomEdgeIndex >= 0)
+                {
+                    float3 normal = CalculateNormal(topInfo.bottomEdgeIndex, bottomInfo.bottomEdgeIndex, vertices);
+                    normal = math.normalize(normal);
+                    normals[topInfo.bottomEdgeIndex] = normal;
+                    normals[bottomInfo.bottomEdgeIndex] = normal;
+                }
+            }
+
+            static private float3 CalculateNormal(int aIndex, int bIndex, NativeArray<float3> vertices)
+            {
+                float3 dir = vertices[bIndex] - vertices[aIndex];
+                float3 right = math.cross(dir, new float3(0, 1, 0));
+                return math.cross(right, dir);
             }
 
             static public void SetUVFromDifferentVertex(int sourceIndex, int targetIndex, float v, NativeArray<float3> vertices, NativeArray<float2> uvs)

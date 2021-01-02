@@ -1,7 +1,6 @@
 ﻿using UnityEngine;
 using Unity.Collections;
 using Unity.Mathematics;
-using System;
 
 namespace MeshBuilder
 {
@@ -380,6 +379,11 @@ namespace MeshBuilder
             public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
                 => TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner, uvScale, vertices, uvs);
 
+            public bool CanGenerateNormals { get => true; }
+
+            public void CalculateNormals(CornerInfo corner, CornerInfo right, CornerInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
+                => TopCalculateNormals(corner, right, top, vertices, normals);
+
             static public void TopCalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
             {
                 float2 topRight = new float2((cellColNum + 1) * cellSize * uvScale, (cellRowNum + 1) * cellSize * uvScale);
@@ -402,6 +406,20 @@ namespace MeshBuilder
                     uv.y = vertices[corner.bottomEdgeIndex].z / topRight.y;
                     uvs[corner.bottomEdgeIndex] = uv;
                 }
+            }
+
+            static public void TopCalculateNormals(CornerInfo corner, CornerInfo right, CornerInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
+            {
+                if (corner.vertexIndex >= 0) { normals[corner.vertexIndex] = new float3(0, 1, 0); }
+                if (corner.leftEdgeIndex >= 0) { normals[corner.leftEdgeIndex] = new float3(0, 1, 0); }
+                if (corner.bottomEdgeIndex >= 0) { normals[corner.bottomEdgeIndex] = new float3(0, 1, 0); }
+            }
+
+            static public void BottomCalculateNormals(CornerInfo corner, CornerInfo right, CornerInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
+            {
+                if (corner.vertexIndex >= 0) { normals[corner.vertexIndex] = new float3(0, -1, 0); }
+                if (corner.leftEdgeIndex >= 0) { normals[corner.leftEdgeIndex] = new float3(0, -1, 0); }
+                if (corner.bottomEdgeIndex >= 0) { normals[corner.bottomEdgeIndex] = new float3(0, -1, 0); }
             }
         }
     }
