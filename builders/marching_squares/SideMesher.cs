@@ -64,47 +64,15 @@ namespace MeshBuilder
                     // full
                     case MaskBL | MaskBR | MaskTR | MaskTL: break;
                     // corners
-                    case MaskBL:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(bl), BottomLeftEdge(bl));
-                            break;
-                        }
-                    case MaskBR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(bl), BottomBottomEdge(bl));
-                            break;
-                        }
-                    case MaskTR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(br), BottomLeftEdge(br));
-                            break;
-                        }
-                    case MaskTL:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(tl), BottomBottomEdge(tl));
-                            break;
-                        }
+                    case MaskBL: AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
+                    case MaskBR: AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
+                    case MaskTR: AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(br), BottomLeftEdge(br)); break;
+                    case MaskTL: AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
                     // halves
-                    case MaskBL | MaskBR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopLeftEdge(bl), BottomLeftEdge(bl));
-                            break;
-                        }
-                    case MaskTL | MaskTR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopLeftEdge(br), BottomLeftEdge(br));
-                            break;
-                        }
-                    case MaskBL | MaskTL:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopBottomEdge(tl), BottomBottomEdge(tl));
-                            break;
-                        }
-                    case MaskBR | MaskTR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopBottomEdge(bl), BottomBottomEdge(bl));
-                            break;
-                        }
+                    case MaskBL | MaskBR: AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
+                    case MaskTL | MaskTR: AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopLeftEdge(br), BottomLeftEdge(br)); break;
+                    case MaskBL | MaskTL: AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
+                    case MaskBR | MaskTR: AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
                     // diagonals
                     case MaskBL | MaskTR:
                         {
@@ -119,26 +87,10 @@ namespace MeshBuilder
                             break;
                         }
                     // three quarters
-                    case MaskBL | MaskTR | MaskBR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(bl), BottomLeftEdge(bl));
-                            break;
-                        }
-                    case MaskBL | MaskTL | MaskBR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(tl), BottomBottomEdge(tl));
-                            break;
-                        }
-                    case MaskBL | MaskTL | MaskTR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(br), BottomLeftEdge(br));
-                            break;
-                        }
-                    case MaskTL | MaskTR | MaskBR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(bl), BottomBottomEdge(bl));
-                            break;
-                        }
+                    case MaskBL | MaskTR | MaskBR: AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
+                    case MaskBL | MaskTL | MaskBR: AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
+                    case MaskBL | MaskTL | MaskTR: AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(br), BottomLeftEdge(br)); break;
+                    case MaskTL | MaskTR | MaskBR: AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
                 }
             }
 
@@ -423,47 +375,15 @@ namespace MeshBuilder
                     // full
                     case MaskBL | MaskBR | MaskTR | MaskTL: break;
                     // corners
-                    case MaskBL:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(bl), BottomLeftEdge(bl));
-                            break;
-                        }
-                    case MaskBR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(bl), BottomBottomEdge(bl));
-                            break;
-                        }
-                    case MaskTR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(br), BottomLeftEdge(br));
-                            break;
-                        }
-                    case MaskTL:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(tl), BottomBottomEdge(tl));
-                            break;
-                        }
+                    case MaskBL: AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
+                    case MaskBR: AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
+                    case MaskTR: AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(br), BottomLeftEdge(br)); break;
+                    case MaskTL: AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
                     // halves
-                    case MaskBL | MaskBR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopLeftEdge(bl), BottomLeftEdge(bl));
-                            break;
-                        }
-                    case MaskTL | MaskTR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopLeftEdge(br), BottomLeftEdge(br));
-                            break;
-                        }
-                    case MaskBL | MaskTL:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopBottomEdge(tl), BottomBottomEdge(tl));
-                            break;
-                        }
-                    case MaskBR | MaskTR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopBottomEdge(bl), BottomBottomEdge(bl));
-                            break;
-                        }
+                    case MaskBL | MaskBR: AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
+                    case MaskTL | MaskTR: AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopLeftEdge(br), BottomLeftEdge(br)); break;
+                    case MaskBL | MaskTL: AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
+                    case MaskBR | MaskTR: AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
                     // diagonals
                     case MaskBL | MaskTR:
                         {
@@ -478,26 +398,10 @@ namespace MeshBuilder
                             break;
                         }
                     // three quarters
-                    case MaskBL | MaskTR | MaskBR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(bl), BottomLeftEdge(bl));
-                            break;
-                        }
-                    case MaskBL | MaskTL | MaskBR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(tl), BottomBottomEdge(tl));
-                            break;
-                        }
-                    case MaskBL | MaskTL | MaskTR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(br), BottomLeftEdge(br));
-                            break;
-                        }
-                    case MaskTL | MaskTR | MaskBR:
-                        {
-                            AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(bl), BottomBottomEdge(bl));
-                            break;
-                        }
+                    case MaskBL | MaskTR | MaskBR: AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
+                    case MaskBL | MaskTL | MaskBR: AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
+                    case MaskBL | MaskTL | MaskTR: AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(br), BottomLeftEdge(br)); break;
+                    case MaskTL | MaskTR | MaskBR: AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
                 }
             }
 

@@ -5,7 +5,6 @@ using Unity.Collections;
 using Unity.Mathematics;
 
 using MeshBuffer = MeshBuilder.MeshData.Buffer;
-using UnityEditor.Profiling.Memory.Experimental;
 
 namespace MeshBuilder
 {
@@ -28,43 +27,74 @@ namespace MeshBuilder
 
         public bool ShouldGenerateNormals = true;
 
+        private MesherInfo mesherInfo = new MesherInfo();
+
         private NativeList<float3> vertices;
         private NativeList<int> triangles;
         private NativeList<float2> uvs;
         private NativeList<float3> normals;
 
-        public void Init(int colNum, int rowNum, float cellSize, float[] distanceData = null)
+        public void Init(int colNum, int rowNum, float cellSize, float yOffset = 0, float[] distanceData = null)
         {
             CellSize = cellSize;
 
             DistanceData?.Dispose();
             DistanceData = new Data(colNum, rowNum, distanceData);
 
+            mesherInfo.Set(HasTop, NoSide, NoBottom, NoSeparateSides, yOffset, 0);
+
             Inited();
         }
 
-        /*
+        public void InitForFullCell(int colNum, int rowNum, float cellSize, float height, bool hasBottom = false, float[] distanceData = null)
+        {
+            CellSize = cellSize;
+
+            DistanceData?.Dispose();
+            DistanceData = new Data(colNum, rowNum, distanceData);
+
+            mesherInfo.Set(HasTop, HasSide, hasBottom, HasSeparateSides, height, 0);
+
+            Inited();
+        }
+
+        public void InitForFullCellNoEdgeVertices(int colNum, int rowNum, float cellSize, float height, float[] distanceData = null)
+        {
+            CellSize = cellSize;
+
+            DistanceData?.Dispose();
+            DistanceData = new Data(colNum, rowNum, distanceData);
+
+            mesherInfo.Set(HasTop, HasSide, HasBottom, NoSeparateSides, height, 0);
+
+            Inited();
+        }
+
+        public void InitForFullCellTapered(int colNum, int rowNum, float cellSize, float height, float bottomScaleOffset = 0.5f, bool hasBottom = false, float[] distanceData = null)
+        {
+            CellSize = cellSize;
+
+            DistanceData?.Dispose();
+            DistanceData = new Data(colNum, rowNum, distanceData);
+
+            mesherInfo.Set(HasTop, HasSide, hasBottom, HasSeparateSides, height, bottomScaleOffset);
+
+            Inited();
+        }
+
         override protected JobHandle StartGeneration(JobHandle lastHandle)
         {
-            SimpleFullCellMesher cellMesher = new SimpleFullCellMesher();
-            cellMesher.height = 0.3f;
-            return StartGeneration<SimpleSideMesher.CornerInfo, SimpleFullCellMesher>(lastHandle, cellMesher);
+            return mesherInfo.StartGeneration(lastHandle, this);
         }
-        //*/
+        
         /*
-        override protected JobHandle StartGeneration(JobHandle lastHandle)
-        {
-            var cellMesher = CreateFullCellMesher(0.6f);
-            return cellMesher.StartGeneration(lastHandle, this);
-        }
-        //*/
-        //*
         override protected JobHandle StartGeneration(JobHandle lastHandle)
         {
             var cellMesher = CreateScalableFullCellMesher(0.4f, 0.2f);
             return cellMesher.StartGeneration(lastHandle, this);
         }
         //*/
+
         private JobHandle StartGeneration<InfoType, MesherType>(JobHandle lastHandle, MesherType cellMesher)
             where InfoType : struct
             where MesherType : struct, ICellMesher<InfoType>
@@ -217,6 +247,83 @@ namespace MeshBuilder
             triangles = default;
             uvs = default;
             normals = default;
+        }
+
+        private const bool HasTop = true;
+        private const bool NoTop = false;
+        private const bool HasSide = true;
+        private const bool NoSide = false;
+        private const bool HasBottom = true;
+        private const bool NoBottom = false;
+        private const bool HasSeparateSides = true;
+        private const bool NoSeparateSides = false;
+
+        private class MesherInfo
+        {
+            public bool hasTop = true;
+            public bool hasSide = true;
+            public bool hasBottom = true;
+            public float height = 1;
+            public float bottomScaleOffset = 0;
+            public bool hasSeparateSides = true;
+
+            public void Set(bool hasTop, bool hasSide, bool hasBottom, bool hasSeparateSides, float height, float bottomScaleOffset)
+            {
+                this.hasTop = hasTop;
+                this.hasSide = hasSide;
+                this.hasBottom = hasBottom;
+                this.hasSeparateSides = hasSeparateSides;
+                this.height = height;
+                this.bottomScaleOffset = bottomScaleOffset;
+            }
+
+            public JobHandle StartGeneration(JobHandle dependOn, MarchingSquaresMesher mesher)
+            {
+                if (hasTop && !hasSide && !hasBottom)
+                {
+                    var cellMesher = new SimpleTopCellMesher();
+                    cellMesher.heightOffset = height;
+                    return mesher.StartGeneration<SimpleTopCellMesher.CornerInfo, SimpleTopCellMesher>(dependOn, cellMesher);
+                }
+                else if (hasTop && hasSide && !hasBottom)
+                {
+                    if (bottomScaleOffset > 0)
+                    {
+                        var cellMesher = CreateNoBottomScalableFullCellMesher(height, bottomScaleOffset);
+                        return cellMesher.StartGeneration(dependOn, mesher);
+                    }
+                    else
+                    {
+                        var cellMesher = CreateNoBottomCellMesher(height);
+                        return cellMesher.StartGeneration(dependOn, mesher);
+                    }
+                }
+                else if (hasTop && hasSide && hasBottom)
+                {
+                    if (hasSeparateSides)
+                    {
+                        if (bottomScaleOffset > 0)
+                        {
+                            var cellMesher = CreateScalableFullCellMesher(height, bottomScaleOffset);
+                            return cellMesher.StartGeneration(dependOn, mesher);
+                        }
+                        else
+                        {
+                            var cellMesher = CreateFullCellMesher(height);
+                            return cellMesher.StartGeneration(dependOn, mesher);
+                        }
+                    }
+                    else
+                    {
+                        var cellMesher = new SimpleFullCellMesher();
+                        cellMesher.height = height;
+                        return mesher.StartGeneration<SimpleSideMesher.CornerInfo, SimpleFullCellMesher>(dependOn, cellMesher);
+                    }
+                }
+
+                var defMesher = CreateNoBottomScalableFullCellMesher(height, bottomScaleOffset);
+                return defMesher.StartGeneration(dependOn, mesher);
+            }
         }
 
         [BurstCompile]

@@ -10,12 +10,17 @@ namespace MeshBuilder
     using FullCellMesher = MarchingSquaresMesher.ModularFullCellMesher<
         MarchingSquaresMesher.SimpleTopCellMesher.CornerInfo,   MarchingSquaresMesher.SimpleTopCellMesher,
         MarchingSquaresMesher.SimpleSideMesher.CornerInfo,      MarchingSquaresMesher.SimpleSideMesher,
-        MarchingSquaresMesher.SimpleTopCellMesher.CornerInfo,   MarchingSquaresMesher.SimpleTopCellMesher>;
+        MarchingSquaresMesher.SimpleTopCellMesher.CornerInfo,   MarchingSquaresMesher.SimpleBottomCellMesher>;
+
+    using NoBottomScalableFullCellMesher = MarchingSquaresMesher.ModularFullCellMesher<
+        MarchingSquaresMesher.SimpleTopCellMesher.CornerInfo, MarchingSquaresMesher.SimpleTopCellMesher,
+        MarchingSquaresMesher.ScalableSideMesher.CornerInfo, MarchingSquaresMesher.ScalableSideMesher,
+        MarchingSquaresMesher.NullMesher.CornerInfo, MarchingSquaresMesher.NullMesher>;
 
     using ScalableFullCellMesher = MarchingSquaresMesher.ModularFullCellMesher<
         MarchingSquaresMesher.SimpleTopCellMesher.CornerInfo, MarchingSquaresMesher.SimpleTopCellMesher,
         MarchingSquaresMesher.ScalableSideMesher.CornerInfo, MarchingSquaresMesher.ScalableSideMesher,
-        MarchingSquaresMesher.NullMesher.CornerInfo, MarchingSquaresMesher.NullMesher>;
+        MarchingSquaresMesher.ScalableTopCellMesher.CornerInfoWithNormals, MarchingSquaresMesher.ScalableTopCellMesher>;
 
     using NoBottomCellMesher = MarchingSquaresMesher.ModularFullCellMesher<
         MarchingSquaresMesher.SimpleTopCellMesher.CornerInfo, MarchingSquaresMesher.SimpleTopCellMesher,
@@ -204,6 +209,16 @@ namespace MeshBuilder
             return mesher;
         }
 
+        private static NoBottomScalableFullCellMesher CreateNoBottomScalableFullCellMesher(float height, float bottomNormalOffset)
+        {
+            var mesher = new NoBottomScalableFullCellMesher();
+            mesher.topMesher.heightOffset = height * 0.5f;
+            mesher.sideMesher.height = height;
+            mesher.sideMesher.topNormalOffset = 0;
+            mesher.sideMesher.bottomNormalOffset = bottomNormalOffset;
+            return mesher;
+        }
+
         private static ScalableFullCellMesher CreateScalableFullCellMesher(float height, float bottomNormalOffset)
         {
             var mesher = new ScalableFullCellMesher();
@@ -211,6 +226,8 @@ namespace MeshBuilder
             mesher.sideMesher.height = height;
             mesher.sideMesher.topNormalOffset = 0;
             mesher.sideMesher.bottomNormalOffset = bottomNormalOffset;
+            mesher.bottomMesher.heightOffset = height * 0.5f;
+            mesher.bottomMesher.normalOffset = bottomNormalOffset;
             return mesher;
         }
 
