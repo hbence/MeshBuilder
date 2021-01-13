@@ -77,6 +77,9 @@ namespace MeshBuilder
             }
 
             public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, NativeArray<float3> vertices)
+                => CalculateVerticesSimple(x, y, cellSize, info, vertices, heightOffset);
+
+            static public void CalculateVerticesSimple(int x, int y, float cellSize, CornerInfo info, NativeArray<float3> vertices, float heightOffset)
             {
                 float3 pos = new float3(x * cellSize, heightOffset, y * cellSize);
 

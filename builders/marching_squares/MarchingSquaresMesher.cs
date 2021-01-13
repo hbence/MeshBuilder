@@ -15,6 +15,12 @@ namespace MeshBuilder
         private const int CalculateVertexBatchNum = 128;
         private const int MeshTriangleBatchNum = 128;
 
+        public enum OptimizationMode
+        {
+            GreedyRect,
+            NextLargestRect
+        }
+
         public float CellSize { get; private set; }
         public Data DistanceData { get; private set; }
         public int ColNum => DistanceData.ColNum;
@@ -82,11 +88,24 @@ namespace MeshBuilder
             Inited();
         }
 
+        public void InitForOptimized(int colNum, int rowNum, float cellSize, float height, OptimizationMode optimization = OptimizationMode.GreedyRect, float[] distanceData = null)
+        {
+            CellSize = cellSize;
+
+            DistanceData?.Dispose();
+            DistanceData = new Data(colNum, rowNum, distanceData);
+
+            mesherInfo.Set(HasTop, NoSide, NoBottom, HasSeparateSides, height, 0);
+            mesherInfo.MakeOptimized(DistanceData, optimization);
+
+            Inited();
+        }
+
         override protected JobHandle StartGeneration(JobHandle lastHandle)
         {
             return mesherInfo.StartGeneration(lastHandle, this);
         }
-        
+
         /*
         override protected JobHandle StartGeneration(JobHandle lastHandle)
         {
@@ -266,6 +285,10 @@ namespace MeshBuilder
             public float height = 1;
             public float bottomScaleOffset = 0;
             public bool hasSeparateSides = true;
+            
+            public bool optimized = false;
+            public OptimizationMode optimization;
+            public Data data = null;
 
             public void Set(bool hasTop, bool hasSide, bool hasBottom, bool hasSeparateSides, float height, float bottomScaleOffset)
             {
@@ -275,10 +298,28 @@ namespace MeshBuilder
                 this.hasSeparateSides = hasSeparateSides;
                 this.height = height;
                 this.bottomScaleOffset = bottomScaleOffset;
+
+                optimized = false;
+                data = null;
+            }
+
+            public void MakeOptimized(Data data, OptimizationMode mode)
+            {
+                optimized = true;
+                this.data = data;
+                optimization = mode;
             }
 
             public JobHandle StartGeneration(JobHandle dependOn, MarchingSquaresMesher mesher)
             {
+                if (optimized)
+                {
+                    var cellMesher = new OptimizedTopCellMesher();
+                    cellMesher.heightOffset = height;
+                    cellMesher.optimizationMode = optimization;
+                    return cellMesher.StartGeneration(dependOn, mesher);
+                }
+
                 if (hasTop && !hasSide && !hasBottom)
                 {
                     var cellMesher = new SimpleTopCellMesher();
@@ -565,6 +606,7 @@ namespace MeshBuilder
         private const byte MaskBR = 1 << 1;
         private const byte MaskTR = 1 << 2;
         private const byte MaskTL = 1 << 3;
+        private const byte MaskFull = MaskBL | MaskBR | MaskTR | MaskTL;
 
         private static bool HasMask(byte config, byte mask) => (config & mask) != 0;
 
