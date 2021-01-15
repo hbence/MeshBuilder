@@ -461,6 +461,8 @@ namespace MeshBuilder
                     private class CellDist
                     {
                         public int index;
+                        public int x;
+                        public int y;
                         public int dist;
                     }
 
@@ -471,17 +473,18 @@ namespace MeshBuilder
                         CellDist[] cellDist = new CellDist[cells.Length];
                         for (int i = 0; i < cellDist.Length; ++i)
                         {
-                            cellDist[i] = new CellDist { dist = 0, index = i };
+                            var cell = new CellDist { dist = 0, index = i, x = i % cornerColNum, y = i / cornerColNum };
                             if (cells[i].isFull)
                             {
-                                cellDist[i].dist = int.MaxValue;
+                                cell.dist = int.MaxValue;
 
-                                if (IsOnEdge(i))
+                                if (IsOnEdge(i, cell.x, cell.y))
                                 {
-                                    cellDist[i].dist = 1;
+                                    cell.dist = 1;
                                     candidates.Add(i);
                                 }
                             }
+                            cellDist[i] = cell;
                         }
 
                         while (candidates.Count > 0)
@@ -489,9 +492,10 @@ namespace MeshBuilder
                             int i = candidates[0];
                             candidates.RemoveAt(0);
 
-                            int curVal = cellDist[i].dist + 1;
+                            var cell = cellDist[i];
+                            int curVal = cell.dist + 1;
 
-                            if (i % cornerColNum > 0) TestAdjacent(i - 1, curVal);
+                            if (cell.x > 0) TestAdjacent(i - 1, curVal);
                             if (i % cornerColNum < cornerColNum - 1) TestAdjacent(i + 1, curVal);
                             if (i >= cornerColNum) TestAdjacent(i - cornerColNum, curVal);
                             if (i <= cells.Length - cornerColNum - 1) TestAdjacent(i + cornerColNum, curVal);
@@ -499,7 +503,7 @@ namespace MeshBuilder
 
                         Array.Sort(cellDist, (CellDist a, CellDist b) => { return b.dist.CompareTo(a.dist); });
                         
-                        for (int i = 0; i < cellDist.Length && cellDist[i].dist > 1; ++i)
+                        for (int i = 0; i < cellDist.Length; ++i)
                         {
                             int index = cellDist[i].index;
                             if (cells[index].isFull && !cells[index].wasChecked)
@@ -514,12 +518,12 @@ namespace MeshBuilder
                             }
                         }
 
-                        bool IsOnEdge(int i)
+                        bool IsOnEdge(int i, int x, int y)
                         {
-                            if (i % cornerColNum > 0 && !cells[i - 1].isFull) return true;
-                            if (i % cornerColNum < cornerColNum - 1 && !cells[i + 1].isFull) return true;
-                            if (i >= cornerColNum && !cells[i - cornerColNum].isFull) return true;
-                            if (i <= cells.Length - cornerColNum - 1 && !cells[i + cornerColNum].isFull) return true;
+                            if (x > 0 && !cells[i - 1].isFull) return true;
+                            if (x < cornerColNum - 1 && !cells[i + 1].isFull) return true;
+                            if (y > 0 && !cells[i - cornerColNum].isFull) return true;
+                            if (y < cornerRowNum - 1 && !cells[i + cornerColNum].isFull) return true;
                             return false;
                         }
 
