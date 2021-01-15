@@ -1,13 +1,10 @@
-﻿using UnityEngine;
-using Unity.Collections;
+﻿using Unity.Collections;
 using Unity.Mathematics;
-using System;
-using UnityEditor;
 
 namespace MeshBuilder
 {
     using CornerInfo = MarchingSquaresMesher.SimpleTopCellMesher.CornerInfo;
-
+    using static MarchingSquaresMesher.SimpleTopCellMesher;
     public partial class MarchingSquaresMesher : Builder
     {
         /// <summary>
@@ -22,6 +19,7 @@ namespace MeshBuilder
                 public float2 bottomEdgeDir;
             }
 
+            public float lerpToExactEdge;
             public float heightOffset;
             public float normalOffset;
 
@@ -132,7 +130,7 @@ namespace MeshBuilder
                 index = info.cornerInfo.leftEdgeIndex;
                 if (index >= 0)
                 {
-                    float edgeLerp = cellSize * LerpT(info.cornerInfo.cornerDist, info.cornerInfo.topDist);
+                    float edgeLerp = cellSize * LerpT(info.cornerInfo.cornerDist, info.cornerInfo.topDist, lerpToExactEdge);
                     float2 offset = math.normalize(info.leftEdgeDir) * normalOffset;
                     vertices[index] = pos + new float3(offset.x, 0, edgeLerp + offset.y);
                 }
@@ -140,30 +138,28 @@ namespace MeshBuilder
                 index = info.cornerInfo.bottomEdgeIndex;
                 if (index >= 0)
                 {
-                    float edgeLerp = cellSize * LerpT(info.cornerInfo.cornerDist, info.cornerInfo.rightDist);
+                    float edgeLerp = cellSize * LerpT(info.cornerInfo.cornerDist, info.cornerInfo.rightDist, lerpToExactEdge);
                     float2 offset = math.normalize(info.bottomEdgeDir) * normalOffset;
                     vertices[index] = pos + new float3(edgeLerp + offset.x, 0, offset.y);
                 }
             }
 
             public void CalculateIndices(CornerInfoWithNormals bl, CornerInfoWithNormals br, CornerInfoWithNormals tr, CornerInfoWithNormals tl, NativeArray<int> triangles)
-                => SimpleTopCellMesher.CalculateIndicesNormal(bl.cornerInfo, br.cornerInfo, tr.cornerInfo, tl.cornerInfo, triangles);
+                => CalculateIndicesNormal(bl.cornerInfo, br.cornerInfo, tr.cornerInfo, tl.cornerInfo, triangles);
 
             public bool CanGenerateUvs { get => true; }
 
             public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfoWithNormals corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
-                => SimpleTopCellMesher.TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner.cornerInfo, uvScale, vertices, uvs);
+                => TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner.cornerInfo, uvScale, vertices, uvs);
 
             public bool CanGenerateNormals { get => true; }
 
             public void CalculateNormals(CornerInfoWithNormals corner, CornerInfoWithNormals right, CornerInfoWithNormals top, NativeArray<float3> vertices, NativeArray<float3> normals)
-                => SimpleTopCellMesher.TopCalculateNormals(corner.cornerInfo, right.cornerInfo, top.cornerInfo, vertices, normals);
-
-            static private float LerpT(float a, float b) => Mathf.Abs(a) / (Mathf.Abs(a) + Mathf.Abs(b));
+                => TopCalculateNormals(corner.cornerInfo, right.cornerInfo, top.cornerInfo, vertices, normals);
 
             private const float Epsilon = math.EPSILON;
-            static private float LerpVc(CornerInfoWithNormals cell) => LerpT(cell.cornerInfo.cornerDist + Epsilon, cell.cornerInfo.topDist + Epsilon);
-            static private float LerpHz(CornerInfoWithNormals cell) => LerpT(cell.cornerInfo.cornerDist + Epsilon, cell.cornerInfo.rightDist + Epsilon);
+            private float LerpVc(CornerInfoWithNormals cell) => LerpT(cell.cornerInfo.cornerDist + Epsilon, cell.cornerInfo.topDist + Epsilon, lerpToExactEdge);
+            private float LerpHz(CornerInfoWithNormals cell) => LerpT(cell.cornerInfo.cornerDist + Epsilon, cell.cornerInfo.rightDist + Epsilon, lerpToExactEdge);
         }
     }
 }

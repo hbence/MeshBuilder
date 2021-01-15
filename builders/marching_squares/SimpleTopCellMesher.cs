@@ -27,6 +27,7 @@ namespace MeshBuilder
                 public int triIndexLength;
             }
 
+            public float lerpToExactEdge;
             public float heightOffset;
 
             public CornerInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
@@ -77,9 +78,9 @@ namespace MeshBuilder
             }
 
             public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, NativeArray<float3> vertices)
-                => CalculateVerticesSimple(x, y, cellSize, info, vertices, heightOffset);
+                => CalculateVerticesSimple(x, y, cellSize, info, vertices, heightOffset, lerpToExactEdge);
 
-            static public void CalculateVerticesSimple(int x, int y, float cellSize, CornerInfo info, NativeArray<float3> vertices, float heightOffset)
+            static public void CalculateVerticesSimple(int x, int y, float cellSize, CornerInfo info, NativeArray<float3> vertices, float heightOffset = 0, float edgeLerp = 0)
             {
                 float3 pos = new float3(x * cellSize, heightOffset, y * cellSize);
 
@@ -89,11 +90,11 @@ namespace MeshBuilder
                 }
                 if (info.leftEdgeIndex >= 0)
                 {
-                    vertices[info.leftEdgeIndex] = pos + new float3(0, 0, cellSize * LerpT(info.cornerDist, info.topDist));
+                    vertices[info.leftEdgeIndex] = pos + new float3(0, 0, cellSize * LerpT(info.cornerDist, info.topDist, edgeLerp));
                 }
                 if (info.bottomEdgeIndex >= 0)
                 {
-                    vertices[info.bottomEdgeIndex] = pos + new float3(cellSize * LerpT(info.cornerDist, info.rightDist), 0, 0);
+                    vertices[info.bottomEdgeIndex] = pos + new float3(cellSize * LerpT(info.cornerDist, info.rightDist, edgeLerp), 0, 0);
                 }
             }
 
@@ -107,7 +108,7 @@ namespace MeshBuilder
                 // do nothing
             }
 
-            static private float LerpT(float a, float b) => Mathf.Abs(a) / (Mathf.Abs(a) + Mathf.Abs(b));
+            static public float LerpT(float a, float b, float lerpToDist) => math.lerp(0.5f, math.abs(a) / (math.abs(a) + math.abs(b)), lerpToDist);
                 
             public static int CalcTriIndexCount(byte config)
             {

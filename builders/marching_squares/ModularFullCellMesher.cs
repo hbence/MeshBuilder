@@ -159,6 +159,13 @@ namespace MeshBuilder
         public struct SimpleBottomCellMesher : ICellMesher<TopInfo>
         {
             private SimpleTopCellMesher topCellMesher;
+
+            public float lerpToExactEdge
+            {
+                get => topCellMesher.lerpToExactEdge;
+                set => topCellMesher.lerpToExactEdge = value;
+            }
+
             public float heightOffset 
             {
                 get => topCellMesher.heightOffset;
@@ -192,42 +199,52 @@ namespace MeshBuilder
                 => SimpleTopCellMesher.BottomCalculateNormals(corner, right, top, vertices, normals);
         }
 
-        private static FullCellMesher CreateFullCellMesher(float height)
+        private static FullCellMesher CreateFullCellMesher(float height, float lerpToEdge = 1f)
         {
             var mesher = new FullCellMesher();
             mesher.topMesher.heightOffset = height * 0.5f;
+            mesher.topMesher.lerpToExactEdge = lerpToEdge;
             mesher.sideMesher.height = height;
+            mesher.sideMesher.lerpToExactEdge = lerpToEdge;
             mesher.bottomMesher.heightOffset = height * -0.5f;
+            mesher.bottomMesher.lerpToExactEdge = lerpToEdge;
             return mesher;
         }
 
-        private static NoBottomCellMesher CreateNoBottomCellMesher(float height)
+        private static NoBottomCellMesher CreateNoBottomCellMesher(float height, float lerpToEdge = 1f)
         {
             var mesher = new NoBottomCellMesher();
             mesher.topMesher.heightOffset = height * 0.5f;
+            mesher.topMesher.lerpToExactEdge = lerpToEdge;
             mesher.sideMesher.height = height;
+            mesher.sideMesher.lerpToExactEdge = lerpToEdge;
             return mesher;
         }
 
-        private static NoBottomScalableFullCellMesher CreateNoBottomScalableFullCellMesher(float height, float bottomNormalOffset)
+        private static NoBottomScalableFullCellMesher CreateNoBottomScalableFullCellMesher(float height, float bottomNormalOffset, float lerpToEdge = 1f)
         {
             var mesher = new NoBottomScalableFullCellMesher();
             mesher.topMesher.heightOffset = height * 0.5f;
+            mesher.topMesher.lerpToExactEdge = lerpToEdge;
             mesher.sideMesher.height = height;
             mesher.sideMesher.topNormalOffset = 0;
             mesher.sideMesher.bottomNormalOffset = bottomNormalOffset;
+            mesher.sideMesher.lerpToExactEdge = lerpToEdge;
             return mesher;
         }
 
-        private static ScalableFullCellMesher CreateScalableFullCellMesher(float height, float bottomNormalOffset)
+        private static ScalableFullCellMesher CreateScalableFullCellMesher(float height, float bottomNormalOffset, float lerpToEdge = 1f)
         {
             var mesher = new ScalableFullCellMesher();
             mesher.topMesher.heightOffset = height * 0.5f;
+            mesher.topMesher.lerpToExactEdge = lerpToEdge;
             mesher.sideMesher.height = height;
             mesher.sideMesher.topNormalOffset = 0;
             mesher.sideMesher.bottomNormalOffset = bottomNormalOffset;
+            mesher.sideMesher.lerpToExactEdge = lerpToEdge;
             mesher.bottomMesher.heightOffset = height * 0.5f;
             mesher.bottomMesher.normalOffset = bottomNormalOffset;
+            mesher.bottomMesher.lerpToExactEdge = lerpToEdge;
             return mesher;
         }
 

@@ -28,6 +28,7 @@ namespace MeshBuilder
                 public int triB0Cell, triB1Cell, triB2Cell;
             }
 
+            public float lerpToExactEdge;
             public float heightOffset;
             public OptimizationMode optimizationMode;
             
@@ -127,7 +128,7 @@ namespace MeshBuilder
             }
 
             public void CalculateVertices(int x, int y, float cellSize, CornerInfo corner, NativeArray<float3> vertices)
-                => SimpleTopCellMesher.CalculateVerticesSimple(x, y, cellSize, corner.corner, vertices, heightOffset);
+                => SimpleTopCellMesher.CalculateVerticesSimple(x, y, cellSize, corner.corner, vertices, heightOffset, lerpToExactEdge);
 
             public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
                 => Debug.LogError("Not impemented!");

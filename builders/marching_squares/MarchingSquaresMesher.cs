@@ -40,62 +40,62 @@ namespace MeshBuilder
         private NativeList<float2> uvs;
         private NativeList<float3> normals;
 
-        public void Init(int colNum, int rowNum, float cellSize, float yOffset = 0, float[] distanceData = null)
+        public void Init(int colNum, int rowNum, float cellSize, float yOffset = 0, float lerpToExactEdge = 1, float[] distanceData = null)
         {
             CellSize = cellSize;
 
             DistanceData?.Dispose();
             DistanceData = new Data(colNum, rowNum, distanceData);
 
-            mesherInfo.Set(HasTop, NoSide, NoBottom, NoSeparateSides, yOffset, 0);
+            mesherInfo.Set(HasTop, NoSide, NoBottom, NoSeparateSides, yOffset, 0, lerpToExactEdge);
 
             Inited();
         }
 
-        public void InitForFullCell(int colNum, int rowNum, float cellSize, float height, bool hasBottom = false, float[] distanceData = null)
+        public void InitForFullCell(int colNum, int rowNum, float cellSize, float height, bool hasBottom = false, float lerpToExactEdge = 1, float[] distanceData = null)
         {
             CellSize = cellSize;
 
             DistanceData?.Dispose();
             DistanceData = new Data(colNum, rowNum, distanceData);
 
-            mesherInfo.Set(HasTop, HasSide, hasBottom, HasSeparateSides, height, 0);
+            mesherInfo.Set(HasTop, HasSide, hasBottom, HasSeparateSides, height, 0, lerpToExactEdge);
 
             Inited();
         }
 
-        public void InitForFullCellNoEdgeVertices(int colNum, int rowNum, float cellSize, float height, float[] distanceData = null)
+        public void InitForFullCellNoEdgeVertices(int colNum, int rowNum, float cellSize, float height, float lerpToExactEdge = 1, float[] distanceData = null)
         {
             CellSize = cellSize;
 
             DistanceData?.Dispose();
             DistanceData = new Data(colNum, rowNum, distanceData);
 
-            mesherInfo.Set(HasTop, HasSide, HasBottom, NoSeparateSides, height, 0);
+            mesherInfo.Set(HasTop, HasSide, HasBottom, NoSeparateSides, height, 0, lerpToExactEdge);
 
             Inited();
         }
 
-        public void InitForFullCellTapered(int colNum, int rowNum, float cellSize, float height, float bottomScaleOffset = 0.5f, bool hasBottom = false, float[] distanceData = null)
+        public void InitForFullCellTapered(int colNum, int rowNum, float cellSize, float height, float bottomScaleOffset = 0.5f, bool hasBottom = false, float lerpToExactEdge = 1, float[] distanceData = null)
         {
             CellSize = cellSize;
 
             DistanceData?.Dispose();
             DistanceData = new Data(colNum, rowNum, distanceData);
 
-            mesherInfo.Set(HasTop, HasSide, hasBottom, HasSeparateSides, height, bottomScaleOffset);
+            mesherInfo.Set(HasTop, HasSide, hasBottom, HasSeparateSides, height, bottomScaleOffset, lerpToExactEdge);
 
             Inited();
         }
 
-        public void InitForOptimized(int colNum, int rowNum, float cellSize, float height, OptimizationMode optimization = OptimizationMode.GreedyRect, float[] distanceData = null)
+        public void InitForOptimized(int colNum, int rowNum, float cellSize, float height, float lerpToExactEdge = 1, OptimizationMode optimization = OptimizationMode.GreedyRect, float[] distanceData = null)
         {
             CellSize = cellSize;
 
             DistanceData?.Dispose();
             DistanceData = new Data(colNum, rowNum, distanceData);
 
-            mesherInfo.Set(HasTop, NoSide, NoBottom, HasSeparateSides, height, 0);
+            mesherInfo.Set(HasTop, NoSide, NoBottom, HasSeparateSides, height, 0, lerpToExactEdge);
             mesherInfo.MakeOptimized(DistanceData, optimization);
 
             Inited();
@@ -282,6 +282,7 @@ namespace MeshBuilder
             public bool hasTop = true;
             public bool hasSide = true;
             public bool hasBottom = true;
+            public float lerpToExactEdge = 1f;
             public float height = 1;
             public float bottomScaleOffset = 0;
             public bool hasSeparateSides = true;
@@ -290,7 +291,7 @@ namespace MeshBuilder
             public OptimizationMode optimization;
             public Data data = null;
 
-            public void Set(bool hasTop, bool hasSide, bool hasBottom, bool hasSeparateSides, float height, float bottomScaleOffset)
+            public void Set(bool hasTop, bool hasSide, bool hasBottom, bool hasSeparateSides, float height, float bottomScaleOffset, float lerpToExactEdge)
             {
                 this.hasTop = hasTop;
                 this.hasSide = hasSide;
@@ -298,6 +299,7 @@ namespace MeshBuilder
                 this.hasSeparateSides = hasSeparateSides;
                 this.height = height;
                 this.bottomScaleOffset = bottomScaleOffset;
+                this.lerpToExactEdge = lerpToExactEdge;
 
                 optimized = false;
                 data = null;
@@ -316,6 +318,7 @@ namespace MeshBuilder
                 {
                     var cellMesher = new OptimizedTopCellMesher();
                     cellMesher.heightOffset = height;
+                    cellMesher.lerpToExactEdge = lerpToExactEdge;
                     cellMesher.optimizationMode = optimization;
                     return cellMesher.StartGeneration(dependOn, mesher);
                 }
@@ -324,18 +327,19 @@ namespace MeshBuilder
                 {
                     var cellMesher = new SimpleTopCellMesher();
                     cellMesher.heightOffset = height;
+                    cellMesher.lerpToExactEdge = lerpToExactEdge;
                     return mesher.StartGeneration<SimpleTopCellMesher.CornerInfo, SimpleTopCellMesher>(dependOn, cellMesher);
                 }
                 else if (hasTop && hasSide && !hasBottom)
                 {
                     if (bottomScaleOffset > 0)
                     {
-                        var cellMesher = CreateNoBottomScalableFullCellMesher(height, bottomScaleOffset);
+                        var cellMesher = CreateNoBottomScalableFullCellMesher(height, bottomScaleOffset, lerpToExactEdge);
                         return cellMesher.StartGeneration(dependOn, mesher);
                     }
                     else
                     {
-                        var cellMesher = CreateNoBottomCellMesher(height);
+                        var cellMesher = CreateNoBottomCellMesher(height, lerpToExactEdge);
                         return cellMesher.StartGeneration(dependOn, mesher);
                     }
                 }
@@ -345,12 +349,12 @@ namespace MeshBuilder
                     {
                         if (bottomScaleOffset > 0)
                         {
-                            var cellMesher = CreateScalableFullCellMesher(height, bottomScaleOffset);
+                            var cellMesher = CreateScalableFullCellMesher(height, bottomScaleOffset, lerpToExactEdge);
                             return cellMesher.StartGeneration(dependOn, mesher);
                         }
                         else
                         {
-                            var cellMesher = CreateFullCellMesher(height);
+                            var cellMesher = CreateFullCellMesher(height, lerpToExactEdge);
                             return cellMesher.StartGeneration(dependOn, mesher);
                         }
                     }

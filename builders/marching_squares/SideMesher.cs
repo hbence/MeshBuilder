@@ -18,6 +18,7 @@ namespace MeshBuilder
             }
             private SimpleTopCellMesher topMesher;
 
+            public float lerpToExactEdge { get => topMesher.lerpToExactEdge; set => topMesher.lerpToExactEdge = value; }
             public float height;
 
             public CornerInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
@@ -269,6 +270,8 @@ namespace MeshBuilder
                 public CornerInfoWithNormals bottom;
             }
             private ScalableTopCellMesher topMesher;
+
+            public float lerpToExactEdge { get => topMesher.lerpToExactEdge; set => topMesher.lerpToExactEdge = value; }
 
             public float height;
             public float topNormalOffset;
