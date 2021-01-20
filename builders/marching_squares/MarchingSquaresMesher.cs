@@ -31,6 +31,8 @@ namespace MeshBuilder
         public bool ShouldGenerateUV = true;
         public float uvScale = 1f;
 
+        public float heightDataScale = 1f;
+
         public bool ShouldGenerateNormals = true;
 
         private MesherInfo mesherInfo = new MesherInfo();
@@ -103,16 +105,9 @@ namespace MeshBuilder
 
         override protected JobHandle StartGeneration(JobHandle lastHandle)
         {
+            mesherInfo.hasHeightData = DistanceData.HasHeights;
             return mesherInfo.StartGeneration(lastHandle, this);
         }
-
-        /*
-        override protected JobHandle StartGeneration(JobHandle lastHandle)
-        {
-            var cellMesher = CreateScalableFullCellMesher(0.4f, 0.2f);
-            return cellMesher.StartGeneration(lastHandle, this);
-        }
-        //*/
 
         private JobHandle StartGeneration<InfoType, MesherType>(JobHandle lastHandle, MesherType cellMesher)
             where InfoType : struct
@@ -170,16 +165,35 @@ namespace MeshBuilder
                 lastHandle = infoJob.Schedule(lastHandle);
             }
 
-            var vertexJob = new CalculateVertices<InfoType, MesherType>
+            JobHandle vertexHandle;
+            if (DistanceData.HasHeights)
             {
-                cornerColNum = ColNum,
-                cellSize = CellSize,
-                cellMesher = cellMesher,
+                var vertexJob = new CalculateVerticesWithHeight<InfoType, MesherType>
+                {
+                    cornerColNum = ColNum,
+                    cellSize = CellSize,
+                    cellMesher = cellMesher,
 
-                cornerInfos = corners,
-                vertices = vertices.AsDeferredJobArray()
-            };
-            var vertexHandle = vertexJob.Schedule(corners.Length, CalculateVertexBatchNum, lastHandle);
+                    heightDataScale = heightDataScale,
+                    heights = DistanceData.HeightsRawData,
+                    cornerInfos = corners,
+                    vertices = vertices.AsDeferredJobArray()
+                };
+                vertexHandle = vertexJob.Schedule(corners.Length, CalculateVertexBatchNum, lastHandle);
+            }
+            else
+            {
+                var vertexJob = new CalculateVertices<InfoType, MesherType>
+                {
+                    cornerColNum = ColNum,
+                    cellSize = CellSize,
+                    cellMesher = cellMesher,
+
+                    cornerInfos = corners,
+                    vertices = vertices.AsDeferredJobArray()
+                };
+                vertexHandle = vertexJob.Schedule(corners.Length, CalculateVertexBatchNum, lastHandle);
+            }
 
             var uvHandle = vertexHandle;
             if (generateUVs)
@@ -286,6 +300,7 @@ namespace MeshBuilder
             public float height = 1;
             public float bottomScaleOffset = 0;
             public bool hasSeparateSides = true;
+            public bool hasHeightData = false;
             
             public bool optimized = false;
             public OptimizationMode optimization;
@@ -314,6 +329,12 @@ namespace MeshBuilder
 
             public JobHandle StartGeneration(JobHandle dependOn, MarchingSquaresMesher mesher)
             {
+                if (hasHeightData)
+                {
+                    var cellMesher = CreateHeightCellMesher(height, lerpToExactEdge);
+                    return cellMesher.StartGeneration(dependOn, mesher);
+                }
+
                 if (optimized)
                 {
                     var cellMesher = new OptimizedTopCellMesher();
@@ -500,7 +521,31 @@ namespace MeshBuilder
                 InfoType info = cornerInfos[index];
                 int x = index % cornerColNum;
                 int y = index / cornerColNum;
-                cellMesher.CalculateVertices(x, y, cellSize, info, vertices);
+                cellMesher.CalculateVertices(x, y, cellSize, info, 0, vertices);
+            }
+        }
+
+        [BurstCompile]
+        private struct CalculateVerticesWithHeight<InfoType, MesherType> : IJobParallelFor
+            where InfoType : struct
+            where MesherType : struct, ICellMesher<InfoType>
+        {
+            public int cornerColNum;
+            public float cellSize;
+
+            public MesherType cellMesher;
+
+            public float heightDataScale;
+            [ReadOnly] public NativeArray<float> heights;
+            [ReadOnly] public NativeArray<InfoType> cornerInfos;
+            [NativeDisableParallelForRestriction] [WriteOnly] public NativeArray<float3> vertices;
+
+            public void Execute(int index)
+            {
+                InfoType info = cornerInfos[index];
+                int x = index % cornerColNum;
+                int y = index / cornerColNum;
+                cellMesher.CalculateVertices(x, y, cellSize, info, heights[index] * heightDataScale, vertices);
             }
         }
 
@@ -593,7 +638,7 @@ namespace MeshBuilder
             bool NeedUpdateInfo { get; }
             void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref InfoType cell, ref InfoType top, ref InfoType right);
             
-            void CalculateVertices(int x, int y, float cellSize, InfoType info, NativeArray<float3> vertices);
+            void CalculateVertices(int x, int y, float cellSize, InfoType info, float height, NativeArray<float3> vertices);
             void CalculateIndices(InfoType bl, InfoType br, InfoType tr, InfoType tl, NativeArray<int> triangles);
             
             bool CanGenerateUvs { get; }

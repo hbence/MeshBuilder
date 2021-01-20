@@ -32,6 +32,10 @@ namespace MeshBuilder
 
             public CornerInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
                                             ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles)
+                => GenerateInfoSimple(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertices, ref nextTriIndex, hasCellTriangles);
+
+            static public CornerInfo GenerateInfoSimple(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
+                                            ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles)
             {
                 CornerInfo info = new CornerInfo
                 {
@@ -77,12 +81,12 @@ namespace MeshBuilder
                 return info;
             }
 
-            public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, NativeArray<float3> vertices)
-                => CalculateVerticesSimple(x, y, cellSize, info, vertices, heightOffset, lerpToExactEdge);
+            public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, float height, NativeArray<float3> vertices)
+                => CalculateVerticesSimple(x, y, cellSize, info, height, vertices, heightOffset, lerpToExactEdge);
 
-            static public void CalculateVerticesSimple(int x, int y, float cellSize, CornerInfo info, NativeArray<float3> vertices, float heightOffset = 0, float edgeLerp = 0)
+            static public void CalculateVerticesSimple(int x, int y, float cellSize, CornerInfo info, float height, NativeArray<float3> vertices, float heightOffset = 0, float edgeLerp = 0)
             {
-                float3 pos = new float3(x * cellSize, heightOffset, y * cellSize);
+                float3 pos = new float3(x * cellSize, heightOffset + height, y * cellSize);
 
                 if (info.vertexIndex >= 0)
                 {

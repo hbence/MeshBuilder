@@ -39,12 +39,12 @@ namespace MeshBuilder
                 return info;
             }
 
-            public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, NativeArray<float3> vertices)
+            public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, float vertexHeight, NativeArray<float3> vertices)
             {
                 topMesher.heightOffset = height * 0.5f;
-                topMesher.CalculateVertices(x, y, cellSize, info.top, vertices);
+                topMesher.CalculateVertices(x, y, cellSize, info.top, vertexHeight, vertices);
                 topMesher.heightOffset = height * -0.5f;
-                topMesher.CalculateVertices(x, y, cellSize, info.bottom, vertices);
+                topMesher.CalculateVertices(x, y, cellSize, info.bottom, 0, vertices);
             }
 
             public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
@@ -295,14 +295,14 @@ namespace MeshBuilder
                 return info;
             }
 
-            public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, NativeArray<float3> vertices)
+            public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, float vertexHeight, NativeArray<float3> vertices)
             {
                 topMesher.heightOffset = height * 0.5f;
                 topMesher.normalOffset = topNormalOffset;
-                topMesher.CalculateVertices(x, y, cellSize, info.top, vertices);
+                topMesher.CalculateVertices(x, y, cellSize, info.top, vertexHeight, vertices);
                 topMesher.heightOffset = height * -0.5f;
                 topMesher.normalOffset = bottomNormalOffset;
-                topMesher.CalculateVertices(x, y, cellSize, info.bottom, vertices);
+                topMesher.CalculateVertices(x, y, cellSize, info.bottom, 0, vertices);
             }
 
             public bool NeedUpdateInfo { get => true; }

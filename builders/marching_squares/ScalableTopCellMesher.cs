@@ -23,52 +23,8 @@ namespace MeshBuilder
             public float heightOffset;
             public float normalOffset;
 
-            public CornerInfoWithNormals GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
-                                            ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles)
-            {
-                CornerInfo info = new CornerInfo
-                {
-                    config = CalcConfiguration(cornerDistance, rightDistance, topRightDistance, topDistance),
-
-                    cornerDist = cornerDistance,
-                    rightDist = rightDistance,
-                    topDist = topDistance,
-
-                    vertexIndex = -1,
-                    leftEdgeIndex = -1,
-                    bottomEdgeIndex = -1,
-
-                    triIndexStart = nextTriIndex,
-                    triIndexLength = 0
-                };
-
-                if (hasCellTriangles)
-                {
-                    info.triIndexLength = SimpleTopCellMesher.CalcTriIndexCount(info.config);
-                    nextTriIndex += info.triIndexLength;
-                }
-
-                bool hasBL = HasMask(info.config, MaskBL);
-                if (hasBL)
-                {
-                    info.vertexIndex = nextVertices;
-                    ++nextVertices;
-                }
-
-                if (hasBL != HasMask(info.config, MaskTL))
-                {
-                    info.leftEdgeIndex = nextVertices;
-                    ++nextVertices;
-                }
-
-                if (hasBL != HasMask(info.config, MaskBR))
-                {
-                    info.bottomEdgeIndex = nextVertices;
-                    ++nextVertices;
-                }
-
-                return new CornerInfoWithNormals { cornerInfo = info };
-            }
+            public CornerInfoWithNormals GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance, ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles)
+                => new CornerInfoWithNormals { cornerInfo = GenerateInfoSimple(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertices, ref nextTriIndex, hasCellTriangles) };
 
             public bool NeedUpdateInfo { get => true; }
             public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref CornerInfoWithNormals cell, ref CornerInfoWithNormals top, ref CornerInfoWithNormals right)
@@ -116,9 +72,9 @@ namespace MeshBuilder
                 edgeDirB += dir;
             }
 
-            public void CalculateVertices(int x, int y, float cellSize, CornerInfoWithNormals info, NativeArray<float3> vertices)
+            public void CalculateVertices(int x, int y, float cellSize, CornerInfoWithNormals info, float height, NativeArray<float3> vertices)
             {
-                float3 pos = new float3(x * cellSize, heightOffset, y * cellSize);
+                float3 pos = new float3(x * cellSize, heightOffset + height, y * cellSize);
 
                 int index = info.cornerInfo.vertexIndex;
                 if (index >= 0)
@@ -152,7 +108,7 @@ namespace MeshBuilder
             public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfoWithNormals corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
                 => TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner.cornerInfo, uvScale, vertices, uvs);
 
-            public bool CanGenerateNormals { get => true; }
+            public bool CanGenerateNormals { get => false; }
 
             public void CalculateNormals(CornerInfoWithNormals corner, CornerInfoWithNormals right, CornerInfoWithNormals top, NativeArray<float3> vertices, NativeArray<float3> normals)
                 => TopCalculateNormals(corner.cornerInfo, right.cornerInfo, top.cornerInfo, vertices, normals);

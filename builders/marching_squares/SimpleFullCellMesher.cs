@@ -35,12 +35,12 @@ namespace MeshBuilder
                 return info;
             }
 
-            public void CalculateVertices(int x, int y, float cellSize, SideInfo info, NativeArray<float3> vertices)
+            public void CalculateVertices(int x, int y, float cellSize, SideInfo info, float vertexHeight, NativeArray<float3> vertices)
             {
                 topMesher.heightOffset = height * 0.5f;
-                topMesher.CalculateVertices(x, y, cellSize, info.top, vertices);
+                topMesher.CalculateVertices(x, y, cellSize, info.top, vertexHeight, vertices);
                 topMesher.heightOffset = height * -0.5f;
-                topMesher.CalculateVertices(x, y, cellSize, info.bottom, vertices);
+                topMesher.CalculateVertices(x, y, cellSize, info.bottom, 0, vertices);
             }
 
             public void CalculateIndices(SideInfo bl, SideInfo br, SideInfo tr, SideInfo tl, NativeArray<int> triangles)

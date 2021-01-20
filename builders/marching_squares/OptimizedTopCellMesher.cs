@@ -86,30 +86,7 @@ namespace MeshBuilder
                 }
                 else
                 {
-                    if (hasCellTriangles)
-                    {
-                        info.triIndexLength = SimpleTopCellMesher.CalcTriIndexCount(info.config);
-                        nextTriIndex += info.triIndexLength;
-                    }
-
-                    bool hasBL = HasMask(info.config, MaskBL);
-                    if (hasBL)
-                    {
-                        info.vertexIndex = nextVertices;
-                        ++nextVertices;
-                    }
-
-                    if (hasBL != HasMask(info.config, MaskTL))
-                    {
-                        info.leftEdgeIndex = nextVertices;
-                        ++nextVertices;
-                    }
-
-                    if (hasBL != HasMask(info.config, MaskBR))
-                    {
-                        info.bottomEdgeIndex = nextVertices;
-                        ++nextVertices;
-                    }
+                    info = SimpleTopCellMesher.GenerateInfoSimple(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertices, ref nextTriIndex, hasCellTriangles);
                 }
 
                 return new CornerInfo
@@ -127,8 +104,8 @@ namespace MeshBuilder
                 };
             }
 
-            public void CalculateVertices(int x, int y, float cellSize, CornerInfo corner, NativeArray<float3> vertices)
-                => SimpleTopCellMesher.CalculateVerticesSimple(x, y, cellSize, corner.corner, vertices, heightOffset, lerpToExactEdge);
+            public void CalculateVertices(int x, int y, float cellSize, CornerInfo corner, float height, NativeArray<float3> vertices)
+                => SimpleTopCellMesher.CalculateVerticesSimple(x, y, cellSize, corner.corner, height, vertices, heightOffset, lerpToExactEdge);
 
             public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
                 => Debug.LogError("Not impemented!");
