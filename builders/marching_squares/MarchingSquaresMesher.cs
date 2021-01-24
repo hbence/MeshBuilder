@@ -128,110 +128,35 @@ namespace MeshBuilder
 
             bool generateUVs = ShouldGenerateUV && cellMesher.CanGenerateUvs;
 
-            int cellCount = (ColNum - 1) * (RowNum - 1);
-
-            var cornerJob = new GenerateCorners<InfoType, MesherType>
-            {
-                distanceColNum = ColNum,
-                distanceRowNum = RowNum,
-                
-                cellMesher = cellMesher,
-
-                distances = DistanceData.RawData,
-                corners = corners,
-
-                vertices = vertices,
-                indices = triangles,
-
-                generateUVs = generateUVs,
-                uvs = uvs,
-                normals = normals
-            };
-            lastHandle = cornerJob.Schedule(lastHandle);
+            lastHandle = GenerateCorners<InfoType, MesherType>.Schedule(ColNum, RowNum, cellMesher, DistanceData.RawData, corners, vertices, triangles, normals, generateUVs, uvs, lastHandle);
 
             if (cellMesher.NeedUpdateInfo)
             {
-                var infoJob = new UpdateCorners<InfoType, MesherType>
-                {
-                    cellColNum = ColNum - 1,
-                    cellRowNum = RowNum - 1,
-                    cellMesher = cellMesher,
-                    cornerInfos = corners
-                };
-                lastHandle = infoJob.Schedule(lastHandle);
+                lastHandle = UpdateCorners<InfoType, MesherType>.Schedule(ColNum, RowNum, cellMesher, corners, lastHandle);
             }
 
             JobHandle vertexHandle;
             if (DistanceData.HasHeights)
             {
-                var vertexJob = new CalculateVerticesWithHeight<InfoType, MesherType>
-                {
-                    cornerColNum = ColNum,
-                    cellSize = CellSize,
-                    cellMesher = cellMesher,
-
-                    heightDataScale = heightDataScale,
-                    heights = DistanceData.HeightsRawData,
-                    cornerInfos = corners,
-                    vertices = vertices.AsDeferredJobArray()
-                };
-                vertexHandle = vertexJob.Schedule(corners.Length, CalculateVertexBatchNum, lastHandle);
+                vertexHandle = CalculateVerticesWithHeight<InfoType, MesherType>.Schedule(ColNum, CellSize, cellMesher, heightDataScale, DistanceData.HeightsRawData, corners, vertices, lastHandle);
             }
             else
             {
-                var vertexJob = new CalculateVertices<InfoType, MesherType>
-                {
-                    cornerColNum = ColNum,
-                    cellSize = CellSize,
-                    cellMesher = cellMesher,
-
-                    cornerInfos = corners,
-                    vertices = vertices.AsDeferredJobArray()
-                };
-                vertexHandle = vertexJob.Schedule(corners.Length, CalculateVertexBatchNum, lastHandle);
+                vertexHandle = CalculateVertices<InfoType, MesherType>.Schedule(ColNum, CellSize, cellMesher, corners, vertices, lastHandle);
             }
 
-            var trianglesJob = new CalculateTriangles<InfoType, MesherType>
-            {
-                cornerColNum = ColNum,
-                cellMesher = cellMesher,
-                cornerInfos = corners,
-                triangles = triangles.AsDeferredJobArray()
-            };
-            var trianglesHandle = trianglesJob.Schedule(cellCount, MeshTriangleBatchNum, lastHandle);
-
+            var trianglesHandle = CalculateTriangles<InfoType, MesherType>.Schedule(ColNum, RowNum, cellMesher, corners, triangles, lastHandle);
+            
             var uvHandle = vertexHandle;
             if (generateUVs)
             {
-                var uvJob = new CalculateUvs<InfoType, MesherType>
-                {
-                    cornerColNum = ColNum,
-                    cornerRowNum = RowNum,
-                    cellSize = CellSize,
-                    uvScale = uvScale,
-                    cellMesher = cellMesher,
-
-                    cornerInfos = corners,
-                    vertices = vertices.AsDeferredJobArray(),
-                    uvs = uvs.AsDeferredJobArray()
-                };
-                uvHandle = uvJob.Schedule(corners.Length, CalculateVertexBatchNum, vertexHandle);
+                uvHandle = CalculateUvs<InfoType, MesherType>.Schedule(ColNum, RowNum, CellSize, uvScale, cellMesher, corners, vertices, uvs, vertexHandle);
             }
 
             JobHandle normalHandle;
             if (cellMesher.CanGenerateNormals)
             {
-                var normalJob = new CalculateNormals<InfoType, MesherType>
-                {
-                    cornerColNum = ColNum,
-                    cornerRowNum = RowNum,
-                    cellMesher = cellMesher,
-
-                    cornerInfos = corners,
-                    vertices = vertices.AsDeferredJobArray(),
-                    normals = normals.AsDeferredJobArray()
-                };
-                normalHandle = normalJob.Schedule(corners.Length, CalculateVertexBatchNum, vertexHandle);
+                normalHandle = CalculateNormals<InfoType, MesherType>.Schedule(ColNum, RowNum, cellMesher, corners, vertices, normals, vertexHandle);
             }
             else
             {
@@ -409,10 +334,10 @@ namespace MeshBuilder
             
             public NativeList<float3> vertices;
             public NativeList<int> indices;
+            public NativeList<float3> normals;
 
             public bool generateUVs;
             public NativeList<float2> uvs;
-            public NativeList<float3> normals;
 
             public void Execute()
             {
@@ -462,6 +387,28 @@ namespace MeshBuilder
                     uvs.ResizeUninitialized(nextVertex);
                 }
             }
+
+            public static JobHandle Schedule(int colNum, int rowNum, MesherType cellMesher, NativeArray<float> distances, NativeArray<InfoType> corners, NativeList<float3> vertices, NativeList<int> triangles, NativeList<float3> normals, bool generateUVs, NativeList<float2> uvs, JobHandle dependOn = default)
+            {
+                var cornerJob = new GenerateCorners<InfoType, MesherType>
+                {
+                    distanceColNum = colNum,
+                    distanceRowNum = rowNum,
+
+                    cellMesher = cellMesher,
+
+                    distances = distances,
+                    corners = corners,
+
+                    vertices = vertices,
+                    indices = triangles,
+                    normals = normals,
+
+                    generateUVs = generateUVs,
+                    uvs = uvs,
+                };
+                return cornerJob.Schedule(dependOn);
+            }
         }
 
         [BurstCompile]
@@ -495,6 +442,18 @@ namespace MeshBuilder
                     }
                 }
             }
+
+            public static JobHandle Schedule(int colNum, int rowNum, MesherType cellMesher, NativeArray<InfoType> corners, JobHandle dependOn)
+            {
+                var infoJob = new UpdateCorners<InfoType, MesherType>
+                {
+                    cellColNum = colNum - 1,
+                    cellRowNum = rowNum - 1,
+                    cellMesher = cellMesher,
+                    cornerInfos = corners
+                };
+                return infoJob.Schedule(dependOn);
+            }
         }
 
         [BurstCompile]
@@ -516,6 +475,20 @@ namespace MeshBuilder
                 int x = index % cornerColNum;
                 int y = index / cornerColNum;
                 cellMesher.CalculateVertices(x, y, cellSize, info, 0, vertices);
+            }
+
+            public static JobHandle Schedule(int colNum, float cellSize, MesherType cellMesher, NativeArray<InfoType> corners, NativeList<float3> vertices, JobHandle dependOn)
+            {
+                var vertexJob = new CalculateVertices<InfoType, MesherType>
+                {
+                    cornerColNum = colNum,
+                    cellSize = cellSize,
+                    cellMesher = cellMesher,
+
+                    cornerInfos = corners,
+                    vertices = vertices.AsDeferredJobArray()
+                };
+                return vertexJob.Schedule(corners.Length, CalculateVertexBatchNum, dependOn);
             }
         }
 
@@ -540,6 +513,22 @@ namespace MeshBuilder
                 int x = index % cornerColNum;
                 int y = index / cornerColNum;
                 cellMesher.CalculateVertices(x, y, cellSize, info, heights[index] * heightDataScale, vertices);
+            }
+
+            public static JobHandle Schedule(int colNum, float cellSize, MesherType cellMesher, float heightScale, NativeArray<float> heights, NativeArray<InfoType>corners, NativeList<float3> vertices, JobHandle dependOn)
+            {
+                var vertexJob = new CalculateVerticesWithHeight<InfoType, MesherType>
+                {
+                    cornerColNum = colNum,
+                    cellSize = cellSize,
+                    cellMesher = cellMesher,
+
+                    heightDataScale = heightScale,
+                    heights = heights,
+                    cornerInfos = corners,
+                    vertices = vertices.AsDeferredJobArray()
+                };
+                return vertexJob.Schedule(corners.Length, CalculateVertexBatchNum, dependOn);
             }
         }
 
@@ -567,6 +556,23 @@ namespace MeshBuilder
                 int x = index % cornerColNum;
                 int y = index / cornerRowNum;
                 cellMesher.CalculateUvs(x, y, cornerColNum, cornerRowNum, cellSize, info, uvScale, vertices, uvs);
+            }
+
+            public static JobHandle Schedule(int colNum, int rowNum, float cellSize, float uvScale, MesherType cellMesher, NativeArray<InfoType> corners, NativeList<float3> vertices, NativeList<float2> uvs, JobHandle dependOn)
+            {
+                var uvJob = new CalculateUvs<InfoType, MesherType>
+                {
+                    cornerColNum = colNum,
+                    cornerRowNum = rowNum,
+                    cellSize = cellSize,
+                    uvScale = uvScale,
+                    cellMesher = cellMesher,
+
+                    cornerInfos = corners,
+                    vertices = vertices.AsDeferredJobArray(),
+                    uvs = uvs.AsDeferredJobArray()
+                };
+                return uvJob.Schedule(corners.Length, CalculateVertexBatchNum, dependOn);
             }
         }
 
@@ -596,6 +602,21 @@ namespace MeshBuilder
 
                 cellMesher.CalculateNormals(info, right, top, vertices, normals);
             }
+
+            public static JobHandle Schedule(int colNum, int rowNum, MesherType cellMesher, NativeArray<InfoType> corners, NativeList<float3> vertices, NativeList<float3> normals, JobHandle dependOn)
+            {
+                var normalJob = new CalculateNormals<InfoType, MesherType>
+                {
+                    cornerColNum = colNum,
+                    cornerRowNum = rowNum,
+                    cellMesher = cellMesher,
+
+                    cornerInfos = corners,
+                    vertices = vertices.AsDeferredJobArray(),
+                    normals = normals.AsDeferredJobArray()
+                };
+                return normalJob.Schedule(corners.Length, CalculateVertexBatchNum, dependOn);
+            }
         }
 
         [BurstCompile]
@@ -622,6 +643,19 @@ namespace MeshBuilder
                 InfoType tr = cornerInfos[index + 1 + cornerColNum];
                 InfoType tl = cornerInfos[index + cornerColNum];
                 cellMesher.CalculateIndices(bl, br, tr, tl, triangles);
+            }
+
+            public static JobHandle Schedule(int colNum, int rowNum, MesherType cellMesher, NativeArray<InfoType> corners, NativeList<int> triangles, JobHandle dependOn)
+            {
+                var trianglesJob = new CalculateTriangles<InfoType, MesherType>
+                {
+                    cornerColNum = colNum,
+                    cellMesher = cellMesher,
+                    cornerInfos = corners,
+                    triangles = triangles.AsDeferredJobArray()
+                };
+                int cellCount = (colNum - 1) * (rowNum - 1);
+                return trianglesJob.Schedule(cellCount, MeshTriangleBatchNum, dependOn);
             }
         }
 
