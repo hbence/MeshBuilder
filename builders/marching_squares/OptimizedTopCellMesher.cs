@@ -188,7 +188,6 @@ namespace MeshBuilder
                 mesher.AddTemp(mesher.normals);
 
                 bool generateUVs = mesher.ShouldGenerateUV && CanGenerateUvs;
-                bool generateNormals = mesher.ShouldGenerateNormals && CanGenerateNormals;
 
                 int cellCount = (colNum - 1) * (rowNum - 1);
 
@@ -218,7 +217,6 @@ namespace MeshBuilder
 
                     generateUVs = generateUVs,
                     uvs = mesher.uvs,
-                    generateNormals = generateNormals,
                     normals = mesher.normals
                 };
                 lastHandle = cornerJob.Schedule(lastHandle);
@@ -252,21 +250,17 @@ namespace MeshBuilder
                     uvHandle = uvJob.Schedule(corners.Length, CalculateVertexBatchNum, vertexHandle);
                 }
 
-                var normalHandle = vertexHandle;
-                if (generateNormals)
+                var normalJob = new CalculateNormals<CornerInfo, OptimizedTopCellMesher>
                 {
-                    var normalJob = new CalculateNormals<CornerInfo, OptimizedTopCellMesher>
-                    {
-                        cornerColNum = colNum,
-                        cornerRowNum = rowNum,
-                        cellMesher = this,
+                    cornerColNum = colNum,
+                    cornerRowNum = rowNum,
+                    cellMesher = this,
 
-                        cornerInfos = corners,
-                        vertices = mesher.vertices.AsDeferredJobArray(),
-                        normals = mesher.normals.AsDeferredJobArray()
-                    };
-                    normalHandle = normalJob.Schedule(corners.Length, CalculateVertexBatchNum, vertexHandle);
-                }
+                    cornerInfos = corners,
+                    vertices = mesher.vertices.AsDeferredJobArray(),
+                    normals = mesher.normals.AsDeferredJobArray()
+                };
+                var normalHandle = normalJob.Schedule(corners.Length, CalculateVertexBatchNum, vertexHandle);
 
                 vertexHandle = JobHandle.CombineDependencies(vertexHandle, uvHandle, normalHandle);
 
@@ -699,7 +693,6 @@ namespace MeshBuilder
 
                 public bool generateUVs;
                 public NativeList<float2> uvs;
-                public bool generateNormals;
                 public NativeList<float3> normals;
 
                 public void Execute()
@@ -746,14 +739,11 @@ namespace MeshBuilder
 
                     vertices.ResizeUninitialized(nextVertex);
                     indices.ResizeUninitialized(nextTriangleIndex);
+                    normals.ResizeUninitialized(nextVertex);
 
                     if (generateUVs)
                     {
                         uvs.ResizeUninitialized(nextVertex);
-                    }
-                    if (generateNormals)
-                    {
-                        normals.ResizeUninitialized(nextVertex);
                     }
                 }
             }
