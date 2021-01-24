@@ -257,7 +257,6 @@ namespace MeshBuilder
                 NativeArray<float3>.Copy(normals, data.Normals);
 
                 if (uvs.Length > 0) { NativeArray<float2>.Copy(uvs, data.UVs); }
-                if (normals.Length > 0) { NativeArray<float3>.Copy(normals, data.Normals); }
 
                 data.UpdateMesh(mesh, MeshData.UpdateMode.Clear);
             }
