@@ -28,6 +28,11 @@ namespace MeshBuilder
             }
 
             public enum NormalMode { UpFlat, DownFlat, UpDontSetNormal, DownDontSetNormal }
+            static public bool IsFlat(NormalMode mode) => mode == NormalMode.UpFlat || mode == NormalMode.DownFlat; 
+            static public bool IsUp(NormalMode mode) => mode == NormalMode.UpFlat || mode == NormalMode.UpDontSetNormal; 
+            static public bool IsDown(NormalMode mode) => mode == NormalMode.DownFlat || mode == NormalMode.DownDontSetNormal;
+            static public NormalMode SelectUp(bool isFlat) => isFlat ? NormalMode.UpFlat : NormalMode.UpDontSetNormal;
+            static public NormalMode SelectDown(bool isFlat) => isFlat ? NormalMode.DownFlat : NormalMode.DownDontSetNormal;
 
             private float3 normal;
             private NormalMode normalMode;
@@ -35,7 +40,7 @@ namespace MeshBuilder
 
             public TopCellMesher(float heightOffset, NormalMode normalMode, float lerpToEdge)
             {
-                if (normalMode == NormalMode.DownDontSetNormal || normalMode == NormalMode.DownFlat)
+                if (IsDown(normalMode))
                 {
                     Debug.LogWarning("invalid normal mode, use the BottomCellMesher for upside down mesh!");
                 }
@@ -375,13 +380,5 @@ namespace MeshBuilder
                 if (corner.bottomEdgeIndex >= 0) { normals[corner.bottomEdgeIndex] = normal; }
             }
         }
-
-        /*
-        public struct ModularTopCellMesher<VertexCalculator, TriangleOrderer> : ICellMesher<TopCellMesher.CornerInfo>
-            where VertexCalculator : struct, ModularTopCellMesher<VertexCalculator, TriangleOrderer>.IVertexCalculator
-            where TriangleOrderer : struct, ModularTopCellMesher<VertexCalculator, TriangleOrderer>.ITriangleOrderer
-        {
-        }
-        */
     }
 }
