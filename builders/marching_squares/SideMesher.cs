@@ -11,21 +11,26 @@ namespace MeshBuilder
         {
             public struct CornerInfo
             {
-                public SimpleTopCellMesher.CornerInfo top;
+                public TopCellMesher.CornerInfo top;
                 public int triIndexStart;
                 public int triIndexLength;
-                public SimpleTopCellMesher.CornerInfo bottom;
+                public TopCellMesher.CornerInfo bottom;
             }
-            private SimpleTopCellMesher topMesher;
 
-            public float lerpToExactEdge { get => topMesher.lerpToExactEdge; set => topMesher.lerpToExactEdge = value; }
             public float height;
+            public float lerpToEdge;
+
+            public SimpleSideMesher(float height, float lerpToEdge)
+            {
+                this.height = height;
+                this.lerpToEdge = lerpToEdge;
+            }
 
             public CornerInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
                                 ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles)
             {
                 CornerInfo info = new CornerInfo();
-                info.top = topMesher.GenerateInfo(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertices, ref nextTriIndex, false);
+                info.top = TopCellMesher.GenerateInfoSimple(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertices, ref nextTriIndex, false);
 
                 if (hasCellTriangles)
                 {
@@ -35,20 +40,18 @@ namespace MeshBuilder
                     nextTriIndex += info.triIndexLength;
                 }
 
-                info.bottom = topMesher.GenerateInfo(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertices, ref nextTriIndex, false);
+                info.bottom = TopCellMesher.GenerateInfoSimple(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertices, ref nextTriIndex, false);
                 return info;
             }
 
             public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, float vertexHeight, NativeArray<float3> vertices)
             {
-                topMesher.heightOffset = height * 0.5f;
-                topMesher.CalculateVertices(x, y, cellSize, info.top, vertexHeight, vertices);
-                topMesher.heightOffset = height * -0.5f;
-                topMesher.CalculateVertices(x, y, cellSize, info.bottom, 0, vertices);
+                TopCellMesher.CalculateVerticesFull(x, y, cellSize, info.top, vertexHeight, vertices, height * 0.5f, lerpToEdge);
+                TopCellMesher.CalculateVerticesFull(x, y, cellSize, info.bottom, 0, vertices, -height * 0.5f, lerpToEdge);
             }
 
             public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
-             => CalculateSideIndices(bl, br, tr, tl, triangles);
+                => CalculateSideIndices(bl, br, tr, tl, triangles);
 
             public bool NeedUpdateInfo { get => false; }
 
@@ -95,7 +98,7 @@ namespace MeshBuilder
                 }
             }
 
-            private static void AddFace(NativeArray<int> triangles, ref int nextIndex, int bl, int tl, int tr, int br)
+            public static void AddFace(NativeArray<int> triangles, ref int nextIndex, int bl, int tl, int tr, int br)
             {
                 triangles[nextIndex] = bl;
                 ++nextIndex;
@@ -271,11 +274,20 @@ namespace MeshBuilder
             }
             private ScalableTopCellMesher topMesher;
 
-            public float lerpToExactEdge { get => topMesher.lerpToExactEdge; set => topMesher.lerpToExactEdge = value; }
+            public float lerpToExactEdge { get => topMesher.lerpToEdge; set => topMesher.lerpToEdge = value; }
 
             public float height;
-            public float topNormalOffset;
-            public float bottomNormalOffset;
+            public float topOffsetScale;
+            public float bottomOffsetScale;
+
+            public ScalableSideMesher(float height, float bottomOffsetScale = 0f, float topOffsetScale = 0.5f, float lerpToExactEdge = 1f)
+            {
+                this.height = height;
+                this.bottomOffsetScale = bottomOffsetScale;
+                this.topOffsetScale = topOffsetScale;
+                topMesher = new ScalableTopCellMesher();
+                this.lerpToExactEdge = lerpToExactEdge;
+            }
 
             public CornerInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
                                 ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles)
@@ -298,10 +310,10 @@ namespace MeshBuilder
             public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, float vertexHeight, NativeArray<float3> vertices)
             {
                 topMesher.heightOffset = height * 0.5f;
-                topMesher.normalOffset = topNormalOffset;
+                topMesher.sideOffsetScale = topOffsetScale;
                 topMesher.CalculateVertices(x, y, cellSize, info.top, vertexHeight, vertices);
                 topMesher.heightOffset = height * -0.5f;
-                topMesher.normalOffset = bottomNormalOffset;
+                topMesher.sideOffsetScale = bottomOffsetScale;
                 topMesher.CalculateVertices(x, y, cellSize, info.bottom, 0, vertices);
             }
 
@@ -378,45 +390,34 @@ namespace MeshBuilder
                     // full
                     case MaskBL | MaskBR | MaskTR | MaskTL: break;
                     // corners
-                    case MaskBL: AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
-                    case MaskBR: AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
-                    case MaskTR: AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(br), BottomLeftEdge(br)); break;
-                    case MaskTL: AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
+                    case MaskBL: SimpleSideMesher.AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
+                    case MaskBR: SimpleSideMesher.AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
+                    case MaskTR: SimpleSideMesher.AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(br), BottomLeftEdge(br)); break;
+                    case MaskTL: SimpleSideMesher.AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
                     // halves
-                    case MaskBL | MaskBR: AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
-                    case MaskTL | MaskTR: AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopLeftEdge(br), BottomLeftEdge(br)); break;
-                    case MaskBL | MaskTL: AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
-                    case MaskBR | MaskTR: AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
+                    case MaskBL | MaskBR: SimpleSideMesher.AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
+                    case MaskTL | MaskTR: SimpleSideMesher.AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopLeftEdge(br), BottomLeftEdge(br)); break;
+                    case MaskBL | MaskTL: SimpleSideMesher.AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
+                    case MaskBR | MaskTR: SimpleSideMesher.AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
                     // diagonals
                     case MaskBL | MaskTR:
                         {
-                            AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(bl), BottomLeftEdge(bl));
-                            AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(br), BottomLeftEdge(br));
+                            SimpleSideMesher.AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(bl), BottomLeftEdge(bl));
+                            SimpleSideMesher.AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(br), BottomLeftEdge(br));
                             break;
                         }
                     case MaskTL | MaskBR:
                         {
-                            AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(tl), BottomBottomEdge(tl));
-                            AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(bl), BottomBottomEdge(bl));
+                            SimpleSideMesher.AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(tl), BottomBottomEdge(tl));
+                            SimpleSideMesher.AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(bl), BottomBottomEdge(bl));
                             break;
                         }
                     // three quarters
-                    case MaskBL | MaskTR | MaskBR: AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
-                    case MaskBL | MaskTL | MaskBR: AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
-                    case MaskBL | MaskTL | MaskTR: AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(br), BottomLeftEdge(br)); break;
-                    case MaskTL | MaskTR | MaskBR: AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
+                    case MaskBL | MaskTR | MaskBR: SimpleSideMesher.AddFace(triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
+                    case MaskBL | MaskTL | MaskBR: SimpleSideMesher.AddFace(triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
+                    case MaskBL | MaskTL | MaskTR: SimpleSideMesher.AddFace(triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(br), BottomLeftEdge(br)); break;
+                    case MaskTL | MaskTR | MaskBR: SimpleSideMesher.AddFace(triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
                 }
-            }
-
-            private static void AddFace(NativeArray<int> triangles, ref int nextIndex, int bl, int tl, int tr, int br)
-            {
-                triangles[nextIndex] = bl; ++nextIndex;
-                triangles[nextIndex] = tl; ++nextIndex;
-                triangles[nextIndex] = tr; ++nextIndex;
-
-                triangles[nextIndex] = bl; ++nextIndex;
-                triangles[nextIndex] = tr; ++nextIndex;
-                triangles[nextIndex] = br; ++nextIndex;
             }
 
             private static int TopLeftEdge(CornerInfo info) => info.top.cornerInfo.leftEdgeIndex;

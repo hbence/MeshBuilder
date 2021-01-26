@@ -47,7 +47,7 @@ namespace MeshBuilder
             DistanceData?.Dispose();
             DistanceData = new Data(colNum, rowNum, distanceData);
 
-            mesherInfo.Set(HasTop, NoSide, NoBottom, NoSeparateSides, yOffset, 0, lerpToExactEdge);
+            mesherInfo.Set(MesherInfo.Type.TopOnly, yOffset, 0, lerpToExactEdge);
 
             Inited();
         }
@@ -59,7 +59,7 @@ namespace MeshBuilder
             DistanceData?.Dispose();
             DistanceData = new Data(colNum, rowNum, distanceData);
 
-            mesherInfo.Set(HasTop, HasSide, hasBottom, HasSeparateSides, height, 0, lerpToExactEdge);
+            mesherInfo.Set(hasBottom ? MesherInfo.Type.Full : MesherInfo.Type.NoBottom, height, 0, lerpToExactEdge);
 
             Inited();
         }
@@ -71,7 +71,7 @@ namespace MeshBuilder
             DistanceData?.Dispose();
             DistanceData = new Data(colNum, rowNum, distanceData);
 
-            mesherInfo.Set(HasTop, HasSide, HasBottom, NoSeparateSides, height, 0, lerpToExactEdge);
+            mesherInfo.Set(MesherInfo.Type.FullSimple, height, 0, lerpToExactEdge);
 
             Inited();
         }
@@ -83,20 +83,20 @@ namespace MeshBuilder
             DistanceData?.Dispose();
             DistanceData = new Data(colNum, rowNum, distanceData);
 
-            mesherInfo.Set(HasTop, HasSide, hasBottom, HasSeparateSides, height, bottomScaleOffset, lerpToExactEdge);
+            mesherInfo.Set(hasBottom ? MesherInfo.Type.Full : MesherInfo.Type.NoBottom, height, bottomScaleOffset, lerpToExactEdge);
 
             Inited();
         }
 
-        public void InitForOptimized(int colNum, int rowNum, float cellSize, float height, float lerpToExactEdge = 1, OptimizationMode optimization = OptimizationMode.GreedyRect, float[] distanceData = null)
+        public void InitForOptimized(int colNum, int rowNum, float cellSize, float height, float lerpToExactEdge = 1, OptimizationMode optimizationMode = OptimizationMode.GreedyRect, float[] distanceData = null)
         {
             CellSize = cellSize;
 
             DistanceData?.Dispose();
             DistanceData = new Data(colNum, rowNum, distanceData);
 
-            mesherInfo.Set(HasTop, NoSide, NoBottom, HasSeparateSides, height, 0, lerpToExactEdge);
-            mesherInfo.MakeOptimized(DistanceData, optimization);
+            mesherInfo.Set(MesherInfo.Type.TopOnly, height, 0, lerpToExactEdge);
+            mesherInfo.MakeOptimized(optimizationMode);
 
             Inited();
         }
@@ -204,114 +204,103 @@ namespace MeshBuilder
             uvs = default;
             normals = default;
         }
-
-        private const bool HasTop = true;
-        private const bool NoTop = false;
-        private const bool HasSide = true;
-        private const bool NoSide = false;
-        private const bool HasBottom = true;
-        private const bool NoBottom = false;
-        private const bool HasSeparateSides = true;
-        private const bool NoSeparateSides = false;
-
+        
         private class MesherInfo
         {
-            public bool hasTop = true;
-            public bool hasSide = true;
-            public bool hasBottom = true;
-            public float lerpToExactEdge = 1f;
+            public enum Type
+            {
+                TopOnly,
+                NoBottom,
+                Full,
+                FullSimple
+            }
+
+            public Type type = Type.NoBottom;
             public float height = 1;
-            public float bottomScaleOffset = 0;
-            public bool hasSeparateSides = true;
             public bool hasHeightData = false;
+            public float bottomOffsetScale = 0;
+            public float lerpToExactEdge = 1f;
             
             public bool optimized = false;
             public OptimizationMode optimization;
-            public Data data = null;
 
-            public void Set(bool hasTop, bool hasSide, bool hasBottom, bool hasSeparateSides, float height, float bottomScaleOffset, float lerpToExactEdge)
+            public void Set(Type type, float height, float bottomOffsetScale = 0, float lerpToExactEdge = 1)
             {
-                this.hasTop = hasTop;
-                this.hasSide = hasSide;
-                this.hasBottom = hasBottom;
-                this.hasSeparateSides = hasSeparateSides;
+                this.type = type;
                 this.height = height;
-                this.bottomScaleOffset = bottomScaleOffset;
+                this.bottomOffsetScale = bottomOffsetScale;
                 this.lerpToExactEdge = lerpToExactEdge;
 
                 optimized = false;
-                data = null;
             }
 
-            public void MakeOptimized(Data data, OptimizationMode mode)
+            public void MakeOptimized(OptimizationMode mode)
             {
                 optimized = true;
-                this.data = data;
                 optimization = mode;
             }
 
             public JobHandle StartGeneration(JobHandle dependOn, MarchingSquaresMesher mesher)
             {
-                if (hasHeightData)
-                {
-                    var cellMesher = CreateHeightCellMesher(height, lerpToExactEdge);
-                    return cellMesher.StartGeneration(dependOn, mesher);
-                }
-
                 if (optimized)
                 {
-                    var cellMesher = new OptimizedTopCellMesher();
-                    cellMesher.heightOffset = height;
-                    cellMesher.lerpToExactEdge = lerpToExactEdge;
-                    cellMesher.optimizationMode = optimization;
+                    var cellMesher = new OptimizedTopCellMesher()
+                    {
+                        heightOffset = height,
+                        lerpToExactEdge = lerpToExactEdge,
+                        optimizationMode = optimization
+                    };
                     return cellMesher.StartGeneration(dependOn, mesher);
                 }
 
-                if (hasTop && !hasSide && !hasBottom)
+                if (type == Type.FullSimple)
                 {
-                    var cellMesher = new SimpleTopCellMesher();
-                    cellMesher.heightOffset = height;
-                    cellMesher.lerpToExactEdge = lerpToExactEdge;
-                    return mesher.StartGeneration<SimpleTopCellMesher.CornerInfo, SimpleTopCellMesher>(dependOn, cellMesher);
+                    var cellMesher = new SimpleFullCellMesher() { height = height };
+                    return mesher.StartGeneration<SimpleSideMesher.CornerInfo, SimpleFullCellMesher>(dependOn, cellMesher);
                 }
-                else if (hasTop && hasSide && !hasBottom)
+
+                bool isFlat = !hasHeightData;
+
+                if (bottomOffsetScale == 0)
                 {
-                    if (bottomScaleOffset > 0)
+                    switch (type)
                     {
-                        var cellMesher = CreateNoBottomScalableFullCellMesher(height, bottomScaleOffset, lerpToExactEdge);
-                        return cellMesher.StartGeneration(dependOn, mesher);
-                    }
-                    else
-                    {
-                        var cellMesher = CreateNoBottomCellMesher(height, lerpToExactEdge);
-                        return cellMesher.StartGeneration(dependOn, mesher);
+                        case Type.TopOnly:
+                            {
+                                var cellMesher = new TopCellMesher(height, TopCellMesher.NormalMode.UpDontSetNormal, lerpToExactEdge);
+                                return mesher.StartGeneration<TopCellMesher.CornerInfo, TopCellMesher>(dependOn, cellMesher);
+                            }
+                        case Type.NoBottom:
+                            {
+                                var cellMesher = CreateNoBottom(height, isFlat, lerpToExactEdge);
+                                return cellMesher.StartGeneration(dependOn, mesher);
+                            }
+                        case Type.Full:
+                            {
+                                var cellMesher = CreateFull(height, isFlat, lerpToExactEdge);
+                                return cellMesher.StartGeneration(dependOn, mesher);
+                            }
                     }
                 }
-                else if (hasTop && hasSide && hasBottom)
+                else // tapered
                 {
-                    if (hasSeparateSides)
+                    switch (type)
                     {
-                        if (bottomScaleOffset > 0)
-                        {
-                            var cellMesher = CreateScalableFullCellMesher(height, bottomScaleOffset, lerpToExactEdge);
-                            return cellMesher.StartGeneration(dependOn, mesher);
-                        }
-                        else
-                        {
-                            var cellMesher = CreateFullCellMesher(height, lerpToExactEdge);
-                            return cellMesher.StartGeneration(dependOn, mesher);
-                        }
-                    }
-                    else
-                    {
-                        var cellMesher = new SimpleFullCellMesher();
-                        cellMesher.height = height;
-                        return mesher.StartGeneration<SimpleSideMesher.CornerInfo, SimpleFullCellMesher>(dependOn, cellMesher);
+                        case Type.NoBottom:
+                            {
+                                var cellMesher = CreateScalableNoBottom(height, bottomOffsetScale, isFlat, lerpToExactEdge);
+                                return cellMesher.StartGeneration(dependOn, mesher);
+                            }
+                        case Type.Full:
+                            {
+                                var cellMesher = CreateScalableFull(height, bottomOffsetScale, isFlat, lerpToExactEdge);
+                                return cellMesher.StartGeneration(dependOn, mesher);
+                            }
                     }
                 }
 
-                var defMesher = CreateNoBottomScalableFullCellMesher(height, bottomScaleOffset);
-                return defMesher.StartGeneration(dependOn, mesher);
+                var defMesher = new TopCellMesher(height, TopCellMesher.NormalMode.UpDontSetNormal, lerpToExactEdge);
+                return mesher.StartGeneration<TopCellMesher.CornerInfo, TopCellMesher>(dependOn, defMesher);
             }
         }
 

@@ -12,7 +12,7 @@ namespace MeshBuilder
     {
         /// <summary>
         /// Generates an XZ aligned flat mesh. The filled center cells are merged according to different triangulation methods.
-        /// (So far there are two, unfortunately not as different as I had hoped :) )
+        /// (So far there are two, unfortunately not as different as I was hoping :) )
         /// </summary>
         /// TODO: This needed a prepass before the corner info generation and also a bit different triangle generation
         /// so there is a lot of code duplication in StartGeneration because it can't be handled like the other ICellMeshers
@@ -21,7 +21,7 @@ namespace MeshBuilder
         {
             public struct CornerInfo
             {
-                public SimpleTopCellMesher.CornerInfo corner;
+                public TopCellMesher.CornerInfo corner;
 
                 public byte triangleCount;
                 public int triA0Cell, triA1Cell, triA2Cell;
@@ -55,7 +55,7 @@ namespace MeshBuilder
             public CornerInfo GenerateInfo(CellInfo cell, float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
                                             ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles)
             {
-                var info = new SimpleTopCellMesher.CornerInfo
+                var info = new TopCellMesher.CornerInfo
                 {
                     config = CalcConfiguration(cornerDistance, rightDistance, topRightDistance, topDistance),
 
@@ -86,7 +86,7 @@ namespace MeshBuilder
                 }
                 else
                 {
-                    info = SimpleTopCellMesher.GenerateInfoSimple(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertices, ref nextTriIndex, hasCellTriangles);
+                    info = TopCellMesher.GenerateInfoSimple(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertices, ref nextTriIndex, hasCellTriangles);
                 }
 
                 return new CornerInfo
@@ -105,7 +105,7 @@ namespace MeshBuilder
             }
 
             public void CalculateVertices(int x, int y, float cellSize, CornerInfo corner, float height, NativeArray<float3> vertices)
-                => SimpleTopCellMesher.CalculateVerticesSimple(x, y, cellSize, corner.corner, height, vertices, heightOffset, lerpToExactEdge);
+                => TopCellMesher.CalculateVerticesFull(x, y, cellSize, corner.corner, height, vertices, heightOffset, lerpToExactEdge);
 
             public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
                 => Debug.LogError("Not impemented!");
@@ -141,11 +141,11 @@ namespace MeshBuilder
                 }
                 else
                 {
-                    SimpleTopCellMesher.CalculateIndicesNormal(bl.corner, br.corner, tr.corner, tl.corner, triangles);
+                    TopCellMesher.CalculateIndicesSimple(bl.corner, br.corner, tr.corner, tl.corner, triangles);
                 }
             }
 
-            public bool NeedUpdateInfo { get => false; }
+            public bool NeedUpdateInfo => false;
 
             public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref CornerInfo cell, ref CornerInfo top, ref CornerInfo right)
             {
@@ -154,15 +154,15 @@ namespace MeshBuilder
 
             private static int Vertex(int index, NativeArray<CornerInfo> corners) => corners[index].corner.vertexIndex;
 
-            public bool CanGenerateUvs { get => true; }
+            public bool CanGenerateUvs => true;
 
             public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
-                => SimpleTopCellMesher.TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner.corner, uvScale, vertices, uvs);
+                => TopCellMesher.TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner.corner, uvScale, vertices, uvs);
 
-            public bool CanGenerateNormals { get => true; }
+            public bool CanGenerateNormals => true;
 
             public void CalculateNormals(CornerInfo corner, CornerInfo right, CornerInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
-                => SimpleTopCellMesher.TopCalculateNormals(corner.corner, right.corner, top.corner, vertices, normals);
+                => TopCellMesher.SetNormals(corner.corner, normals, new float3(0, 1, 0));
             
             public JobHandle StartGeneration(JobHandle lastHandle, MarchingSquaresMesher mesher)
             {
@@ -189,89 +189,22 @@ namespace MeshBuilder
 
                 bool generateUVs = mesher.ShouldGenerateUV && CanGenerateUvs;
 
-                int cellCount = (colNum - 1) * (rowNum - 1);
-
-                var optimizationJob = new GenerateOptimizationData
-                {
-                    distanceColNum = colNum,
-                    distanceRowNum = rowNum,
-                    mode = optimizationMode,
-                    cells = optimizationCells,
-                    distances = mesher.DistanceData.RawData
-                };
-                lastHandle = optimizationJob.Schedule(lastHandle);
-
-                var cornerJob = new GenerateOptimizedCorners
-                {
-                    distanceColNum = colNum,
-                    distanceRowNum = rowNum,
-
-                    cellMesher = this,
-
-                    optimizationCells = optimizationCells,
-                    distances = mesher.DistanceData.RawData,
-                    corners = corners,
-
-                    vertices = mesher.vertices,
-                    indices = mesher.triangles,
-
-                    generateUVs = generateUVs,
-                    uvs = mesher.uvs,
-                    normals = mesher.normals
-                };
-                lastHandle = cornerJob.Schedule(lastHandle);
-
-                var vertexJob = new CalculateVertices<CornerInfo, OptimizedTopCellMesher>
-                {
-                    cornerColNum = colNum,
-                    cellSize = mesher.CellSize,
-                    cellMesher = this,
-
-                    cornerInfos = corners,
-                    vertices = mesher.vertices.AsDeferredJobArray()
-                };
-                var vertexHandle = vertexJob.Schedule(corners.Length, CalculateVertexBatchNum, lastHandle);
+                lastHandle = GenerateOptimizationData.Schedule(colNum, rowNum, optimizationMode, optimizationCells, mesher.DistanceData.RawData);
+                lastHandle = GenerateOptimizedCorners.Schedule(colNum, rowNum, this, optimizationCells, mesher.DistanceData.RawData, corners, mesher.vertices, mesher.triangles, generateUVs, mesher.uvs, mesher.normals, lastHandle);
+               
+                var vertexHandle = CalculateVertices<CornerInfo, OptimizedTopCellMesher>.Schedule(colNum, mesher.CellSize, this, corners, mesher.vertices, lastHandle);
 
                 var uvHandle = vertexHandle;
                 if (generateUVs)
                 {
-                    var uvJob = new CalculateUvs<CornerInfo, OptimizedTopCellMesher>
-                    {
-                        cornerColNum = colNum,
-                        cornerRowNum = rowNum,
-                        cellSize = mesher.CellSize,
-                        uvScale = mesher.uvScale,
-                        cellMesher = this,
-
-                        cornerInfos = corners,
-                        vertices = mesher.vertices.AsDeferredJobArray(),
-                        uvs = mesher.uvs.AsDeferredJobArray()
-                    };
-                    uvHandle = uvJob.Schedule(corners.Length, CalculateVertexBatchNum, vertexHandle);
+                    uvHandle = CalculateUvs<CornerInfo, OptimizedTopCellMesher>.Schedule(colNum, rowNum, mesher.CellSize, mesher.uvScale, this, corners, mesher.vertices, mesher.uvs, vertexHandle);
                 }
 
-                var normalJob = new CalculateNormals<CornerInfo, OptimizedTopCellMesher>
-                {
-                    cornerColNum = colNum,
-                    cornerRowNum = rowNum,
-                    cellMesher = this,
-
-                    cornerInfos = corners,
-                    vertices = mesher.vertices.AsDeferredJobArray(),
-                    normals = mesher.normals.AsDeferredJobArray()
-                };
-                var normalHandle = normalJob.Schedule(corners.Length, CalculateVertexBatchNum, vertexHandle);
+                var normalHandle = CalculateNormals<CornerInfo, OptimizedTopCellMesher>.Schedule(colNum, rowNum, this, corners, mesher.vertices, mesher.normals, vertexHandle);
 
                 vertexHandle = JobHandle.CombineDependencies(vertexHandle, uvHandle, normalHandle);
 
-                var trianglesJob = new CalculateOptimizedTriangles
-                {
-                    cornerColNum = colNum,
-                    cellMesher = this,
-                    cornerInfos = corners,
-                    triangles = mesher.triangles.AsDeferredJobArray()
-                };
-                var trianglesHandle = trianglesJob.Schedule(cellCount, MeshTriangleBatchNum, lastHandle);
+                var trianglesHandle = CalculateOptimizedTriangles.Schedule(colNum, rowNum, this, corners, mesher.triangles, lastHandle);
 
                 return JobHandle.CombineDependencies(vertexHandle, trianglesHandle);
             }
@@ -315,6 +248,19 @@ namespace MeshBuilder
                         GreedyRect.Fill(distanceColNum, distanceRowNum, cells);
                         Debug.LogError("Unhandled optimization mode!");
                     }
+                }
+
+                static public JobHandle Schedule(int colNum, int rowNum, OptimizationMode optimizationMode, NativeArray<CellInfo> optimizationCells, NativeArray<float> distances, JobHandle dependOn = default)
+                {
+                    var optimizationJob = new GenerateOptimizationData
+                    {
+                        distanceColNum = colNum,
+                        distanceRowNum = rowNum,
+                        mode = optimizationMode,
+                        cells = optimizationCells,
+                        distances = distances
+                    };
+                    return optimizationJob.Schedule(dependOn);
                 }
 
                 private CellInfo CreateCellInfo(float corner, float right, float topRight, float top)
@@ -746,6 +692,30 @@ namespace MeshBuilder
                         uvs.ResizeUninitialized(nextVertex);
                     }
                 }
+
+                static public JobHandle Schedule(int colNum, int rowNum, OptimizedTopCellMesher cellMesher, NativeArray<CellInfo> optimizationCells, NativeArray<float> distances, NativeArray<CornerInfo> corners, NativeList<float3> vertices,
+                    NativeList<int> triangles, bool generateUVs, NativeList<float2> uvs, NativeList<float3> normals, JobHandle dependOn)
+                {
+                    var cornerJob = new GenerateOptimizedCorners
+                    {
+                        distanceColNum = colNum,
+                        distanceRowNum = rowNum,
+
+                        cellMesher = cellMesher,
+
+                        optimizationCells = optimizationCells,
+                        distances = distances,
+                        corners = corners,
+
+                        vertices = vertices,
+                        indices = triangles,
+
+                        generateUVs = generateUVs,
+                        uvs = uvs,
+                        normals = normals
+                    };
+                    return cornerJob.Schedule(dependOn);
+                }
             }
 
             [BurstCompile]
@@ -770,6 +740,19 @@ namespace MeshBuilder
                     var tr = cornerInfos[index + 1 + cornerColNum];
                     var tl = cornerInfos[index + cornerColNum];
                     cellMesher.CalculateIndices(bl, br, tr, tl, triangles, cornerInfos);
+                }
+
+                public static JobHandle Schedule(int colNum, int rowNum, OptimizedTopCellMesher cellMesher, NativeArray<CornerInfo> corners, NativeList<int> triangles, JobHandle dependOn)
+                {
+                    var trianglesJob = new CalculateOptimizedTriangles
+                    {
+                        cornerColNum = colNum,
+                        cellMesher = cellMesher,
+                        cornerInfos = corners,
+                        triangles = triangles.AsDeferredJobArray()
+                    };
+                    int cellCount = (colNum - 1) * (rowNum - 1);
+                    return trianglesJob.Schedule(cellCount, MeshTriangleBatchNum, dependOn);
                 }
             }
         }
