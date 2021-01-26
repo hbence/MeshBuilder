@@ -5,9 +5,11 @@ Some algorithms for mesh generation in Unity using the Job system and Burst wher
 
 There is a NineScale builder which works like 9 slice scaling for sprites but it generates 3d meshes. The corners keep their scale end the edges and sides can be stretched or repeated. There is a version which renders the pieces separately (instanced or non-instanced) and a version which merges the pieces into a single mesh.
 
-The MeshCombination builder can be used to merge mesh pieces. MeshCombinationUtils.CreateMergedMesh can automatically merge meshes end group them based on their render info (material, shadow, layer).
+The MeshCombination builder can be used to merge mesh pieces. MeshCombinationUtils.CreateMergedMesh can automatically merge meshes and group them based on their render info (material, shadow, layer).
 
-**NOTE:** It still misses some features and not properly tested. I only recommend it for testing/reference.
+The MarchingSquaresMesher can generate different kinds of meshes based on distance field data.
+
+**NOTE:** The library still misses some features and isn't properly tested. I only recommend it for testing/reference.
 
 There is a separate [MeshBuilderExamples repository](https://github.com/hbence/MeshBuilderExamples/) with some test scenes showing how it can be used.
 
