@@ -584,7 +584,7 @@ namespace MeshBuilder
             {
                 InfoType info = cornerInfos[index];
                 int x = index % cornerColNum;
-                int y = index / cornerRowNum;
+                int y = index / cornerColNum;
 
                 InfoType right = x == (cornerColNum - 1) ? info : cornerInfos[index + 1];
                 InfoType top = y == (cornerRowNum - 1) ? info : cornerInfos[index + cornerColNum];
