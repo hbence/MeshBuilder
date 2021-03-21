@@ -12,7 +12,6 @@ namespace MeshBuilder
     {
         /// <summary>
         /// Generates an XZ aligned flat mesh. The filled center cells are merged according to different triangulation methods.
-        /// (So far there are two, unfortunately not as different as I was hoping :) )
         /// </summary>
         /// TODO: This needed a prepass before the corner info generation and also a bit different triangle generation
         /// so there is a lot of code duplication in StartGeneration because it can't be handled like the other ICellMeshers

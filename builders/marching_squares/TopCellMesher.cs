@@ -14,15 +14,15 @@ namespace MeshBuilder
             public struct CornerInfo
             {
                 public byte config; // configuration of the cell where this corner is the bottom left
-
+                
                 public float cornerDist; // distance of the corner
                 public float rightDist; // distance of the right adjacent
                 public float topDist; // distance of the top adjacent
-
+                
                 public int vertexIndex; // in the cell this is the bottom left corner
                 public int bottomEdgeIndex; // in the cell this is the vertex on the bottom edge
                 public int leftEdgeIndex; // in the cell this is the vertex on the left edge
-
+                
                 public int triIndexStart;
                 public int triIndexLength;
             }
@@ -212,6 +212,11 @@ namespace MeshBuilder
             public static void CalculateIndicesSimple<TriangleOrderer>(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
                 where TriangleOrderer : struct, ITriangleOrderer
             {
+                if (bl.triIndexLength == 0)
+                {
+                    return;
+                }
+
                 TriangleOrderer orderer = new TriangleOrderer();
                 int triangleIndex = bl.triIndexStart;
                 switch (bl.config)

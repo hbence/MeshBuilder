@@ -1,5 +1,6 @@
 ﻿using Unity.Collections;
 using Unity.Mathematics;
+using UnityEngine;
 
 namespace MeshBuilder
 {
@@ -44,7 +45,7 @@ namespace MeshBuilder
                 {
                     // full
                     case MaskBL | MaskBR | MaskTR | MaskTL: break;
-                    // cells
+                    // corners
                     case MaskBL: AddNormal(0, LerpVc(cell), LerpHz(cell), 0, ref cell.bottomEdgeDir, ref cell.leftEdgeDir); break;
                     case MaskBR: AddNormal(LerpHz(cell), 0, 1, LerpVc(right), ref cell.bottomEdgeDir, ref right.leftEdgeDir); break;
                     case MaskTR: AddNormal(1, LerpVc(right), LerpHz(top), 1, ref right.leftEdgeDir, ref top.bottomEdgeDir); break;

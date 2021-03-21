@@ -17,6 +17,11 @@ namespace MeshBuilder
             private Volume<float> heights;
             public NativeArray<float> HeightsRawData => heights.Data;
 
+            private Volume<bool> cullingData;
+            public NativeArray<bool> CullingDataRawData => cullingData.Data;
+
+            public bool HasCullingData => cullingData != null;
+
             public int ColNum => distances.Extents.X;
             public int RowNum => distances.Extents.Z;
 
@@ -55,6 +60,7 @@ namespace MeshBuilder
             {
                 SafeDispose(ref distances);
                 SafeDispose(ref heights);
+                SafeDispose(ref cullingData);
             }
 
             public void UpdateData(float[] distanceData)
@@ -76,10 +82,20 @@ namespace MeshBuilder
                 SafeDispose(ref heights);
 
                 heights = new Volume<float>(ColNum, 1, RowNum);
-
                 if (heightData != null)
                 {
                     UpdateHeights(heightData);
+                }
+            }
+
+            public void InitCullingData(bool[] data = null)
+            {
+                SafeDispose(ref cullingData);
+
+                cullingData = new Volume<bool>(ColNum, 1, RowNum);
+                if (data != null)
+                {
+                    UpdateCullingData(data);
                 }
             }
 
@@ -97,11 +113,39 @@ namespace MeshBuilder
                 }
             }
 
+            public void UpdateCullingData(bool[] data)
+            {
+                if (cullingData.Length != data.Length)
+                {
+                    Debug.LogWarning("culling data mismatch, clamped");
+                }
+
+                int length = Mathf.Min(cullingData.Length, data.Length);
+                for (int i = 0; i < length; ++i)
+                {
+                    cullingData[i] = data[i];
+                }
+            }
+
             public void Clear()
             {
                 for (int i = 0; i < distances.Length; ++i)
                 {
                     distances[i] = -1;
+                }
+                if (heights != null)
+                {
+                    for (int i = 0; i < heights.Length; ++i)
+                    {
+                        heights[i] = 0;
+                    }
+                }
+                if (cullingData != null)
+                {
+                    for (int i = 0; i < cullingData.Length; ++i)
+                    {
+                        cullingData[i] = false;
+                    }
                 }
             }
 

@@ -128,7 +128,7 @@ namespace MeshBuilder
 
             bool generateUVs = ShouldGenerateUV && cellMesher.CanGenerateUvs;
 
-            lastHandle = GenerateCorners<InfoType, MesherType>.Schedule(ColNum, RowNum, cellMesher, DistanceData.RawData, corners, vertices, triangles, normals, generateUVs, uvs, lastHandle);
+            lastHandle = GenerateCorners<InfoType, MesherType>.Schedule(ColNum, RowNum, cellMesher, DistanceData.RawData, corners, vertices, triangles, normals, generateUVs, uvs, DistanceData.HasCullingData, DistanceData.CullingDataRawData, lastHandle);
 
             if (cellMesher.NeedUpdateInfo)
             {
@@ -318,7 +318,6 @@ namespace MeshBuilder
             public MesherType cellMesher;
 
             [ReadOnly] public NativeArray<float> distances;
-            
             [WriteOnly] public NativeArray<InfoType> corners;
             
             public NativeList<float3> vertices;
@@ -328,6 +327,9 @@ namespace MeshBuilder
             public bool generateUVs;
             public NativeList<float2> uvs;
 
+            public bool hasCullingData;
+            public NativeArray<bool> cullingData;
+
             public void Execute()
             {
                 int nextVertex = 0;
@@ -335,18 +337,15 @@ namespace MeshBuilder
                 // the border cases are separated to avoid boundary checking
                 // not sure if it's worth it...
                 // inner
-                for (int y = 0; y < distanceRowNum - 1; ++y)
+                if (hasCullingData)
                 {
-                    for (int x = 0; x < distanceColNum - 1; ++x)
-                    {
-                        int index = y * distanceColNum + x;
-                        float corner = distances[index];
-                        float right = distances[index + 1];
-                        float topRight = distances[index + 1 + distanceColNum];
-                        float top = distances[index + distanceColNum];
-                        corners[index] = cellMesher.GenerateInfo(corner, right, topRight, top, ref nextVertex, ref nextTriangleIndex, HasCellTriangles);
-                    }
+                    GenerateInnerCellsWithCulling(ref nextVertex, ref nextTriangleIndex);
                 }
+                else
+                {
+                    GenerateInnerCells(ref nextVertex, ref nextTriangleIndex);
+                }
+                
                 // top border
                 for (int x = 0, y = distanceRowNum - 1; x < distanceColNum - 1; ++x)
                 {
@@ -377,7 +376,42 @@ namespace MeshBuilder
                 }
             }
 
-            public static JobHandle Schedule(int colNum, int rowNum, MesherType cellMesher, NativeArray<float> distances, NativeArray<InfoType> corners, NativeList<float3> vertices, NativeList<int> triangles, NativeList<float3> normals, bool generateUVs, NativeList<float2> uvs, JobHandle dependOn = default)
+            private void GenerateInnerCells(ref int nextVertex, ref int nextTriangleIndex)
+            {
+                for (int y = 0; y < distanceRowNum - 1; ++y)
+                {
+                    for (int x = 0; x < distanceColNum - 1; ++x)
+                    {
+                        int index = y * distanceColNum + x;
+                        float corner = distances[index];
+                        float right = distances[index + 1];
+                        float topRight = distances[index + 1 + distanceColNum];
+                        float top = distances[index + distanceColNum];
+
+                        corners[index] = cellMesher.GenerateInfo(corner, right, topRight, top, ref nextVertex, ref nextTriangleIndex, HasCellTriangles);
+                    }
+                }
+            }
+
+            private void GenerateInnerCellsWithCulling(ref int nextVertex, ref int nextTriangleIndex)
+            {
+                for (int y = 0; y < distanceRowNum - 1; ++y)
+                {
+                    for (int x = 0; x < distanceColNum - 1; ++x)
+                    {
+                        int index = y * distanceColNum + x;
+                        float corner = distances[index];
+                        float right = distances[index + 1];
+                        float topRight = distances[index + 1 + distanceColNum];
+                        float top = distances[index + distanceColNum];
+
+                        bool hasCell = !cullingData[index];
+                        corners[index] = cellMesher.GenerateInfo(corner, right, topRight, top, ref nextVertex, ref nextTriangleIndex, hasCell);
+                    }
+                }
+            }
+
+            public static JobHandle Schedule(int colNum, int rowNum, MesherType cellMesher, NativeArray<float> distances, NativeArray<InfoType> corners, NativeList<float3> vertices, NativeList<int> triangles, NativeList<float3> normals, bool generateUVs, NativeList<float2> uvs, bool hasCullingdata, NativeArray<bool> cullingData, JobHandle dependOn = default)
             {
                 var cornerJob = new GenerateCorners<InfoType, MesherType>
                 {
@@ -395,6 +429,9 @@ namespace MeshBuilder
 
                     generateUVs = generateUVs,
                     uvs = uvs,
+
+                    hasCullingData = hasCullingdata,
+                    cullingData = cullingData
                 };
                 return cornerJob.Schedule(dependOn);
             }

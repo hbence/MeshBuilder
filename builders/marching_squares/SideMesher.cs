@@ -62,6 +62,11 @@ namespace MeshBuilder
 
             public static void CalculateSideIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
             {
+                if (bl.triIndexLength == 0)
+                {
+                    return;
+                }
+
                 int triangleIndex = bl.triIndexStart;
                 switch (bl.top.config)
                 {
@@ -384,6 +389,11 @@ namespace MeshBuilder
 
             public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
             {
+                if (bl.triIndexLength == 0) 
+                {
+                    return; 
+                }
+
                 int triangleIndex = bl.triIndexStart;
                 switch (bl.top.cornerInfo.config)
                 {
