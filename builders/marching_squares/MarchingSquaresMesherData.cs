@@ -15,10 +15,10 @@ namespace MeshBuilder
             public NativeArray<float> RawData => distances.Data;
 
             private Volume<float> heights;
-            public NativeArray<float> HeightsRawData => heights.Data;
+            public NativeArray<float> HeightsRawData => heights != null ? heights.Data : default;
 
             private Volume<bool> cullingData;
-            public NativeArray<bool> CullingDataRawData => cullingData.Data;
+            public NativeArray<bool> CullingDataRawData => cullingData != null ? cullingData.Data : default;
 
             public bool HasCullingData => cullingData != null;
 
