@@ -12,25 +12,25 @@ namespace MeshBuilder
         MarchingSquaresMesher.TopCellMesher.TriangleReverseOrderer>;
 
     using FullCellMesher = MarchingSquaresMesher.ModularFullCellMesher<
-        MarchingSquaresMesher.TopCellMesher.CornerInfo, MarchingSquaresMesher.TopCellMesher,
-        MarchingSquaresMesher.SimpleSideMesher.CornerInfo, MarchingSquaresMesher.SimpleSideMesher,
-        MarchingSquaresMesher.TopCellMesher.CornerInfo, MarchingSquaresMesher.ModularTopMesher<
+        MarchingSquaresMesher.TopCellMesher.TopCellInfo, MarchingSquaresMesher.TopCellMesher,
+        MarchingSquaresMesher.SimpleSideMesher.SideInfo, MarchingSquaresMesher.SimpleSideMesher,
+        MarchingSquaresMesher.TopCellMesher.TopCellInfo, MarchingSquaresMesher.ModularTopMesher<
                                                         MarchingSquaresMesher.TopCellMesher.FullVertexCalculator,
                                                         MarchingSquaresMesher.TopCellMesher.TriangleReverseOrderer>>;
     
     using NoBottomScalableCellMesher = MarchingSquaresMesher.ModularFullCellMesher<
-        MarchingSquaresMesher.TopCellMesher.CornerInfo, MarchingSquaresMesher.TopCellMesher,
-        MarchingSquaresMesher.ScalableSideMesher.CornerInfo, MarchingSquaresMesher.ScalableSideMesher,
+        MarchingSquaresMesher.TopCellMesher.TopCellInfo, MarchingSquaresMesher.TopCellMesher,
+        MarchingSquaresMesher.ScalableSideMesher.ScalableSideInfo, MarchingSquaresMesher.ScalableSideMesher,
         MarchingSquaresMesher.NullMesher.CornerInfo, MarchingSquaresMesher.NullMesher>;
 
     using ScalableFullCellMesher = MarchingSquaresMesher.ModularFullCellMesher<
-        MarchingSquaresMesher.TopCellMesher.CornerInfo, MarchingSquaresMesher.TopCellMesher,
-        MarchingSquaresMesher.ScalableSideMesher.CornerInfo, MarchingSquaresMesher.ScalableSideMesher,
+        MarchingSquaresMesher.TopCellMesher.TopCellInfo, MarchingSquaresMesher.TopCellMesher,
+        MarchingSquaresMesher.ScalableSideMesher.ScalableSideInfo, MarchingSquaresMesher.ScalableSideMesher,
         MarchingSquaresMesher.ScalableTopCellMesher.CornerInfoWithNormals, MarchingSquaresMesher.ScalableTopCellMesher>;
 
     using NoBottomCellMesher = MarchingSquaresMesher.ModularFullCellMesher<
-        MarchingSquaresMesher.TopCellMesher.CornerInfo, MarchingSquaresMesher.TopCellMesher,
-        MarchingSquaresMesher.SimpleSideMesher.CornerInfo, MarchingSquaresMesher.SimpleSideMesher,
+        MarchingSquaresMesher.TopCellMesher.TopCellInfo, MarchingSquaresMesher.TopCellMesher,
+        MarchingSquaresMesher.SimpleSideMesher.SideInfo, MarchingSquaresMesher.SimpleSideMesher,
         MarchingSquaresMesher.NullMesher.CornerInfo, MarchingSquaresMesher.NullMesher>;
 
     public partial class MarchingSquaresMesher : Builder
@@ -136,7 +136,7 @@ namespace MeshBuilder
             public void CalculateNormals(CornerInfo corner, CornerInfo right, CornerInfo top, NativeArray<float3> vertices, NativeArray<float3> normals) { /* do nothing */ }
         }
 
-        public struct ModularTopMesher<VertexCalculator, TriangleOrderer> : ICellMesher<CornerInfo>
+        public struct ModularTopMesher<VertexCalculator, TriangleOrderer> : ICellMesher<TopCellInfo>
             where VertexCalculator : struct, IVertexCalculator
             where TriangleOrderer : struct, ITriangleOrderer
         {
@@ -151,25 +151,25 @@ namespace MeshBuilder
                 this.vertexCalculator = vertexCalculator;
             }
 
-            public CornerInfo GenerateInfo(float cornerDist, float rightDist, float topRightDist, float topDist, ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles) 
+            public TopCellInfo GenerateInfo(float cornerDist, float rightDist, float topRightDist, float topDist, ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles) 
                 => GenerateInfoSimple(cornerDist, rightDist, topRightDist, topDist, ref nextVertices, ref nextTriIndex, hasCellTriangles);
 
-            public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, float height, NativeArray<float3> vertices)
+            public void CalculateVertices(int x, int y, float cellSize, TopCellInfo info, float height, NativeArray<float3> vertices)
                 => vertexCalculator.CalculateVertices(x, y, cellSize, info, height, vertices);
 
-            public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
-                => CalculateIndicesSimple<TriangleReverseOrderer>(bl, br, tr, tl, triangles);
+            public void CalculateIndices(TopCellInfo bl, TopCellInfo br, TopCellInfo tr, TopCellInfo tl, NativeArray<int> triangles)
+                => CalculateIndicesSimple<TriangleReverseOrderer>(bl.info.config, bl.tris, bl.verts, br.verts, tr.verts, tl.verts, triangles);
 
             public bool NeedUpdateInfo => false;
-            public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref CornerInfo cell, ref CornerInfo top, ref CornerInfo right) { /* do nothing */ }
+            public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref TopCellInfo cell, ref TopCellInfo top, ref TopCellInfo right) { /* do nothing */ }
 
             public bool CanGenerateUvs => true;
-            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
-                => TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner, uvScale, vertices, uvs);
+            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, TopCellInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
+                => TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner.verts, uvScale, vertices, uvs);
 
             public bool CanGenerateNormals => IsFlat(normalMode);
-            public void CalculateNormals(CornerInfo corner, CornerInfo right, CornerInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
-                => SetNormals(corner, normals, normal);
+            public void CalculateNormals(TopCellInfo corner, TopCellInfo right, TopCellInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
+                => SetNormals(corner.verts, normals, normal);
         }
 
         private static FullCellMesher CreateFull(float height, bool isFlat, float lerpToEdge = 1f)

@@ -9,22 +9,55 @@ namespace MeshBuilder
         /// <summary>
         /// Generates an XZ aligned flat mesh.
         /// </summary>
-        public struct TopCellMesher : ICellMesher<TopCellMesher.CornerInfo>
+        public struct TopCellMesher : ICellMesher<TopCellMesher.TopCellInfo>
         {
-            public struct CornerInfo
+            public struct TopCellInfo
             {
-                public byte config; // configuration of the cell where this corner is the bottom left
-                
-                public float cornerDist; // distance of the corner
-                public float rightDist; // distance of the right adjacent
-                public float topDist; // distance of the top adjacent
-                
-                public int vertexIndex; // in the cell this is the bottom left corner
-                public int bottomEdgeIndex; // in the cell this is the vertex on the bottom edge
-                public int leftEdgeIndex; // in the cell this is the vertex on the left edge
-                
-                public int triIndexStart;
-                public int triIndexLength;
+                public CellInfo info;
+                public CellVertices verts;
+                public IndexSpan tris;
+            }
+
+            public struct CellInfo
+            {
+                public byte config;
+                public float cornerDist;
+                public float rightDist;
+                public float topDist;
+
+                public CellInfo(byte conf, float corner, float right, float top)
+                {
+                    config = conf;
+                    cornerDist = corner;
+                    rightDist = right;
+                    topDist = top;
+                }
+            }
+
+            public struct CellVertices
+            {   
+                public int corner;
+                public int bottomEdge;
+                public int leftEdge;
+
+                public CellVertices(int c, int bottom, int left)
+                {
+                    corner = c;
+                    bottomEdge = bottom;
+                    leftEdge = left;
+                }
+            }
+
+            public struct IndexSpan
+            {
+                public int start;
+                public byte length;
+
+                public IndexSpan(int s, byte l)
+                {
+                    start = s;
+                    length = l;
+                }
             }
 
             public enum NormalMode { UpFlat, DownFlat, UpDontSetNormal, DownDontSetNormal }
@@ -50,87 +83,84 @@ namespace MeshBuilder
                 vertexCalculator = new FullVertexCalculator { heightOffset = heightOffset, lerpToEdge = lerpToEdge };
             }
 
-            public CornerInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
+            public TopCellInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
                                             ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles)
                 => GenerateInfoSimple(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertices, ref nextTriIndex, hasCellTriangles);
 
-            static public CornerInfo GenerateInfoSimple(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
-                                            ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles)
+            static public TopCellInfo GenerateInfoSimple(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
+                                            ref int nextVertex, ref int nextTriIndex, bool hasCellTriangles)
             {
-                CornerInfo info = new CornerInfo
+                byte config = CalcConfiguration(cornerDistance, rightDistance, topRightDistance, topDistance);
+                TopCellInfo info = new TopCellInfo
                 {
-                    config = CalcConfiguration(cornerDistance, rightDistance, topRightDistance, topDistance),
-
-                    cornerDist = cornerDistance,
-                    rightDist = rightDistance,
-                    topDist = topDistance,
-
-                    vertexIndex = -1,
-                    leftEdgeIndex = -1,
-                    bottomEdgeIndex = -1,
-
-                    triIndexStart = nextTriIndex,
-                    triIndexLength = 0
+                    info = new CellInfo(config, cornerDistance, rightDistance, topDistance),
+                    verts = new CellVertices(-1, -1, -1),
+                    tris = new IndexSpan(nextTriIndex, 0)
                 };
 
                 if (hasCellTriangles)
                 {
-                    info.triIndexLength = CalcTriIndexCount(info.config);
-                    nextTriIndex += info.triIndexLength;
+                    info.tris.length = CalcTriIndexCount(config);
+                    nextTriIndex += info.tris.length;
                 }
 
-                bool hasBL = HasMask(info.config, MaskBL);
-                if (hasBL)
-                {
-                    info.vertexIndex = nextVertices;
-                    ++nextVertices;
-                }
-
-                if (hasBL != HasMask(info.config, MaskTL))
-                {
-                    info.leftEdgeIndex = nextVertices;
-                    ++nextVertices;
-                }
-
-                if (hasBL != HasMask(info.config, MaskBR))
-                {
-                    info.bottomEdgeIndex = nextVertices;
-                    ++nextVertices;
-                }
+                SetVertices(config, ref nextVertex, ref info.verts);
 
                 return info;
             }
 
-            public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, float height, NativeArray<float3> vertices)
+            static public void SetVertices(byte config, ref int nextVertex, ref CellVertices verts)
+            {
+                bool hasBL = HasMask(config, MaskBL);
+                if (hasBL)
+                {
+                    verts.corner = nextVertex;
+                    ++nextVertex;
+                }
+
+                if (hasBL != HasMask(config, MaskTL))
+                {
+                    verts.leftEdge = nextVertex;
+                    ++nextVertex;
+                }
+
+                if (hasBL != HasMask(config, MaskBR))
+                {
+                    verts.bottomEdge = nextVertex;
+                    ++nextVertex;
+                }
+            }
+
+            public void CalculateVertices(int x, int y, float cellSize, TopCellInfo info, float height, NativeArray<float3> vertices)
                 => vertexCalculator.CalculateVertices(x, y, cellSize, info, height, vertices);
 
-            static public void CalculateVerticesSimple(int x, int y, float cellSize, CornerInfo info, float height, NativeArray<float3> vertices, float heightOffset = 0)
+            static public void CalculateVerticesSimple(int x, int y, float cellSize, TopCellInfo cell, float height, NativeArray<float3> vertices, float heightOffset = 0)
             {
                 float3 pos = new float3(x * cellSize, height + heightOffset, y * cellSize);
 
-                if (info.vertexIndex >= 0) { vertices[info.vertexIndex] = pos; }
-                if (info.leftEdgeIndex >= 0) { vertices[info.leftEdgeIndex] = pos + new float3(0, 0, cellSize * LerpT(info.cornerDist, info.topDist)); }
-                if (info.bottomEdgeIndex >= 0) { vertices[info.bottomEdgeIndex] = pos + new float3(cellSize * LerpT(info.cornerDist, info.rightDist), 0, 0); }
+                if (cell.verts.corner >= 0) { vertices[cell.verts.corner] = pos; }
+                if (cell.verts.leftEdge >= 0) { vertices[cell.verts.leftEdge] = pos + new float3(0, 0, cellSize * VcLerpT(cell.info)); }
+                if (cell.verts.bottomEdge >= 0) { vertices[cell.verts.bottomEdge] = pos + new float3(cellSize * HzLerpT(cell.info), 0, 0); }
             }
 
-            static public void CalculateVerticesFull(int x, int y, float cellSize, CornerInfo info, float height, NativeArray<float3> vertices, float heightOffset, float edgeLerp)
+            static public void CalculateVerticesFull(int x, int y, float cellSize, CellVertices verts, CellInfo info, float height, NativeArray<float3> vertices, float heightOffset, float edgeLerp)
             {
                 float3 pos = new float3(x * cellSize, heightOffset + height, y * cellSize);
 
-                if (info.vertexIndex >= 0) { vertices[info.vertexIndex] = pos; }
-                if (info.leftEdgeIndex >= 0) { vertices[info.leftEdgeIndex] = pos + new float3(0, 0, cellSize * LerpT(info.cornerDist, info.topDist, edgeLerp)); }
-                if (info.bottomEdgeIndex >= 0) { vertices[info.bottomEdgeIndex] = pos + new float3(cellSize * LerpT(info.cornerDist, info.rightDist, edgeLerp), 0, 0); }
+                if (verts.corner >= 0) { vertices[verts.corner] = pos; }
+                if (verts.leftEdge >= 0) { vertices[verts.leftEdge] = pos + new float3(0, 0, cellSize * VcLerpT(info, edgeLerp)); }
+                if (verts.bottomEdge >= 0) { vertices[verts.bottomEdge] = pos + new float3(cellSize * HzLerpT(info, edgeLerp), 0, 0); }
             }
 
             public interface IVertexCalculator
             {
-                void CalculateVertices(int x, int y, float cellSize, CornerInfo info, float height, NativeArray<float3> vertices);
+                void CalculateVertices(int x, int y, float cellSize, TopCellInfo info, float height, NativeArray<float3> vertices);
             }
 
             public struct SimpleVertexCalculator : IVertexCalculator
             {
                 public float heightOffset;
-                public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, float height, NativeArray<float3> vertices)
+                public void CalculateVertices(int x, int y, float cellSize, TopCellInfo info, float height, NativeArray<float3> vertices)
                     => CalculateVerticesSimple(x, y, cellSize, info, height, vertices, heightOffset);
             }
 
@@ -138,24 +168,30 @@ namespace MeshBuilder
             {
                 public float heightOffset;
                 public float lerpToEdge;
-                public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, float height, NativeArray<float3> vertices)
-                    => CalculateVerticesFull(x, y, cellSize, info, height, vertices, heightOffset, lerpToEdge);
+                public void CalculateVertices(int x, int y, float cellSize, TopCellInfo info, float height, NativeArray<float3> vertices)
+                    => CalculateVerticesFull(x, y, cellSize, info.verts, info.info, height, vertices, heightOffset, lerpToEdge);
             }
 
-            public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
-                => CalculateIndicesSimple<TriangleOrderer>(bl, br, tr, tl, triangles);
+            public void CalculateIndices(TopCellInfo bl, TopCellInfo br, TopCellInfo tr, TopCellInfo tl, NativeArray<int> triangles)
+                => CalculateIndicesSimple<TriangleOrderer>(bl.info.config, bl.tris, bl.verts, br.verts, tr.verts, tl.verts, triangles);
 
             public bool NeedUpdateInfo => false;
 
-            public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref CornerInfo cell, ref CornerInfo top, ref CornerInfo right)
+            public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref TopCellInfo cell, ref TopCellInfo top, ref TopCellInfo right)
             {
                 // do nothing
             }
 
+            static public float HzLerpT(CellInfo info) => LerpT(info.cornerDist, info.rightDist);
+            static public float HzLerpT(CellInfo info, float lerpToDist) => LerpT(info.cornerDist, info.rightDist, lerpToDist);
+
+            static public float VcLerpT(CellInfo info) => LerpT(info.cornerDist, info.topDist);
+            static public float VcLerpT(CellInfo info, float lerpToDist) => LerpT(info.cornerDist, info.topDist, lerpToDist);
+
             static public float LerpT(float a, float b) => math.abs(a) / (math.abs(a) + math.abs(b));
             static public float LerpT(float a, float b, float lerpToDist) => math.lerp(0.5f, math.abs(a) / (math.abs(a) + math.abs(b)), lerpToDist);
 
-            public static int CalcTriIndexCount(byte config)
+            public static byte CalcTriIndexCount(byte config)
             {
                 switch (config)
                 {
@@ -183,11 +219,11 @@ namespace MeshBuilder
                 return 0;
             }
 
-            public static void CalculateIndicesSimple(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
-                => CalculateIndicesSimple<TriangleOrderer>(bl, br, tr, tl, triangles);
+            public static void CalculateIndicesSimple(byte config, IndexSpan tris, CellVertices bl, CellVertices br, CellVertices tr, CellVertices tl, NativeArray<int> triangles)
+                => CalculateIndicesSimple<TriangleOrderer>(config, tris, bl, br, tr, tl, triangles);
 
-            public static void CalculateIndicesReverse(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
-                => CalculateIndicesSimple<TriangleReverseOrderer>(bl, br, tr, tl, triangles);
+            public static void CalculateIndicesReverse(byte config, IndexSpan tris, CellVertices bl, CellVertices br, CellVertices tr, CellVertices tl, NativeArray<int> triangles)
+                => CalculateIndicesSimple<TriangleReverseOrderer>(config, tris, bl, br, tr, tl, triangles);
 
             private static void AddTri(NativeArray<int> triangles, ref int nextIndex, int a, int b, int c)
             {
@@ -209,17 +245,17 @@ namespace MeshBuilder
                 ++nextIndex;
             }
 
-            public static void CalculateIndicesSimple<TriangleOrderer>(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
+            public static void CalculateIndicesSimple<TriangleOrderer>(byte config, IndexSpan tris, CellVertices bl, CellVertices br, CellVertices tr, CellVertices tl, NativeArray<int> triangles)
                 where TriangleOrderer : struct, ITriangleOrderer
             {
-                if (bl.triIndexLength == 0)
+                if (tris.length == 0)
                 {
                     return;
                 }
 
                 TriangleOrderer orderer = new TriangleOrderer();
-                int triangleIndex = bl.triIndexStart;
-                switch (bl.config)
+                int triangleIndex = tris.start;
+                switch (config)
                 {
                     // full
                     case MaskBL | MaskBR | MaskTR | MaskTL:
@@ -323,9 +359,9 @@ namespace MeshBuilder
                 }
             }
 
-            private static int Vertex(CornerInfo info) => info.vertexIndex;
-            private static int LeftEdge(CornerInfo info) => info.leftEdgeIndex;
-            private static int BottomEdge(CornerInfo info) => info.bottomEdgeIndex;
+            private static int Vertex(CellVertices verts) => verts.corner;
+            private static int LeftEdge(CellVertices verts) => verts.leftEdge;
+            private static int BottomEdge(CellVertices verts) => verts.bottomEdge;
 
             public interface ITriangleOrderer
             {
@@ -346,43 +382,43 @@ namespace MeshBuilder
 
             public bool CanGenerateUvs => true;
 
-            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
-                => TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner, uvScale, vertices, uvs);
+            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, TopCellInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
+                => TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner.verts, uvScale, vertices, uvs);
 
             public bool CanGenerateNormals => normalMode == NormalMode.UpFlat;
 
-            public void CalculateNormals(CornerInfo corner, CornerInfo right, CornerInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
-                => SetNormals(corner, normals, normal);
+            public void CalculateNormals(TopCellInfo corner, TopCellInfo right, TopCellInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
+                => SetNormals(corner.verts, normals, normal);
 
-            static public void TopCalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
+            static public void TopCalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CellVertices verts, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
             {
                 float2 topRight = new float2((cellColNum + 1) * cellSize * uvScale, (cellRowNum + 1) * cellSize * uvScale);
                 float2 uv;
-                if (corner.vertexIndex >= 0)
+                if (verts.corner >= 0)
                 {
-                    uv.x = vertices[corner.vertexIndex].x / topRight.x;
-                    uv.y = vertices[corner.vertexIndex].z / topRight.y;
-                    uvs[corner.vertexIndex] = uv;
+                    uv.x = vertices[verts.corner].x / topRight.x;
+                    uv.y = vertices[verts.corner].z / topRight.y;
+                    uvs[verts.corner] = uv;
                 }
-                if (corner.leftEdgeIndex >= 0)
+                if (verts.leftEdge >= 0)
                 {
-                    uv.x = vertices[corner.leftEdgeIndex].x / topRight.x;
-                    uv.y = vertices[corner.leftEdgeIndex].z / topRight.y;
-                    uvs[corner.leftEdgeIndex] = uv;
+                    uv.x = vertices[verts.leftEdge].x / topRight.x;
+                    uv.y = vertices[verts.leftEdge].z / topRight.y;
+                    uvs[verts.leftEdge] = uv;
                 }
-                if (corner.bottomEdgeIndex >= 0)
+                if (verts.bottomEdge >= 0)
                 {
-                    uv.x = vertices[corner.bottomEdgeIndex].x / topRight.x;
-                    uv.y = vertices[corner.bottomEdgeIndex].z / topRight.y;
-                    uvs[corner.bottomEdgeIndex] = uv;
+                    uv.x = vertices[verts.bottomEdge].x / topRight.x;
+                    uv.y = vertices[verts.bottomEdge].z / topRight.y;
+                    uvs[verts.bottomEdge] = uv;
                 }
             }
 
-            static public void SetNormals(CornerInfo corner, NativeArray<float3> normals, float3 normal)
+            static public void SetNormals(CellVertices verts, NativeArray<float3> normals, float3 normal)
             {
-                if (corner.vertexIndex >= 0) { normals[corner.vertexIndex] = normal; }
-                if (corner.leftEdgeIndex >= 0) { normals[corner.leftEdgeIndex] = normal; }
-                if (corner.bottomEdgeIndex >= 0) { normals[corner.bottomEdgeIndex] = normal; }
+                if (verts.corner >= 0) { normals[verts.corner] = normal; }
+                if (verts.leftEdge >= 0) { normals[verts.leftEdge] = normal; }
+                if (verts.bottomEdge >= 0) { normals[verts.bottomEdge] = normal; }
             }
         }
     }

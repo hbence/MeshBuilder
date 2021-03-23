@@ -3,7 +3,10 @@ using Unity.Mathematics;
 
 namespace MeshBuilder
 {
-    using SideInfo = MarchingSquaresMesher.SimpleSideMesher.CornerInfo;
+    using SideInfo = MarchingSquaresMesher.SimpleSideMesher.SideInfo;
+    using CellInfo = MarchingSquaresMesher.TopCellMesher.CellInfo;
+    using CellVerts = MarchingSquaresMesher.TopCellMesher.CellVertices;
+    using IndexSpan = MarchingSquaresMesher.TopCellMesher.IndexSpan;
 
     public partial class MarchingSquaresMesher : Builder
     {
@@ -15,35 +18,61 @@ namespace MeshBuilder
         private struct SimpleFullCellMesher : ICellMesher<SideInfo>
         {
             public float height;
+            public float edgeLerp;
 
             public SideInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
-                                ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles)
+                                ref int nextVertex, ref int nextTriIndex, bool hasCellTriangles)
             {
-                var info = new SideInfo();
-                info.top = TopCellMesher.GenerateInfoSimple(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertices, ref nextTriIndex, hasCellTriangles);
+                byte config = CalcConfiguration(cornerDistance, rightDistance, topRightDistance, topDistance);
+
+                SideInfo info = new SideInfo()
+                {
+                    info = new CellInfo(config, cornerDistance, rightDistance, topDistance),
+                    top = new CellVerts(-1, -1, -1),
+                    bottom = new CellVerts(-1, -1, -1),
+                    tris = new IndexSpan(0, 0)
+                };
+
+                TopCellMesher.SetVertices(config, ref nextVertex, ref info.top);
+                TopCellMesher.SetVertices(config, ref nextVertex, ref info.bottom);
 
                 if (hasCellTriangles)
                 {
-                    info.triIndexStart = nextTriIndex;
-                    info.triIndexLength = SimpleSideMesher.SideCalcTriIndexCount(info.top.config);
-                    nextTriIndex += info.triIndexLength;
+                    byte topLength = TopCellMesher.CalcTriIndexCount(config);
+
+                    info.tris.start = nextTriIndex;
+                    info.tris.length = (byte)(SimpleSideMesher.SideCalcTriIndexCount(config) + 2 * topLength);
+
+                    nextTriIndex += info.tris.length;
                 }
 
-                info.bottom = TopCellMesher.GenerateInfoSimple(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertices, ref nextTriIndex, hasCellTriangles);
                 return info;
             }
 
             public void CalculateVertices(int x, int y, float cellSize, SideInfo info, float vertexHeight, NativeArray<float3> vertices)
             {
-                TopCellMesher.CalculateVerticesSimple(x, y, cellSize, info.top, vertexHeight, vertices, height * 0.5f);
-                TopCellMesher.CalculateVerticesSimple(x, y, cellSize, info.bottom, vertexHeight, vertices, height * -0.5f);
+                TopCellMesher.CalculateVerticesFull(x, y, cellSize, info.top, info.info, vertexHeight, vertices, height * 0.5f, edgeLerp);
+                TopCellMesher.CalculateVerticesFull(x, y, cellSize, info.bottom, info.info, vertexHeight, vertices, -height * 0.5f, edgeLerp);
             }
 
             public void CalculateIndices(SideInfo bl, SideInfo br, SideInfo tr, SideInfo tl, NativeArray<int> triangles)
             {
-                TopCellMesher.CalculateIndicesSimple(bl.top, br.top, tr.top, tl.top, triangles);
+                byte config = bl.info.config;
+                byte faceLength = TopCellMesher.CalcTriIndexCount(config);
+                byte sideLength = SimpleSideMesher.SideCalcTriIndexCount(config);
+                
+                IndexSpan tris = bl.tris;
+                tris.length = faceLength;
+                TopCellMesher.CalculateIndicesSimple(config, tris, bl.top, br.top, tr.top, tl.top, triangles);
+                
+                tris.start += faceLength;
+                tris.length = sideLength;
+                bl.tris = tris;
                 SimpleSideMesher.CalculateSideIndices(bl, br, tr, tl, triangles);
-                TopCellMesher.CalculateIndicesReverse(bl.bottom, br.bottom, tr.bottom, tl.bottom, triangles);
+
+                tris.start += sideLength;
+                tris.length = faceLength;
+                TopCellMesher.CalculateIndicesReverse(config, tris, bl.bottom, br.bottom, tr.bottom, tl.bottom, triangles);
             }
 
             public bool NeedUpdateInfo => false;

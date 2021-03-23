@@ -1,20 +1,26 @@
 ﻿using Unity.Collections;
 using Unity.Mathematics;
+using UnityEditor.Experimental.GraphView;
 
 namespace MeshBuilder
 {
-    using CornerInfo = MarchingSquaresMesher.SimpleSideMesher.CornerInfo;
     using CornerInfoWithNormals = MarchingSquaresMesher.ScalableTopCellMesher.CornerInfoWithNormals;
+
+    using CellInfo = MarchingSquaresMesher.TopCellMesher.CellInfo;
+    using CellVerts = MarchingSquaresMesher.TopCellMesher.CellVertices;
+    using IndexSpan = MarchingSquaresMesher.TopCellMesher.IndexSpan;
+    using EdgeNormals = MarchingSquaresMesher.ScalableTopCellMesher.EdgeNormals;
+
     public partial class MarchingSquaresMesher : Builder
     {
-        public struct SimpleSideMesher : ICellMesher<CornerInfo>
+        public struct SimpleSideMesher : ICellMesher<SimpleSideMesher.SideInfo>
         {
-            public struct CornerInfo
+            public struct SideInfo
             {
-                public TopCellMesher.CornerInfo top;
-                public int triIndexStart;
-                public int triIndexLength;
-                public TopCellMesher.CornerInfo bottom;
+                public CellInfo info;
+                public CellVerts top;
+                public CellVerts bottom;
+                public IndexSpan tris;
             }
 
             public float height;
@@ -26,49 +32,58 @@ namespace MeshBuilder
                 this.lerpToEdge = lerpToEdge;
             }
 
-            public CornerInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
-                                ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles)
+            public SideInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
+                                ref int nextVertex, ref int nextTriIndex, bool hasCellTriangles)
             {
-                CornerInfo info = new CornerInfo();
-                info.top = TopCellMesher.GenerateInfoSimple(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertices, ref nextTriIndex, false);
+                byte config = CalcConfiguration(cornerDistance, rightDistance, topRightDistance, topDistance);
+
+                SideInfo info = new SideInfo()
+                {
+                    info = new CellInfo(config, cornerDistance, rightDistance, topDistance),
+                    top = new CellVerts(-1, -1, -1),
+                    bottom = new CellVerts(-1, -1, -1),
+                    tris = new IndexSpan(0, 0)
+                };
+
+                TopCellMesher.SetVertices(config, ref nextVertex, ref info.top);
+                TopCellMesher.SetVertices(config, ref nextVertex, ref info.bottom);
 
                 if (hasCellTriangles)
                 {
-                    info.triIndexStart = nextTriIndex;
-                    info.triIndexLength = SideCalcTriIndexCount(info.top.config);
+                    info.tris.start = nextTriIndex;
+                    info.tris.length = SideCalcTriIndexCount(config);
 
-                    nextTriIndex += info.triIndexLength;
+                    nextTriIndex += info.tris.length;
                 }
 
-                info.bottom = TopCellMesher.GenerateInfoSimple(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertices, ref nextTriIndex, false);
                 return info;
             }
 
-            public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, float vertexHeight, NativeArray<float3> vertices)
+            public void CalculateVertices(int x, int y, float cellSize, SideInfo info, float vertexHeight, NativeArray<float3> vertices)
             {
-                TopCellMesher.CalculateVerticesFull(x, y, cellSize, info.top, vertexHeight, vertices, height * 0.5f, lerpToEdge);
-                TopCellMesher.CalculateVerticesFull(x, y, cellSize, info.bottom, 0, vertices, -height * 0.5f, lerpToEdge);
+                TopCellMesher.CalculateVerticesFull(x, y, cellSize, info.top, info.info, vertexHeight, vertices, height * 0.5f, lerpToEdge);
+                TopCellMesher.CalculateVerticesFull(x, y, cellSize, info.bottom, info.info, 0, vertices, -height * 0.5f, lerpToEdge);
             }
 
-            public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
+            public void CalculateIndices(SideInfo bl, SideInfo br, SideInfo tr, SideInfo tl, NativeArray<int> triangles)
                 => CalculateSideIndices(bl, br, tr, tl, triangles);
 
             public bool NeedUpdateInfo { get => false; }
 
-            public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref CornerInfo cell, ref CornerInfo top, ref CornerInfo right)
+            public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref SideInfo cell, ref SideInfo top, ref SideInfo right)
             {
                 // do nothing
             }
 
-            public static void CalculateSideIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
+            public static void CalculateSideIndices(SideInfo bl, SideInfo br, SideInfo tr, SideInfo tl, NativeArray<int> triangles)
             {
-                if (bl.triIndexLength == 0)
+                if (bl.tris.length == 0)
                 {
                     return;
                 }
 
-                int triangleIndex = bl.triIndexStart;
-                switch (bl.top.config)
+                int triangleIndex = bl.tris.start;
+                switch (bl.info.config)
                 {
                     // full
                     case MaskBL | MaskBR | MaskTR | MaskTL: break;
@@ -120,7 +135,7 @@ namespace MeshBuilder
                 ++nextIndex;
             }
 
-            public static int SideCalcTriIndexCount(byte config)
+            public static byte SideCalcTriIndexCount(byte config)
             {
                 switch (config)
                 {
@@ -148,22 +163,22 @@ namespace MeshBuilder
                 return 0;
             }
 
-            private static int TopLeftEdge(CornerInfo info) => info.top.leftEdgeIndex;
-            private static int BottomLeftEdge(CornerInfo info) => info.bottom.leftEdgeIndex;
-            private static int TopBottomEdge(CornerInfo info) => info.top.bottomEdgeIndex;
-            private static int BottomBottomEdge(CornerInfo info) => info.bottom.bottomEdgeIndex;
+            private static int TopLeftEdge(SideInfo info) => info.top.leftEdge;
+            private static int BottomLeftEdge(SideInfo info) => info.bottom.leftEdge;
+            private static int TopBottomEdge(SideInfo info) => info.top.bottomEdge;
+            private static int BottomBottomEdge(SideInfo info) => info.bottom.bottomEdge;
 
             public bool CanGenerateUvs { get => true; }
 
-            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
+            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, SideInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
             {
-                SetUV(corner.top.vertexIndex, 1f, vertices, uvs);
-                SetUV(corner.top.leftEdgeIndex, 1f, vertices, uvs);
-                SetUV(corner.top.bottomEdgeIndex, 1f, vertices, uvs);
+                SetUV(corner.top.corner, 1f, vertices, uvs);
+                SetUV(corner.top.leftEdge, 1f, vertices, uvs);
+                SetUV(corner.top.bottomEdge, 1f, vertices, uvs);
 
-                SetUV(corner.bottom.vertexIndex, 0f, vertices, uvs);
-                SetUV(corner.bottom.leftEdgeIndex, 0f, vertices, uvs);
-                SetUV(corner.bottom.bottomEdgeIndex, 0f, vertices, uvs);
+                SetUV(corner.bottom.corner, 0f, vertices, uvs);
+                SetUV(corner.bottom.leftEdge, 0f, vertices, uvs);
+                SetUV(corner.bottom.bottomEdge, 0f, vertices, uvs);
             }
 
             static public void SetUV(int index, float v, NativeArray<float3> vertices, NativeArray<float2> uvs)
@@ -182,33 +197,32 @@ namespace MeshBuilder
             // (but at that point it probably doesn't make sense to keep them separate)
             // or make the normals array readable and accumulate the normals cell by cell in the CalculateNormals method. (that would probably flicker if I keep the job parallel)
             // The diagonal case is especially off right now
-            public void CalculateNormals(CornerInfo corner, CornerInfo right, CornerInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
+            public void CalculateNormals(SideInfo corner, SideInfo right, SideInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
                 => CalculateTriangleNormals(corner, right, top, vertices, normals);
 
-            static public void CalculateTriangleNormals(CornerInfo corner, CornerInfo right, CornerInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
+            static public void CalculateTriangleNormals(SideInfo corner, SideInfo right, SideInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
             {
-                if (corner.top.vertexIndex >= 0) normals[corner.top.vertexIndex] = new float3(0, 1, 0);
-                if (corner.bottom.vertexIndex >= 0) normals[corner.bottom.vertexIndex] = new float3(0, -1, 0);
+                if (corner.top.corner >= 0) normals[corner.top.corner] = new float3(0, 1, 0);
+                if (corner.bottom.corner >= 0) normals[corner.bottom.corner] = new float3(0, -1, 0);
 
-                if (corner.top.leftEdgeIndex >= 0)
+                if (corner.top.leftEdge >= 0)
                 {
                     float3 normal = CalcNormalLeft(corner, right, top, vertices);
-                    normals[corner.top.leftEdgeIndex] = normal;
-                    normals[corner.bottom.leftEdgeIndex] = normal;
+                    normals[corner.top.leftEdge] = normal;
+                    normals[corner.bottom.leftEdge] = normal;
                 }
 
-                if (corner.top.bottomEdgeIndex >= 0)
+                if (corner.top.bottomEdge >= 0)
                 {
                     float3 normal = CalcNormalBottom(corner, right, top, vertices);
-                    normals[corner.top.bottomEdgeIndex] = normal;
-                    normals[corner.bottom.bottomEdgeIndex] = normal;
+                    normals[corner.top.bottomEdge] = normal;
+                    normals[corner.bottom.bottomEdge] = normal;
                 }
             }
 
-            private static float3 CalcNormalBottom(CornerInfo bl, CornerInfo br, CornerInfo tl, NativeArray<float3> vertices)
+            private static float3 CalcNormalBottom(SideInfo bl, SideInfo br, SideInfo tl, NativeArray<float3> vertices)
             {
-                int triangleIndex = bl.triIndexStart;
-                switch (bl.top.config)
+                switch (bl.info.config)
                 {
                     // corners
                     case MaskBL: return CalcNormal(TopBottomEdge(bl), TopLeftEdge(bl), vertices);
@@ -231,10 +245,9 @@ namespace MeshBuilder
                 }
                 return new float3(0, 1, 0);
             }
-            private static float3 CalcNormalLeft(CornerInfo bl, CornerInfo br, CornerInfo tl, NativeArray<float3> vertices)
+            private static float3 CalcNormalLeft(SideInfo bl, SideInfo br, SideInfo tl, NativeArray<float3> vertices)
             {
-                int triangleIndex = bl.triIndexStart;
-                switch (bl.top.config)
+                switch (bl.info.config)
                 {
                     // corners
                     case MaskBL: return CalcNormal(TopBottomEdge(bl), TopLeftEdge(bl), vertices);
@@ -268,18 +281,18 @@ namespace MeshBuilder
 
         // NOTE: this is almost a copy paste of the SimpleSideMesher, probably I should refactor that a bit, or make it into a generic version
         // (but then that wouldn't really be a 'simple' mesher)
-        public struct ScalableSideMesher : ICellMesher<ScalableSideMesher.CornerInfo>
+        public struct ScalableSideMesher : ICellMesher<ScalableSideMesher.ScalableSideInfo>
         {
-            public struct CornerInfo
+            public struct ScalableSideInfo
             {
-                public CornerInfoWithNormals top;
-                public int triIndexStart;
-                public int triIndexLength;
-                public CornerInfoWithNormals bottom;
+                public CellInfo info;
+                public CellVerts top;
+                public CellVerts bottom;
+                public IndexSpan tris;
+                public EdgeNormals normals;
             }
-            private ScalableTopCellMesher topMesher;
 
-            public float lerpToExactEdge { get => topMesher.lerpToEdge; set => topMesher.lerpToEdge = value; }
+            public float lerpToExactEdge;
 
             public float height;
             public float topOffsetScale;
@@ -290,83 +303,86 @@ namespace MeshBuilder
                 this.height = height;
                 this.bottomOffsetScale = bottomOffsetScale;
                 this.topOffsetScale = topOffsetScale;
-                topMesher = new ScalableTopCellMesher();
                 this.lerpToExactEdge = lerpToExactEdge;
             }
 
-            public CornerInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
-                                ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles)
+            public ScalableSideInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
+                                ref int nextVertex, ref int nextTriIndex, bool hasCellTriangles)
             {
-                CornerInfo info = new CornerInfo();
-                info.top = topMesher.GenerateInfo(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertices, ref nextTriIndex, false);
+                byte config = CalcConfiguration(cornerDistance, rightDistance, topRightDistance, topDistance);
+                ScalableSideInfo info = new ScalableSideInfo()
+                {
+                    info = new CellInfo(config, cornerDistance, rightDistance, topDistance),
+                    top = new CellVerts(-1, -1, -1),
+                    bottom = new CellVerts(-1, -1, -1),
+                    tris = new IndexSpan(0, 0)
+                };
+
+                TopCellMesher.SetVertices(config, ref nextVertex, ref info.top);
+                TopCellMesher.SetVertices(config, ref nextVertex, ref info.bottom);
 
                 if (hasCellTriangles)
                 {
-                    info.triIndexStart = nextTriIndex;
-                    info.triIndexLength = SimpleSideMesher.SideCalcTriIndexCount(info.top.cornerInfo.config);
+                    info.tris.start = nextTriIndex;
+                    info.tris.length = SimpleSideMesher.SideCalcTriIndexCount(config);
 
-                    nextTriIndex += info.triIndexLength;
+                    nextTriIndex += info.tris.length;
                 }
 
-                info.bottom = topMesher.GenerateInfo(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertices, ref nextTriIndex, false);
                 return info;
             }
 
-            public void CalculateVertices(int x, int y, float cellSize, CornerInfo info, float vertexHeight, NativeArray<float3> vertices)
+            public void CalculateVertices(int x, int y, float cellSize, ScalableSideInfo info, float vertexHeight, NativeArray<float3> vertices)
             {
-                topMesher.heightOffset = height * 0.5f;
-                topMesher.sideOffsetScale = topOffsetScale;
-                topMesher.CalculateVertices(x, y, cellSize, info.top, vertexHeight, vertices);
-                topMesher.heightOffset = height * -0.5f;
-                topMesher.sideOffsetScale = bottomOffsetScale;
-                topMesher.CalculateVertices(x, y, cellSize, info.bottom, 0, vertices);
+                float heightOffset = height * 0.5f;
+                ScalableTopCellMesher.CalculateVertices(x, y, cellSize, info.top, info.info, info.normals, heightOffset + vertexHeight, vertices, lerpToExactEdge, topOffsetScale);
+                ScalableTopCellMesher.CalculateVertices(x, y, cellSize, info.bottom, info.info, info.normals, -heightOffset + vertexHeight, vertices, lerpToExactEdge, bottomOffsetScale);
             }
 
             public bool NeedUpdateInfo { get => true; }
 
-            public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref CornerInfo cell, ref CornerInfo top, ref CornerInfo right)
+            public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref ScalableSideInfo cell, ref ScalableSideInfo top, ref ScalableSideInfo right)
             {
-                topMesher.UpdateInfo(x, y, cellColNum, cellRowNum, ref cell.top, ref top.top, ref right.top);
-                topMesher.UpdateInfo(x, y, cellColNum, cellRowNum, ref cell.bottom, ref top.bottom, ref right.bottom);
+                ScalableTopCellMesher.UpdateNormals(cell.info, top.info, right.info, ref cell.normals, ref top.normals, ref right.normals, lerpToExactEdge);
             }
 
             public bool CanGenerateUvs { get => false; }
 
-            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
+            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, ScalableSideInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
             {
-                SimpleSideMesher.SetUV(corner.top.cornerInfo.vertexIndex, 1f, vertices, uvs);
-                SimpleSideMesher.SetUV(corner.top.cornerInfo.leftEdgeIndex, 1f, vertices, uvs);
-                SimpleSideMesher.SetUV(corner.top.cornerInfo.bottomEdgeIndex, 1f, vertices, uvs);
+                SimpleSideMesher.SetUV(corner.top.corner, 1f, vertices, uvs);
+                SimpleSideMesher.SetUV(corner.top.leftEdge, 1f, vertices, uvs);
+                SimpleSideMesher.SetUV(corner.top.bottomEdge, 1f, vertices, uvs);
 
-                SetUVFromDifferentVertex(corner.top.cornerInfo.vertexIndex, corner.bottom.cornerInfo.vertexIndex, 0f, vertices, uvs);
-                SetUVFromDifferentVertex(corner.top.cornerInfo.leftEdgeIndex, corner.bottom.cornerInfo.leftEdgeIndex, 0f, vertices, uvs);
-                SetUVFromDifferentVertex(corner.top.cornerInfo.bottomEdgeIndex, corner.bottom.cornerInfo.bottomEdgeIndex, 0f, vertices, uvs);
+                SetUVFromDifferentVertex(corner.top.corner, corner.bottom.corner, 0f, vertices, uvs);
+                SetUVFromDifferentVertex(corner.top.leftEdge, corner.bottom.leftEdge, 0f, vertices, uvs);
+                SetUVFromDifferentVertex(corner.top.bottomEdge, corner.bottom.bottomEdge, 0f, vertices, uvs);
             }
 
             public bool CanGenerateNormals { get => true; }
 
-            public void CalculateNormals(CornerInfo corner, CornerInfo right, CornerInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
+            public void CalculateNormals(ScalableSideInfo corner, ScalableSideInfo right, ScalableSideInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
             {
-                var topInfo = corner.top.cornerInfo;
-                var bottomInfo = corner.bottom.cornerInfo;
+                var topInfo = corner.top;
+                var bottomInfo = corner.bottom;
 
-                if (topInfo.vertexIndex >= 0) { normals[topInfo.vertexIndex] = new float3(0, 1, 0); }
-                if (bottomInfo.vertexIndex >= 0) { normals[bottomInfo.vertexIndex] = new float3(0, 1, 0); }
+                if (topInfo.corner >= 0) { normals[topInfo.corner] = new float3(0, 1, 0); }
+                if (bottomInfo.corner >= 0) { normals[bottomInfo.corner] = new float3(0, 1, 0); }
                 
-                if (topInfo.leftEdgeIndex >= 0)
+                if (topInfo.leftEdge >= 0)
                 {
-                    float3 normal = CalculateNormal(topInfo.leftEdgeIndex, bottomInfo.leftEdgeIndex, vertices);
+                    float3 normal = CalculateNormal(topInfo.leftEdge, bottomInfo.leftEdge, vertices);
                     normal = math.normalize(normal);
-                    normals[topInfo.leftEdgeIndex] = normal;
-                    normals[bottomInfo.leftEdgeIndex] = normal;
+                    normals[topInfo.leftEdge] = normal;
+                    normals[bottomInfo.leftEdge] = normal;
                 }
 
-                if (topInfo.bottomEdgeIndex >= 0)
+                if (topInfo.bottomEdge >= 0)
                 {
-                    float3 normal = CalculateNormal(topInfo.bottomEdgeIndex, bottomInfo.bottomEdgeIndex, vertices);
+                    float3 normal = CalculateNormal(topInfo.bottomEdge, bottomInfo.bottomEdge, vertices);
                     normal = math.normalize(normal);
-                    normals[topInfo.bottomEdgeIndex] = normal;
-                    normals[bottomInfo.bottomEdgeIndex] = normal;
+                    normals[topInfo.bottomEdge] = normal;
+                    normals[bottomInfo.bottomEdge] = normal;
                 }
             }
 
@@ -387,15 +403,15 @@ namespace MeshBuilder
                 }
             }
 
-            public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
+            public void CalculateIndices(ScalableSideInfo bl, ScalableSideInfo br, ScalableSideInfo tr, ScalableSideInfo tl, NativeArray<int> triangles)
             {
-                if (bl.triIndexLength == 0) 
+                if (bl.tris.length == 0) 
                 {
                     return; 
                 }
 
-                int triangleIndex = bl.triIndexStart;
-                switch (bl.top.cornerInfo.config)
+                int triangleIndex = bl.tris.start;
+                switch (bl.info.config)
                 {
                     // full
                     case MaskBL | MaskBR | MaskTR | MaskTL: break;
@@ -430,10 +446,10 @@ namespace MeshBuilder
                 }
             }
 
-            private static int TopLeftEdge(CornerInfo info) => info.top.cornerInfo.leftEdgeIndex;
-            private static int BottomLeftEdge(CornerInfo info) => info.bottom.cornerInfo.leftEdgeIndex;
-            private static int TopBottomEdge(CornerInfo info) => info.top.cornerInfo.bottomEdgeIndex;
-            private static int BottomBottomEdge(CornerInfo info) => info.bottom.cornerInfo.bottomEdgeIndex;
+            private static int TopLeftEdge(ScalableSideInfo info) => info.top.leftEdge;
+            private static int BottomLeftEdge(ScalableSideInfo info) => info.bottom.leftEdge;
+            private static int TopBottomEdge(ScalableSideInfo info) => info.top.bottomEdge;
+            private static int BottomBottomEdge(ScalableSideInfo info) => info.bottom.bottomEdge;
         }
     }
 }

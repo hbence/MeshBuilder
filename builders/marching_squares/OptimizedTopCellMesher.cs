@@ -8,6 +8,10 @@ using System;
 
 namespace MeshBuilder
 {
+    using TopCellInfo = MarchingSquaresMesher.TopCellMesher.CellInfo;
+    using CellVerts = MarchingSquaresMesher.TopCellMesher.CellVertices;
+    using IndexSpan = MarchingSquaresMesher.TopCellMesher.IndexSpan;
+
     public partial class MarchingSquaresMesher : Builder
     {
         /// <summary>
@@ -16,11 +20,11 @@ namespace MeshBuilder
         /// TODO: This needed a prepass before the corner info generation and also a bit different triangle generation
         /// so there is a lot of code duplication in StartGeneration because it can't be handled like the other ICellMeshers
         /// I should refactor them after I added chunk support
-        public struct OptimizedTopCellMesher : ICellMesher<OptimizedTopCellMesher.CornerInfo>
+        public struct OptimizedTopCellMesher : ICellMesher<OptimizedTopCellMesher.OptimizationCornerInfo>
         {
-            public struct CornerInfo
+            public struct OptimizationCornerInfo
             {
-                public TopCellMesher.CornerInfo corner;
+                public TopCellMesher.TopCellInfo info;
 
                 public byte triangleCount;
                 public int triA0Cell, triA1Cell, triA2Cell;
@@ -31,7 +35,7 @@ namespace MeshBuilder
             public float heightOffset;
             public OptimizationMode optimizationMode;
             
-            public struct CellInfo
+            public struct OptimizationCellInfo
             {
                 public bool wasChecked;
                 public bool isFull;
@@ -44,33 +48,26 @@ namespace MeshBuilder
                 public int triB0Cell, triB1Cell, triB2Cell;
             }
 
-            public CornerInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
+            public OptimizationCornerInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
                                             ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles)
             {
                 Debug.LogError("Not implemented!");
                 return default;
             }
 
-            public CornerInfo GenerateInfo(CellInfo cell, float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
-                                            ref int nextVertices, ref int nextTriIndex, bool hasCellTriangles)
+            public OptimizationCornerInfo GenerateInfo(OptimizationCellInfo cell, float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
+                                            ref int nextVertex, ref int nextTriIndex, bool hasCellTriangles)
             {
-                var info = new TopCellMesher.CornerInfo
+                byte config = CalcConfiguration(cornerDistance, rightDistance, topRightDistance, topDistance);
+
+                var info = new TopCellMesher.TopCellInfo
                 {
-                    config = CalcConfiguration(cornerDistance, rightDistance, topRightDistance, topDistance),
-
-                    cornerDist = cornerDistance,
-                    rightDist = rightDistance,
-                    topDist = topDistance,
-
-                    vertexIndex = -1,
-                    leftEdgeIndex = -1,
-                    bottomEdgeIndex = -1,
-
-                    triIndexStart = nextTriIndex,
-                    triIndexLength = 0
+                    info = new TopCellInfo(config, cornerDistance, rightDistance, topDistance),
+                    verts = new CellVerts(-1, -1, -1),
+                    tris = new IndexSpan(nextTriIndex, 0)
                 };
 
-                if (info.config == MaskFull)
+                if (config == MaskFull)
                 {
                     if (hasCellTriangles)
                     {
@@ -79,18 +76,18 @@ namespace MeshBuilder
 
                     if (cell.needsVertex)
                     {
-                        info.vertexIndex = nextVertices;
-                        ++nextVertices;
+                        info.verts.corner = nextVertex;
+                        ++nextVertex;
                     }
                 }
                 else
                 {
-                    info = TopCellMesher.GenerateInfoSimple(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertices, ref nextTriIndex, hasCellTriangles);
+                    info = TopCellMesher.GenerateInfoSimple(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertex, ref nextTriIndex, hasCellTriangles);
                 }
 
-                return new CornerInfo
+                return new OptimizationCornerInfo
                 {
-                    corner = info,
+                    info = info,
                     triangleCount = cell.triangleCount,
                     
                     triA0Cell = cell.triA0Cell, 
@@ -103,16 +100,17 @@ namespace MeshBuilder
                 };
             }
 
-            public void CalculateVertices(int x, int y, float cellSize, CornerInfo corner, float height, NativeArray<float3> vertices)
-                => TopCellMesher.CalculateVerticesFull(x, y, cellSize, corner.corner, height, vertices, heightOffset, lerpToExactEdge);
+            public void CalculateVertices(int x, int y, float cellSize, OptimizationCornerInfo corner, float height, NativeArray<float3> vertices)
+                => TopCellMesher.CalculateVerticesFull(x, y, cellSize, corner.info.verts, corner.info.info, height, vertices, heightOffset, lerpToExactEdge);
 
-            public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles)
+            public void CalculateIndices(OptimizationCornerInfo bl, OptimizationCornerInfo br, OptimizationCornerInfo tr, OptimizationCornerInfo tl, NativeArray<int> triangles)
                 => Debug.LogError("Not impemented!");
 
-            public void CalculateIndices(CornerInfo bl, CornerInfo br, CornerInfo tr, CornerInfo tl, NativeArray<int> triangles, NativeArray<CornerInfo> corners)
+            public void CalculateIndices(OptimizationCornerInfo bl, OptimizationCornerInfo br, OptimizationCornerInfo tr, OptimizationCornerInfo tl, NativeArray<int> triangles, NativeArray<OptimizationCornerInfo> corners)
             {
-                int triangleIndex = bl.corner.triIndexStart;
-                if (bl.corner.config == MaskFull)
+                int triangleIndex = bl.info.tris.start;
+                byte config = bl.info.info.config;
+                if (config == MaskFull)
                 {
                     if (bl.triangleCount == 1)
                     {
@@ -140,38 +138,38 @@ namespace MeshBuilder
                 }
                 else
                 {
-                    TopCellMesher.CalculateIndicesSimple(bl.corner, br.corner, tr.corner, tl.corner, triangles);
+                    TopCellMesher.CalculateIndicesSimple(config, bl.info.tris, bl.info.verts, br.info.verts, tr.info.verts, tl.info.verts, triangles);
                 }
             }
 
             public bool NeedUpdateInfo => false;
 
-            public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref CornerInfo cell, ref CornerInfo top, ref CornerInfo right)
+            public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref OptimizationCornerInfo cell, ref OptimizationCornerInfo top, ref OptimizationCornerInfo right)
             {
                 // do nothing
             }
 
-            private static int Vertex(int index, NativeArray<CornerInfo> corners) => corners[index].corner.vertexIndex;
+            private static int Vertex(int index, NativeArray<OptimizationCornerInfo> corners) => corners[index].info.verts.corner;
 
             public bool CanGenerateUvs => true;
 
-            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
-                => TopCellMesher.TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner.corner, uvScale, vertices, uvs);
+            public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, OptimizationCornerInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
+                => TopCellMesher.TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner.info.verts, uvScale, vertices, uvs);
 
             public bool CanGenerateNormals => true;
 
-            public void CalculateNormals(CornerInfo corner, CornerInfo right, CornerInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
-                => TopCellMesher.SetNormals(corner.corner, normals, new float3(0, 1, 0));
+            public void CalculateNormals(OptimizationCornerInfo corner, OptimizationCornerInfo right, OptimizationCornerInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
+                => TopCellMesher.SetNormals(corner.info.verts, normals, new float3(0, 1, 0));
             
             public JobHandle StartGeneration(JobHandle lastHandle, MarchingSquaresMesher mesher)
             {
                 int colNum = mesher.ColNum;
                 int rowNum = mesher.RowNum;
 
-                NativeArray<CellInfo> optimizationCells = new NativeArray<CellInfo>(colNum * rowNum, Allocator.TempJob);
+                NativeArray<OptimizationCellInfo> optimizationCells = new NativeArray<OptimizationCellInfo>(colNum * rowNum, Allocator.TempJob);
                 mesher.AddTemp(optimizationCells);
 
-                NativeArray<CornerInfo> corners = new NativeArray<CornerInfo>(colNum * rowNum, Allocator.TempJob);
+                NativeArray<OptimizationCornerInfo> corners = new NativeArray<OptimizationCornerInfo>(colNum * rowNum, Allocator.TempJob);
                 mesher.AddTemp(corners);
 
                 mesher.vertices = new NativeList<float3>(Allocator.TempJob);
@@ -191,15 +189,15 @@ namespace MeshBuilder
                 lastHandle = GenerateOptimizationData.Schedule(colNum, rowNum, optimizationMode, optimizationCells, mesher.DistanceData.RawData);
                 lastHandle = GenerateOptimizedCorners.Schedule(colNum, rowNum, this, optimizationCells, mesher.DistanceData.RawData, corners, mesher.vertices, mesher.triangles, generateUVs, mesher.uvs, mesher.normals, lastHandle);
                
-                var vertexHandle = CalculateVertices<CornerInfo, OptimizedTopCellMesher>.Schedule(colNum, mesher.CellSize, this, corners, mesher.vertices, lastHandle);
+                var vertexHandle = CalculateVertices<OptimizationCornerInfo, OptimizedTopCellMesher>.Schedule(colNum, mesher.CellSize, this, corners, mesher.vertices, lastHandle);
 
                 var uvHandle = vertexHandle;
                 if (generateUVs)
                 {
-                    uvHandle = CalculateUvs<CornerInfo, OptimizedTopCellMesher>.Schedule(colNum, rowNum, mesher.CellSize, mesher.uvScale, this, corners, mesher.vertices, mesher.uvs, vertexHandle);
+                    uvHandle = CalculateUvs<OptimizationCornerInfo, OptimizedTopCellMesher>.Schedule(colNum, rowNum, mesher.CellSize, mesher.uvScale, this, corners, mesher.vertices, mesher.uvs, vertexHandle);
                 }
 
-                var normalHandle = CalculateNormals<CornerInfo, OptimizedTopCellMesher>.Schedule(colNum, rowNum, this, corners, mesher.vertices, mesher.normals, vertexHandle);
+                var normalHandle = CalculateNormals<OptimizationCornerInfo, OptimizedTopCellMesher>.Schedule(colNum, rowNum, this, corners, mesher.vertices, mesher.normals, vertexHandle);
 
                 vertexHandle = JobHandle.CombineDependencies(vertexHandle, uvHandle, normalHandle);
 
@@ -217,7 +215,7 @@ namespace MeshBuilder
 
                 [ReadOnly] public NativeArray<float> distances;
 
-                public NativeArray<CellInfo> cells;
+                public NativeArray<OptimizationCellInfo> cells;
 
                 public void Execute()
                 {
@@ -249,7 +247,7 @@ namespace MeshBuilder
                     }
                 }
 
-                static public JobHandle Schedule(int colNum, int rowNum, OptimizationMode optimizationMode, NativeArray<CellInfo> optimizationCells, NativeArray<float> distances, JobHandle dependOn = default)
+                static public JobHandle Schedule(int colNum, int rowNum, OptimizationMode optimizationMode, NativeArray<OptimizationCellInfo> optimizationCells, NativeArray<float> distances, JobHandle dependOn = default)
                 {
                     var optimizationJob = new GenerateOptimizationData
                     {
@@ -262,8 +260,8 @@ namespace MeshBuilder
                     return optimizationJob.Schedule(dependOn);
                 }
 
-                private CellInfo CreateCellInfo(float corner, float right, float topRight, float top)
-                    => new CellInfo
+                private OptimizationCellInfo CreateCellInfo(float corner, float right, float topRight, float top)
+                    => new OptimizationCellInfo
                     {
                         isFull = CalcConfiguration(corner, right, topRight, top) == MaskFull,
                         wasChecked = false,
@@ -283,7 +281,7 @@ namespace MeshBuilder
 
                 private class GreedyRect
                 {
-                    public static void Fill(int cornerColNum, int cornerRowNum, NativeArray<CellInfo> cells)
+                    public static void Fill(int cornerColNum, int cornerRowNum, NativeArray<OptimizationCellInfo> cells)
                     {
                         for (int y = 0; y < cornerRowNum; ++y)
                         {
@@ -310,7 +308,7 @@ namespace MeshBuilder
                         }
                     }
 
-                    static Area FindFullArea(int x, int y, int colNum, int rowNum, NativeArray<CellInfo> cells)
+                    static Area FindFullArea(int x, int y, int colNum, int rowNum, NativeArray<OptimizationCellInfo> cells)
                     {
                         int width = 0;
                         int height = 0;
@@ -383,7 +381,7 @@ namespace MeshBuilder
                         public int dist;
                     }
 
-                    public static void Fill(int cornerColNum, int cornerRowNum, NativeArray<CellInfo> cells)
+                    public static void Fill(int cornerColNum, int cornerRowNum, NativeArray<OptimizationCellInfo> cells)
                     {
                         List<int> candidates = new List<int>();
 
@@ -458,7 +456,7 @@ namespace MeshBuilder
                         }
                     }
 
-                    static Area FindFullAreaAround(int x, int y, int colNum, int rowNum, NativeArray<CellInfo> cells)
+                    static Area FindFullAreaAround(int x, int y, int colNum, int rowNum, NativeArray<OptimizationCellInfo> cells)
                     {
                         int startX = x;
                         int startY = y;
@@ -521,12 +519,12 @@ namespace MeshBuilder
                     }
                 }
 
-                static void TriangulateArea(Area area, int colNum, NativeArray<CellInfo> cells)
+                static void TriangulateArea(Area area, int colNum, NativeArray<OptimizationCellInfo> cells)
                 {
                     ApplySimpleFullTriangles(area, colNum, cells);
                 }
 
-                static void MarkChecked(Area area, int colNum, NativeArray<CellInfo> cells)
+                static void MarkChecked(Area area, int colNum, NativeArray<OptimizationCellInfo> cells)
                 {
                     for (int y = area.startY; y <= area.endY; ++y)
                     {
@@ -537,7 +535,7 @@ namespace MeshBuilder
                     }
                 }
 
-                static void CheckEdgeVertices(Area area, int colNum, NativeArray<CellInfo> cells)
+                static void CheckEdgeVertices(Area area, int colNum, NativeArray<OptimizationCellInfo> cells)
                 {
                     if (area.startY > 0)
                     {
@@ -571,7 +569,7 @@ namespace MeshBuilder
                     }
                 }
 
-                static void MarkChecked(int x, int y, int colNum, NativeArray<CellInfo> cells)
+                static void MarkChecked(int x, int y, int colNum, NativeArray<OptimizationCellInfo> cells)
                 {
                     int index = ToIndex(x, y, colNum);
                     var cell = cells[index];
@@ -581,7 +579,7 @@ namespace MeshBuilder
 
                 static private int ToIndex(int x, int y, int colNum) => y * colNum + x;
 
-                static void ApplySimpleFullTriangles(Area area, int colNum, NativeArray<CellInfo> cells)
+                static void ApplySimpleFullTriangles(Area area, int colNum, NativeArray<OptimizationCellInfo> cells)
                 {
                     int blIndex = ToIndex(area.startX, area.startY, colNum);
                     int brIndex = ToIndex(area.endX + 1, area.startY, colNum);
@@ -594,14 +592,14 @@ namespace MeshBuilder
                     UpdateCell(trIndex, cells, true);
                 }
 
-                static private void UpdateCell(int index, NativeArray<CellInfo> cells, bool needsVertex)
+                static private void UpdateCell(int index, NativeArray<OptimizationCellInfo> cells, bool needsVertex)
                 {
                     var cell = cells[index];
                     cell.needsVertex = needsVertex;
                     cells[index] = cell;
                 }
 
-                static private void UpdateCell(int index, NativeArray<CellInfo> cells, bool needsVertex,
+                static private void UpdateCell(int index, NativeArray<OptimizationCellInfo> cells, bool needsVertex,
                     byte triangleCount = 0, int a0 = -1, int a1 = -1, int a2 = -1, int b0 = -1, int b1 = -1, int b2 = -1)
                 {
                     var cell = cells[index];
@@ -628,10 +626,10 @@ namespace MeshBuilder
 
                 public OptimizedTopCellMesher cellMesher;
 
-                [ReadOnly] public NativeArray<CellInfo> optimizationCells;
+                [ReadOnly] public NativeArray<OptimizationCellInfo> optimizationCells;
                 [ReadOnly] public NativeArray<float> distances;
 
-                [WriteOnly] public NativeArray<CornerInfo> corners;
+                [WriteOnly] public NativeArray<OptimizationCornerInfo> corners;
 
                 public NativeList<float3> vertices;
                 public NativeList<int> indices;
@@ -692,7 +690,7 @@ namespace MeshBuilder
                     }
                 }
 
-                static public JobHandle Schedule(int colNum, int rowNum, OptimizedTopCellMesher cellMesher, NativeArray<CellInfo> optimizationCells, NativeArray<float> distances, NativeArray<CornerInfo> corners, NativeList<float3> vertices,
+                static public JobHandle Schedule(int colNum, int rowNum, OptimizedTopCellMesher cellMesher, NativeArray<OptimizationCellInfo> optimizationCells, NativeArray<float> distances, NativeArray<OptimizationCornerInfo> corners, NativeList<float3> vertices,
                     NativeList<int> triangles, bool generateUVs, NativeList<float2> uvs, NativeList<float3> normals, JobHandle dependOn)
                 {
                     var cornerJob = new GenerateOptimizedCorners
@@ -724,7 +722,7 @@ namespace MeshBuilder
 
                 public OptimizedTopCellMesher cellMesher;
 
-                [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<CornerInfo> cornerInfos;
+                [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<OptimizationCornerInfo> cornerInfos;
                 [NativeDisableParallelForRestriction] [WriteOnly] public NativeArray<int> triangles;
 
                 public void Execute(int index)
@@ -741,7 +739,7 @@ namespace MeshBuilder
                     cellMesher.CalculateIndices(bl, br, tr, tl, triangles, cornerInfos);
                 }
 
-                public static JobHandle Schedule(int colNum, int rowNum, OptimizedTopCellMesher cellMesher, NativeArray<CornerInfo> corners, NativeList<int> triangles, JobHandle dependOn)
+                public static JobHandle Schedule(int colNum, int rowNum, OptimizedTopCellMesher cellMesher, NativeArray<OptimizationCornerInfo> corners, NativeList<int> triangles, JobHandle dependOn)
                 {
                     var trianglesJob = new CalculateOptimizedTriangles
                     {

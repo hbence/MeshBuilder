@@ -8,6 +8,9 @@ using MeshBuffer = MeshBuilder.MeshData.Buffer;
 
 namespace MeshBuilder
 {
+    // TODO: vertices generation with height data can be a bit weird around the edges since the height for the edge vertices is the
+    // same as the height of the corner, so it's possible that the edge of a cell is placed next to an adjacent corner vertex, which can
+    // create a sudden jump if the height difference is large
     public partial class MarchingSquaresMesher : Builder
     {
         private const uint DefMeshDataBufferFlags = (uint)MeshBuffer.Vertex | (uint)MeshBuffer.Triangle | (uint)MeshBuffer.Normal;
@@ -64,7 +67,7 @@ namespace MeshBuilder
             Inited();
         }
 
-        public void InitForFullCellNoEdgeVertices(int colNum, int rowNum, float cellSize, float height, float lerpToExactEdge = 1, float[] distanceData = null)
+        public void InitForFullCellSimpleMesh(int colNum, int rowNum, float cellSize, float height, float lerpToExactEdge = 1, float[] distanceData = null)
         {
             CellSize = cellSize;
 
@@ -244,8 +247,8 @@ namespace MeshBuilder
 
                 if (type == Type.FullSimple)
                 {
-                    var cellMesher = new SimpleFullCellMesher() { height = height };
-                    return mesher.StartGeneration<SimpleSideMesher.CornerInfo, SimpleFullCellMesher>(dependOn, cellMesher);
+                    var cellMesher = new SimpleFullCellMesher() { height = height, edgeLerp = lerpToExactEdge };
+                    return mesher.StartGeneration<SimpleSideMesher.SideInfo, SimpleFullCellMesher>(dependOn, cellMesher);
                 }
 
                 bool isFlat = !hasHeightData;
@@ -257,7 +260,7 @@ namespace MeshBuilder
                         case Type.TopOnly:
                             {
                                 var cellMesher = new TopCellMesher(height, TopCellMesher.NormalMode.UpDontSetNormal, lerpToExactEdge);
-                                return mesher.StartGeneration<TopCellMesher.CornerInfo, TopCellMesher>(dependOn, cellMesher);
+                                return mesher.StartGeneration<TopCellMesher.TopCellInfo, TopCellMesher>(dependOn, cellMesher);
                             }
                         case Type.NoBottom:
                             {
@@ -289,7 +292,7 @@ namespace MeshBuilder
                 }
 
                 var defMesher = new TopCellMesher(height, TopCellMesher.NormalMode.UpDontSetNormal, lerpToExactEdge);
-                return mesher.StartGeneration<TopCellMesher.CornerInfo, TopCellMesher>(dependOn, defMesher);
+                return mesher.StartGeneration<TopCellMesher.TopCellInfo, TopCellMesher>(dependOn, defMesher);
             }
         }
 

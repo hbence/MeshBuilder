@@ -4,7 +4,7 @@ using UnityEngine;
 
 namespace MeshBuilder
 {
-    using CornerInfo = MarchingSquaresMesher.TopCellMesher.CornerInfo;
+    using TopCellInfo = MarchingSquaresMesher.TopCellMesher.TopCellInfo;
     using static MarchingSquaresMesher.TopCellMesher;
     public partial class MarchingSquaresMesher : Builder
     {
@@ -15,7 +15,12 @@ namespace MeshBuilder
         {
             public struct CornerInfoWithNormals
             {
-                public CornerInfo cornerInfo;
+                public TopCellInfo cornerInfo;
+                public EdgeNormals normals;
+            }
+
+            public struct EdgeNormals
+            {
                 public float2 leftEdgeDir;
                 public float2 bottomEdgeDir;
             }
@@ -40,41 +45,47 @@ namespace MeshBuilder
 
             public bool NeedUpdateInfo => true;
             public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref CornerInfoWithNormals cell, ref CornerInfoWithNormals top, ref CornerInfoWithNormals right)
+                => UpdateNormals(cell.cornerInfo.info, top.cornerInfo.info, right.cornerInfo.info, ref cell.normals, ref top.normals, ref right.normals, lerpToEdge);
+
+            public static void UpdateNormals(CellInfo cell, CellInfo top, CellInfo right, ref EdgeNormals cellNormal, ref EdgeNormals topNormal, ref EdgeNormals rightNormal, float lerpToEdge)
             {
-                switch (cell.cornerInfo.config)
+                switch (cell.config)
                 {
                     // full
                     case MaskBL | MaskBR | MaskTR | MaskTL: break;
                     // corners
-                    case MaskBL: AddNormal(0, LerpVc(cell), LerpHz(cell), 0, ref cell.bottomEdgeDir, ref cell.leftEdgeDir); break;
-                    case MaskBR: AddNormal(LerpHz(cell), 0, 1, LerpVc(right), ref cell.bottomEdgeDir, ref right.leftEdgeDir); break;
-                    case MaskTR: AddNormal(1, LerpVc(right), LerpHz(top), 1, ref right.leftEdgeDir, ref top.bottomEdgeDir); break;
-                    case MaskTL: AddNormal(LerpHz(top), 1, 0, LerpVc(cell), ref top.bottomEdgeDir, ref cell.leftEdgeDir); break;
+                    case MaskBL: AddNormal(0, LerpVc(cell, lerpToEdge), LerpHz(cell, lerpToEdge), 0, ref cellNormal.bottomEdgeDir, ref cellNormal.leftEdgeDir); break;
+                    case MaskBR: AddNormal(LerpHz(cell, lerpToEdge), 0, 1, LerpVc(right, lerpToEdge), ref cellNormal.bottomEdgeDir, ref rightNormal.leftEdgeDir); break;
+                    case MaskTR: AddNormal(1, LerpVc(right, lerpToEdge), LerpHz(top, lerpToEdge), 1, ref rightNormal.leftEdgeDir, ref topNormal.bottomEdgeDir); break;
+                    case MaskTL: AddNormal(LerpHz(top, lerpToEdge), 1, 0, LerpVc(cell, lerpToEdge), ref topNormal.bottomEdgeDir, ref cellNormal.leftEdgeDir); break;
                     // halves
-                    case MaskBL | MaskBR: AddNormal(0, LerpVc(cell), 1, LerpVc(right), ref cell.leftEdgeDir, ref right.leftEdgeDir); break;
-                    case MaskTL | MaskTR: AddNormal(1, LerpVc(right), 0, LerpVc(cell), ref cell.leftEdgeDir, ref right.leftEdgeDir); break;
-                    case MaskBL | MaskTL: AddNormal(LerpHz(top), 1, LerpHz(cell), 0, ref cell.bottomEdgeDir, ref top.bottomEdgeDir); break;
-                    case MaskBR | MaskTR: AddNormal(LerpHz(cell), 0, LerpHz(top), 1, ref cell.bottomEdgeDir, ref top.bottomEdgeDir); break;
+                    case MaskBL | MaskBR: AddNormal(0, LerpVc(cell, lerpToEdge), 1, LerpVc(right, lerpToEdge), ref cellNormal.leftEdgeDir, ref rightNormal.leftEdgeDir); break;
+                    case MaskTL | MaskTR: AddNormal(1, LerpVc(right, lerpToEdge), 0, LerpVc(cell, lerpToEdge), ref cellNormal.leftEdgeDir, ref rightNormal.leftEdgeDir); break;
+                    case MaskBL | MaskTL: AddNormal(LerpHz(top, lerpToEdge), 1, LerpHz(cell, lerpToEdge), 0, ref cellNormal.bottomEdgeDir, ref topNormal.bottomEdgeDir); break;
+                    case MaskBR | MaskTR: AddNormal(LerpHz(cell, lerpToEdge), 0, LerpHz(top, lerpToEdge), 1, ref cellNormal.bottomEdgeDir, ref topNormal.bottomEdgeDir); break;
                     // diagonals
                     case MaskBL | MaskTR:
                         {
-                            AddNormal(0, LerpVc(cell), LerpHz(top), 1, ref cell.leftEdgeDir, ref top.bottomEdgeDir);
-                            AddNormal(1, LerpVc(right), LerpHz(cell), 0, ref right.leftEdgeDir, ref cell.bottomEdgeDir);
+                            AddNormal(0, LerpVc(cell, lerpToEdge), LerpHz(top, lerpToEdge), 1, ref cellNormal.leftEdgeDir, ref topNormal.bottomEdgeDir);
+                            AddNormal(1, LerpVc(right, lerpToEdge), LerpHz(cell, lerpToEdge), 0, ref rightNormal.leftEdgeDir, ref cellNormal.bottomEdgeDir);
                             break;
                         }
                     case MaskTL | MaskBR:
                         {
-                            AddNormal(LerpHz(top), 1, 1, LerpVc(right), ref top.bottomEdgeDir, ref right.leftEdgeDir);
-                            AddNormal(LerpHz(cell), 0, 0, LerpVc(cell), ref cell.leftEdgeDir, ref cell.bottomEdgeDir);
+                            AddNormal(LerpHz(top, lerpToEdge), 1, 1, LerpVc(right, lerpToEdge), ref topNormal.bottomEdgeDir, ref rightNormal.leftEdgeDir);
+                            AddNormal(LerpHz(cell, lerpToEdge), 0, 0, LerpVc(cell, lerpToEdge), ref cellNormal.leftEdgeDir, ref cellNormal.bottomEdgeDir);
                             break;
                         }
                     // three quarters
-                    case MaskBL | MaskTR | MaskBR: AddNormal(0, LerpVc(cell), LerpHz(top), 1, ref cell.leftEdgeDir, ref top.bottomEdgeDir); break;
-                    case MaskBL | MaskTL | MaskBR: AddNormal(LerpHz(top), 1, 1, LerpVc(right), ref top.bottomEdgeDir, ref right.leftEdgeDir); break;
-                    case MaskBL | MaskTL | MaskTR: AddNormal(1, LerpVc(right), LerpHz(cell), 0, ref right.leftEdgeDir, ref cell.bottomEdgeDir); break;
-                    case MaskTL | MaskTR | MaskBR: AddNormal(LerpHz(cell), 0, 0, LerpVc(cell), ref cell.leftEdgeDir, ref cell.bottomEdgeDir); break;
+                    case MaskBL | MaskTR | MaskBR: AddNormal(0, LerpVc(cell, lerpToEdge), LerpHz(top, lerpToEdge), 1, ref cellNormal.leftEdgeDir, ref topNormal.bottomEdgeDir); break;
+                    case MaskBL | MaskTL | MaskBR: AddNormal(LerpHz(top, lerpToEdge), 1, 1, LerpVc(right, lerpToEdge), ref topNormal.bottomEdgeDir, ref rightNormal.leftEdgeDir); break;
+                    case MaskBL | MaskTL | MaskTR: AddNormal(1, LerpVc(right, lerpToEdge), LerpHz(cell, lerpToEdge), 0, ref rightNormal.leftEdgeDir, ref cellNormal.bottomEdgeDir); break;
+                    case MaskTL | MaskTR | MaskBR: AddNormal(LerpHz(cell, lerpToEdge), 0, 0, LerpVc(cell, lerpToEdge), ref cellNormal.leftEdgeDir, ref cellNormal.bottomEdgeDir); break;
                 }
             }
+            /*
+             
+            */
 
             private static void AddNormal(float ax, float ay, float bx, float by, ref float2 edgeDirA, ref float2 edgeDirB)
             {
@@ -85,49 +96,48 @@ namespace MeshBuilder
             }
 
             public void CalculateVertices(int x, int y, float cellSize, CornerInfoWithNormals info, float height, NativeArray<float3> vertices)
+                => CalculateVertices(x, y, cellSize, info.cornerInfo.verts, info.cornerInfo.info, info.normals, height + heightOffset, vertices, lerpToEdge, sideOffsetScale);
+
+            static public void CalculateVertices(int x, int y, float cellSize, CellVertices verts, CellInfo info, EdgeNormals normals, float height, NativeArray<float3> vertices, float lerpToEdge, float sideOffsetScale)
             {
-                float3 pos = new float3(x * cellSize, heightOffset + height, y * cellSize);
+                float3 pos = new float3(x * cellSize, height, y * cellSize);
 
-                int index = info.cornerInfo.vertexIndex;
-                if (index >= 0)
+                if (verts.corner >= 0)
                 {
-                    float3 v = pos;
-                    vertices[index] = v;
+                    vertices[verts.corner] = pos;
                 }
 
-                index = info.cornerInfo.leftEdgeIndex;
-                if (index >= 0)
+                if (verts.leftEdge >= 0)
                 {
-                    float edgeLerp = cellSize * LerpT(info.cornerInfo.cornerDist, info.cornerInfo.topDist, lerpToEdge);
-                    float2 offset = math.normalize(info.leftEdgeDir) * sideOffsetScale;
-                    vertices[index] = pos + new float3(offset.x, 0, edgeLerp + offset.y);
+                    float edgeLerp = cellSize * VcLerpT(info, lerpToEdge);
+                    float2 offset = math.normalize(normals.leftEdgeDir) * sideOffsetScale;
+                    vertices[verts.leftEdge] = pos + new float3(offset.x, 0, edgeLerp + offset.y);
                 }
 
-                index = info.cornerInfo.bottomEdgeIndex;
-                if (index >= 0)
+                if (verts.bottomEdge >= 0)
                 {
-                    float edgeLerp = cellSize * LerpT(info.cornerInfo.cornerDist, info.cornerInfo.rightDist, lerpToEdge);
-                    float2 offset = math.normalize(info.bottomEdgeDir) * sideOffsetScale;
-                    vertices[index] = pos + new float3(edgeLerp + offset.x, 0, offset.y);
+                    float edgeLerp = cellSize * HzLerpT(info, lerpToEdge);
+                    float2 offset = math.normalize(normals.bottomEdgeDir) * sideOffsetScale;
+                    vertices[verts.bottomEdge] = pos + new float3(edgeLerp + offset.x, 0, offset.y);
                 }
             }
 
             public void CalculateIndices(CornerInfoWithNormals bl, CornerInfoWithNormals br, CornerInfoWithNormals tr, CornerInfoWithNormals tl, NativeArray<int> triangles)
-                => CalculateIndicesSimple(bl.cornerInfo, br.cornerInfo, tr.cornerInfo, tl.cornerInfo, triangles);
+               => CalculateIndicesSimple(bl.cornerInfo.info.config, bl.cornerInfo.tris, bl.cornerInfo.verts, br.cornerInfo.verts, tr.cornerInfo.verts, tl.cornerInfo.verts, triangles);
 
             public bool CanGenerateUvs => true;
 
             public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, CornerInfoWithNormals corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
-                => TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner.cornerInfo, uvScale, vertices, uvs);
+                => TopCalculateUvs(x, y, cellColNum, cellRowNum, cellSize, corner.cornerInfo.verts, uvScale, vertices, uvs);
 
             public bool CanGenerateNormals { get; private set; } 
 
             public void CalculateNormals(CornerInfoWithNormals corner, CornerInfoWithNormals right, CornerInfoWithNormals top, NativeArray<float3> vertices, NativeArray<float3> normals)
-                => SetNormals(corner.cornerInfo, normals, normal);
+                => SetNormals(corner.cornerInfo.verts, normals, normal);
 
             private const float Epsilon = math.EPSILON;
-            private float LerpVc(CornerInfoWithNormals cell) => LerpT(cell.cornerInfo.cornerDist + Epsilon, cell.cornerInfo.topDist + Epsilon, lerpToEdge);
-            private float LerpHz(CornerInfoWithNormals cell) => LerpT(cell.cornerInfo.cornerDist + Epsilon, cell.cornerInfo.rightDist + Epsilon, lerpToEdge);
+            private static float LerpVc(CellInfo cornerInfo, float lerpToEdge) => LerpT(cornerInfo.cornerDist + Epsilon, cornerInfo.topDist + Epsilon, lerpToEdge);
+            private static float LerpHz(CellInfo cornerInfo, float lerpToEdge) => LerpT(cornerInfo.cornerDist + Epsilon, cornerInfo.rightDist + Epsilon, lerpToEdge);
         }
     }
 }
