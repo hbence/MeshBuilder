@@ -83,9 +83,6 @@ namespace MeshBuilder
                     case MaskTL | MaskTR | MaskBR: AddNormal(LerpHz(cell, lerpToEdge), 0, 0, LerpVc(cell, lerpToEdge), ref cellNormal.leftEdgeDir, ref cellNormal.bottomEdgeDir); break;
                 }
             }
-            /*
-             
-            */
 
             private static void AddNormal(float ax, float ay, float bx, float by, ref float2 edgeDirA, ref float2 edgeDirB)
             {

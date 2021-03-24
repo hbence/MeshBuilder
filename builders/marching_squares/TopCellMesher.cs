@@ -40,9 +40,16 @@ namespace MeshBuilder
                 public int bottomEdge;
                 public int leftEdge;
 
-                public CellVertices(int c, int bottom, int left)
+                public CellVertices(int corner, int bottom, int left)
                 {
-                    corner = c;
+                    this.corner = corner;
+                    bottomEdge = bottom;
+                    leftEdge = left;
+                }
+
+                public void Set(int corner, int bottom, int left)
+                {
+                    this.corner = corner;
                     bottomEdge = bottom;
                     leftEdge = left;
                 }

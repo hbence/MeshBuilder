@@ -1,11 +1,8 @@
 ﻿using Unity.Collections;
 using Unity.Mathematics;
-using UnityEditor.Experimental.GraphView;
 
 namespace MeshBuilder
 {
-    using CornerInfoWithNormals = MarchingSquaresMesher.ScalableTopCellMesher.CornerInfoWithNormals;
-
     using CellInfo = MarchingSquaresMesher.TopCellMesher.CellInfo;
     using CellVerts = MarchingSquaresMesher.TopCellMesher.CellVertices;
     using IndexSpan = MarchingSquaresMesher.TopCellMesher.IndexSpan;
@@ -172,22 +169,19 @@ namespace MeshBuilder
 
             public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, SideInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
             {
-                SetUV(corner.top.corner, 1f, vertices, uvs);
-                SetUV(corner.top.leftEdge, 1f, vertices, uvs);
-                SetUV(corner.top.bottomEdge, 1f, vertices, uvs);
-
-                SetUV(corner.bottom.corner, 0f, vertices, uvs);
-                SetUV(corner.bottom.leftEdge, 0f, vertices, uvs);
-                SetUV(corner.bottom.bottomEdge, 0f, vertices, uvs);
+                SetSideUV(corner.top.corner, corner.bottom.corner, vertices, uvs);
+                SetSideUV(corner.top.leftEdge, corner.bottom.leftEdge, vertices, uvs);
+                SetSideUV(corner.top.bottomEdge, corner.bottom.bottomEdge, vertices, uvs);
             }
 
-            static public void SetUV(int index, float v, NativeArray<float3> vertices, NativeArray<float2> uvs)
+            static public void SetSideUV(int top, int bottom, NativeArray<float3> vertices, NativeArray<float2> uvs)
             {
-                if (index >= 0)
+                if (top >= 0)
                 {
-                    float3 vert = vertices[index];
+                    float3 vert = vertices[top];
                     float u = vert.x + vert.z;
-                    uvs[index] = new float2(u, v);
+                    uvs[top] = new float2(u, 1);
+                    uvs[bottom] = new float2(u, 0);
                 }
             }
 
@@ -346,17 +340,13 @@ namespace MeshBuilder
                 ScalableTopCellMesher.UpdateNormals(cell.info, top.info, right.info, ref cell.normals, ref top.normals, ref right.normals, lerpToExactEdge);
             }
 
-            public bool CanGenerateUvs { get => false; }
+            public bool CanGenerateUvs { get => true; }
 
             public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, ScalableSideInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
             {
-                SimpleSideMesher.SetUV(corner.top.corner, 1f, vertices, uvs);
-                SimpleSideMesher.SetUV(corner.top.leftEdge, 1f, vertices, uvs);
-                SimpleSideMesher.SetUV(corner.top.bottomEdge, 1f, vertices, uvs);
-
-                SetUVFromDifferentVertex(corner.top.corner, corner.bottom.corner, 0f, vertices, uvs);
-                SetUVFromDifferentVertex(corner.top.leftEdge, corner.bottom.leftEdge, 0f, vertices, uvs);
-                SetUVFromDifferentVertex(corner.top.bottomEdge, corner.bottom.bottomEdge, 0f, vertices, uvs);
+                SimpleSideMesher.SetSideUV(corner.top.corner, corner.bottom.corner, vertices, uvs);
+                SimpleSideMesher.SetSideUV(corner.top.bottomEdge, corner.bottom.bottomEdge, vertices, uvs);
+                SimpleSideMesher.SetSideUV(corner.top.leftEdge, corner.bottom.leftEdge, vertices, uvs);
             }
 
             public bool CanGenerateNormals { get => true; }

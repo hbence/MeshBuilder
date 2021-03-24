@@ -33,6 +33,16 @@ namespace MeshBuilder
         MarchingSquaresMesher.SimpleSideMesher.SideInfo, MarchingSquaresMesher.SimpleSideMesher,
         MarchingSquaresMesher.NullMesher.CornerInfo, MarchingSquaresMesher.NullMesher>;
 
+    using NoBottomSegmentedCellMesher = MarchingSquaresMesher.ModularFullCellMesher<
+        MarchingSquaresMesher.TopCellMesher.TopCellInfo, MarchingSquaresMesher.TopCellMesher,
+        MarchingSquaresMesher.SegmentedSideMesher.SegmentedSideInfo, MarchingSquaresMesher.SegmentedSideMesher,
+        MarchingSquaresMesher.NullMesher.CornerInfo, MarchingSquaresMesher.NullMesher>;
+
+    using SegmentedFullCellMesher = MarchingSquaresMesher.ModularFullCellMesher<
+        MarchingSquaresMesher.TopCellMesher.TopCellInfo, MarchingSquaresMesher.TopCellMesher,
+        MarchingSquaresMesher.SegmentedSideMesher.SegmentedSideInfo, MarchingSquaresMesher.SegmentedSideMesher,
+        MarchingSquaresMesher.ScalableTopCellMesher.CornerInfoWithNormals, MarchingSquaresMesher.ScalableTopCellMesher>;
+
     public partial class MarchingSquaresMesher : Builder
     {
         /// <summary>
@@ -158,7 +168,7 @@ namespace MeshBuilder
                 => vertexCalculator.CalculateVertices(x, y, cellSize, info, height, vertices);
 
             public void CalculateIndices(TopCellInfo bl, TopCellInfo br, TopCellInfo tr, TopCellInfo tl, NativeArray<int> triangles)
-                => CalculateIndicesSimple<TriangleReverseOrderer>(bl.info.config, bl.tris, bl.verts, br.verts, tr.verts, tl.verts, triangles);
+                => CalculateIndicesSimple<TriangleOrderer>(bl.info.config, bl.tris, bl.verts, br.verts, tr.verts, tl.verts, triangles);
 
             public bool NeedUpdateInfo => false;
             public void UpdateInfo(int x, int y, int cellColNum, int cellRowNum, ref TopCellInfo cell, ref TopCellInfo top, ref TopCellInfo right) { /* do nothing */ }
@@ -200,6 +210,21 @@ namespace MeshBuilder
                 topMesher = new TopCellMesher(height * 0.5f, SelectUp(isFlat), lerpToEdge),
                 sideMesher = new ScalableSideMesher(height, bottomOffsetScale, 0, lerpToEdge),
                 bottomMesher = new ScalableTopCellMesher(height * -0.5f, bottomOffsetScale, true, lerpToEdge)
+            };
+
+        private static NoBottomSegmentedCellMesher CreateSegmentedNoBottom(int layerCount, SegmentedSideMesher.OffsetInfo offsets, bool isFlat, float lerpToEdge = 1f)
+            => new NoBottomSegmentedCellMesher
+            {
+                topMesher = new TopCellMesher(offsets.GetVC(0), SelectUp(isFlat), lerpToEdge),
+                sideMesher = new SegmentedSideMesher(layerCount, offsets, lerpToEdge)
+            };
+
+        private static SegmentedFullCellMesher CreateSegmentedFull(int layerCount, SegmentedSideMesher.OffsetInfo offsets, bool isFlat, float lerpToEdge = 1f)
+            => new SegmentedFullCellMesher
+            {
+                topMesher = new TopCellMesher(offsets.GetVC(0), SelectUp(isFlat), lerpToEdge),
+                sideMesher = new SegmentedSideMesher(layerCount, offsets, lerpToEdge),
+                bottomMesher = new ScalableTopCellMesher(offsets.GetVC(layerCount - 1), offsets.GetHZ(layerCount - 1), true, lerpToEdge)
             };
 
         private static ModularFullCellMesher<ScalableTopCellMesher.CornerInfoWithNormals, ScalableTopCellMesher,
