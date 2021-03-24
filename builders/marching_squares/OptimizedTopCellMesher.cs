@@ -26,26 +26,40 @@ namespace MeshBuilder
             {
                 public TopCellMesher.TopCellInfo info;
 
-                public byte triangleCount;
-                public int triA0Cell, triA1Cell, triA2Cell;
-                public int triB0Cell, triB1Cell, triB2Cell;
+                public MergedTriInfo mergedInfo;
             }
 
             public float lerpToExactEdge;
             public float heightOffset;
             public OptimizationMode optimizationMode;
-            
+
             public struct OptimizationCellInfo
             {
                 public bool wasChecked;
                 public bool isFull;
                 public bool needsVertex;
-                
+
+                public MergedTriInfo mergedInfo;
+            }
+
+            public struct MergedTriInfo
+            {
                 public byte triangleCount;
                 // these are not vertex indices, but the indicies of the 
                 // corner info which holds the vertex index
                 public int triA0Cell, triA1Cell, triA2Cell;
                 public int triB0Cell, triB1Cell, triB2Cell;
+
+                public MergedTriInfo(byte triCount, int a0, int a1, int a2, int b0, int b1, int b2)
+                {
+                    triangleCount = triCount;
+                    triA0Cell = a0;
+                    triA1Cell = a1;
+                    triA2Cell = a2;
+                    triB0Cell = b0;
+                    triB1Cell = b1;
+                    triB2Cell = b2;
+                }
             }
 
             public OptimizationCornerInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
@@ -71,7 +85,7 @@ namespace MeshBuilder
                 {
                     if (hasCellTriangles)
                     {
-                        nextTriIndex += cell.triangleCount * 3;
+                        nextTriIndex += cell.mergedInfo.triangleCount * 3;
                     }
 
                     if (cell.needsVertex)
@@ -88,15 +102,7 @@ namespace MeshBuilder
                 return new OptimizationCornerInfo
                 {
                     info = info,
-                    triangleCount = cell.triangleCount,
-                    
-                    triA0Cell = cell.triA0Cell, 
-                    triA1Cell = cell.triA1Cell, 
-                    triA2Cell = cell.triA2Cell,
-                    
-                    triB0Cell = cell.triB0Cell, 
-                    triB1Cell = cell.triB1Cell, 
-                    triB2Cell = cell.triB2Cell,
+                    mergedInfo = cell.mergedInfo
                 };
             }
 
@@ -112,28 +118,28 @@ namespace MeshBuilder
                 byte config = bl.info.info.config;
                 if (config == MaskFull)
                 {
-                    if (bl.triangleCount == 1)
+                    if (bl.mergedInfo.triangleCount == 1)
                     {
-                        triangles[triangleIndex] = Vertex(bl.triA0Cell, corners); 
+                        triangles[triangleIndex] = Vertex(bl.mergedInfo.triA0Cell, corners); 
                         ++triangleIndex;
-                        triangles[triangleIndex] = Vertex(bl.triA1Cell, corners);
+                        triangles[triangleIndex] = Vertex(bl.mergedInfo.triA1Cell, corners);
                         ++triangleIndex;
-                        triangles[triangleIndex] = Vertex(bl.triA2Cell, corners); 
+                        triangles[triangleIndex] = Vertex(bl.mergedInfo.triA2Cell, corners); 
                     }
-                    else if (bl.triangleCount == 2)
+                    else if (bl.mergedInfo.triangleCount == 2)
                     {
-                        triangles[triangleIndex] = Vertex(bl.triA0Cell, corners); 
+                        triangles[triangleIndex] = Vertex(bl.mergedInfo.triA0Cell, corners); 
                         ++triangleIndex;
-                        triangles[triangleIndex] = Vertex(bl.triA1Cell, corners); 
+                        triangles[triangleIndex] = Vertex(bl.mergedInfo.triA1Cell, corners); 
                         ++triangleIndex;
-                        triangles[triangleIndex] = Vertex(bl.triA2Cell, corners); 
+                        triangles[triangleIndex] = Vertex(bl.mergedInfo.triA2Cell, corners); 
                         ++triangleIndex;
 
-                        triangles[triangleIndex] = Vertex(bl.triB0Cell, corners); 
+                        triangles[triangleIndex] = Vertex(bl.mergedInfo.triB0Cell, corners); 
                         ++triangleIndex;
-                        triangles[triangleIndex] = Vertex(bl.triB1Cell, corners); 
+                        triangles[triangleIndex] = Vertex(bl.mergedInfo.triB1Cell, corners); 
                         ++triangleIndex;
-                        triangles[triangleIndex] = Vertex(bl.triB2Cell, corners);
+                        triangles[triangleIndex] = Vertex(bl.mergedInfo.triB2Cell, corners);
                     }
                 }
                 else
@@ -266,9 +272,7 @@ namespace MeshBuilder
                         isFull = CalcConfiguration(corner, right, topRight, top) == MaskFull,
                         wasChecked = false,
                         needsVertex = false,
-                        triangleCount = 0,
-                        triA0Cell = -1, triA1Cell = -1, triA2Cell = -1,
-                        triB0Cell = -1, triB1Cell = -1, triB2Cell = -1
+                        mergedInfo = new MergedTriInfo(0, -1, -1, -1, -1, -1, -1)
                     };
 
                 private bool CanStepRight(int x) => x < distanceColNum - 1;
@@ -604,13 +608,7 @@ namespace MeshBuilder
                 {
                     var cell = cells[index];
                     cell.needsVertex = needsVertex;
-                    cell.triangleCount = triangleCount;
-                    cell.triA0Cell = a0;
-                    cell.triA1Cell = a1;
-                    cell.triA2Cell = a2;
-                    cell.triB0Cell = b0;
-                    cell.triB1Cell = b1;
-                    cell.triB2Cell = b2;
+                    cell.mergedInfo = new MergedTriInfo(triangleCount, a0, a1, a2, b0, b1, b2);
                     cells[index] = cell;
                 }
             }
