@@ -65,6 +65,9 @@ namespace MeshBuilder
                     start = s;
                     length = l;
                 }
+
+                public int End => start + length;
+                public bool Has => length > 0;
             }
 
             public enum NormalMode { UpFlat, DownFlat, UpDontSetNormal, DownDontSetNormal }

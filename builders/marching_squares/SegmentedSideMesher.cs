@@ -27,9 +27,11 @@ namespace MeshBuilder
             public struct SegmentedSideInfo
             {
                 public CellInfo info;
-                public VertsLayers verts;
                 public IndexSpan tris;
                 public EdgeNormals normals;
+
+                public IndexSpan bottomVertex;
+                public IndexSpan leftVertex;
             }
 
             public float lerpToExactEdge;
@@ -84,16 +86,20 @@ namespace MeshBuilder
                     tris = new IndexSpan(0, 0)
                 };
 
-                var verts = new CellVerts();
-                for (int i = 0; i < layerCount; ++i)
+                bool hasBL = HasMask(config, MaskBL);
+                
+                if (hasBL != HasMask(config, MaskTL))
                 {
-                    verts.Set(-1, -1, -1);
-                    TopCellMesher.SetVertices(config, ref nextVertex, ref verts);
-                    info.verts.Set(i, verts);
+                    info.leftVertex.start = nextVertex;
+                    info.leftVertex.length = (byte)layerCount;
+                    nextVertex += layerCount;
                 }
-                for (int i = layerCount; i < MaxLayerCount; ++i)
+
+                if (hasBL != HasMask(config, MaskBR))
                 {
-                    info.verts.Set(i, new CellVerts(-1, -1, -1));
+                    info.bottomVertex.start = nextVertex;
+                    info.bottomVertex.length = (byte)layerCount;
+                    nextVertex += layerCount;
                 }
 
                 if (hasCellTriangles)
@@ -109,13 +115,31 @@ namespace MeshBuilder
 
             public void CalculateVertices(int x, int y, float cellSize, SegmentedSideInfo info, float vertexHeight, NativeArray<float3> vertices)
             {
-                CellVerts verts;
-                for (int i = 0; i < layerCount; ++i)
+                float3 pos = new float3(x * cellSize, vertexHeight, y * cellSize);
+                
+                if (info.leftVertex.Has)
+                {
+                    float2 normal = math.normalize(info.normals.leftEdgeDir);
+                    float offsetZ = cellSize * TopCellMesher.VcLerpT(info.info, lerpToExactEdge);
+                    CalculateVertices(info.leftVertex, pos, normal, 0, offsetZ, offsets, vertices);
+                }
+
+                if (info.bottomVertex.Has)
+                {
+                    float2 normal = math.normalize(info.normals.bottomEdgeDir);
+                    float offsetX = cellSize * TopCellMesher.HzLerpT(info.info, lerpToExactEdge);
+                    CalculateVertices(info.bottomVertex, pos, normal, offsetX, 0, offsets, vertices);
+                }
+            }
+
+            static public void CalculateVertices(IndexSpan span, float3 pos, float2 normal, float offsetX, float offsetZ, OffsetInfo offsets, NativeArray<float3> vertices)
+            {
+                for (int i = 0; i < span.length; ++i)
                 {
                     float hzOffset = offsets.GetHZ(i);
-                    float vcOffset = offsets.GetVC(i) + vertexHeight;
-                    verts = info.verts.Get(i);
-                    ScalableTopCellMesher.CalculateVertices(x, y, cellSize, verts, info.info, info.normals, vcOffset, vertices, lerpToExactEdge, hzOffset);
+                    float vcOffset = offsets.GetVC(i);
+                    float2 offset = normal * hzOffset;
+                    vertices[span.start + i] = pos + new float3(offset.x + offsetX, vcOffset, offset.y + offsetZ);
                 }
             }
 
@@ -130,33 +154,23 @@ namespace MeshBuilder
 
             public void CalculateUvs(int x, int y, int cellColNum, int cellRowNum, float cellSize, SegmentedSideInfo corner, float uvScale, NativeArray<float3> vertices, NativeArray<float2> uvs)
             {
-                CellVerts layer0 = corner.verts.value0;
-                if (layer0.corner >= 0)
+                if (corner.leftVertex.Has)
                 {
-                    float u = CalcU(layer0.corner, vertices);
-                    for (int i = 0; i < layerCount; ++i)
-                    {
-                        int vertex = corner.verts.Get(i).corner;
-                        uvs[vertex] = new float2(u, vValues.Get(i));
-                    }
+                    CalcUV(corner.leftVertex, vValues, vertices, uvs);
                 }
-                if (layer0.leftEdge >= 0)
+
+                if (corner.bottomVertex.Has)
                 {
-                    float u = CalcU(layer0.leftEdge, vertices);
-                    for (int i = 0; i < layerCount; ++i)
-                    {
-                        int vertex = corner.verts.Get(i).leftEdge;
-                        uvs[vertex] = new float2(u, vValues.Get(i));
-                    }
+                    CalcUV(corner.bottomVertex, vValues, vertices, uvs);
                 }
-                if (layer0.bottomEdge >= 0)
+            }
+
+            static private void CalcUV(IndexSpan span, Group8<float> vValues, NativeArray<float3> vertices, NativeArray<float2> uvs)
+            {
+                float u = CalcU(span.start, vertices);
+                for (int i = 0; i < span.length; ++i)
                 {
-                    float u = CalcU(layer0.bottomEdge, vertices);
-                    for (int i = 0; i < layerCount; ++i)
-                    {
-                        int vertex = corner.verts.Get(i).bottomEdge;
-                        uvs[vertex] = new float2(u, vValues.Get(i));
-                    }
+                    uvs[span.start + i] = new float2(u, vValues.Get(i));
                 }
             }
 
@@ -169,48 +183,30 @@ namespace MeshBuilder
 
             public void CalculateNormals(SegmentedSideInfo corner, SegmentedSideInfo right, SegmentedSideInfo top, NativeArray<float3> vertices, NativeArray<float3> normals)
             {
+                if (corner.leftVertex.Has)
+                {
+                    SetNormals(corner.leftVertex, corner.normals.leftEdgeDir, vertices, normals);
+                }
+
+                if (corner.bottomVertex.Has)
+                {
+                    SetNormals(corner.bottomVertex, corner.normals.bottomEdgeDir, vertices, normals);
+                }
+            }
+
+            static private void SetNormals(IndexSpan span, float2 dir, NativeArray<float3> vertices, NativeArray<float3> normals)
+            {
+                float3 away = new float3(dir.x, 0, dir.y);
+
                 float3 normal = new float3(0, 1, 0);
-                CellVerts layer0 = corner.verts.value0;
-                if (layer0.corner >= 0)
+                for (int i = 0; i < span.length - 1; ++i)
                 {
-                    for (int i = 0; i < layerCount; ++i)
-                    {
-                        int index = corner.verts.Get(i).corner;
-                        normals[index] = normal;
-                    }
+                    int topIndex = span.start + i;
+                    int bottomIndex = span.start + i + 1;
+                    normal = CalculateNormal(topIndex, bottomIndex, vertices, away);
+                    normals[topIndex] = normal;
                 }
-
-                if (layer0.leftEdge >= 0)
-                {
-                    float2 dir = corner.normals.leftEdgeDir;
-                    float3 away = new float3(dir.x, 0, dir.y);
-                    int bottomIndex = 0;
-                    for (int i = 0; i < layerCount - 1; ++i)
-                    {
-                        int topIndex = corner.verts.Get(i).leftEdge;
-                        bottomIndex = corner.verts.Get(i + 1).leftEdge;
-                        normal = CalculateNormal(topIndex, bottomIndex, vertices, away);
-                        normal = math.normalize(normal);
-                        normals[topIndex] = normal;
-                    }
-                    normals[bottomIndex] = normal;
-                }
-
-                if (layer0.bottomEdge >= 0)
-                {
-                    float2 dir = corner.normals.bottomEdgeDir;
-                    float3 away = new float3(dir.x, 0, dir.y);
-                    int bottomIndex = 0;
-                    for (int i = 0; i < layerCount - 1; ++i)
-                    {
-                        int topIndex = corner.verts.Get(i).bottomEdge;
-                        bottomIndex = corner.verts.Get(i + 1).bottomEdge;
-                        normal = CalculateNormal(topIndex, bottomIndex, vertices, away);
-                        normal = math.normalize(normal);
-                        normals[topIndex] = normal;
-                    }
-                   normals[bottomIndex] = normal;
-                }
+                normals[span.start + span.length - 1] = normal;
             }
 
             static private float3 CalculateNormal(int aIndex, int bIndex, NativeArray<float3> vertices, float3 away)
@@ -268,10 +264,10 @@ namespace MeshBuilder
                 }
             }
 
-            private static int TopLeftEdge(SegmentedSideInfo info, int layer) => info.verts.Get(layer).leftEdge;
-            private static int BottomLeftEdge(SegmentedSideInfo info, int layer) => info.verts.Get(layer + 1).leftEdge;
-            private static int TopBottomEdge(SegmentedSideInfo info, int layer) => info.verts.Get(layer).bottomEdge;
-            private static int BottomBottomEdge(SegmentedSideInfo info, int layer) => info.verts.Get(layer + 1).bottomEdge;
+            private static int TopLeftEdge(SegmentedSideInfo info, int layer) => info.leftVertex.start + layer;
+            private static int BottomLeftEdge(SegmentedSideInfo info, int layer) => info.leftVertex.start + layer + 1;
+            private static int TopBottomEdge(SegmentedSideInfo info, int layer) => info.bottomVertex.start + layer;
+            private static int BottomBottomEdge(SegmentedSideInfo info, int layer) => info.bottomVertex.start + layer + 1;
 
             public struct Group8<T> where T : struct
             {
