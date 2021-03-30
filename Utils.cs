@@ -19,6 +19,21 @@ namespace MeshBuilder
             public int End { get => index + length; }
         }
 
+        // most meshers don't have their own copy of the data they're working on,
+        // so it's easy to modify data which is being used by jobs, which then give
+        // an access error which is not always clear about the cause of the error.
+        // This simple lock only allows access to the data when it is unlocked.
+        public class DataLock<T>
+        {
+            public bool IsLocked { get; private set; } = false;
+            private T data;
+            public T Data => IsLocked ? default : data;
+            public DataLock(T data) { this.data = data; }
+
+            public void Lock() => IsLocked = true;
+            public void Unlock() => IsLocked = false;
+        }
+
         static public void SafeDispose<T>(ref Volume<T> volume) where T : struct
         {
             if (volume != null)

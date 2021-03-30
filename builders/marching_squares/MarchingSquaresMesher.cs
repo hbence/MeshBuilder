@@ -1,11 +1,11 @@
-﻿using UnityEngine;
+﻿using System;
+using UnityEngine;
 using Unity.Jobs;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Mathematics;
 
 using MeshBuffer = MeshBuilder.MeshData.Buffer;
-using NUnit.Framework;
 
 namespace MeshBuilder
 {
@@ -28,6 +28,7 @@ namespace MeshBuilder
             NextLargestRect
         }
 
+        [Serializable]
         public struct SideOffset
         {
             public float hz, vc;
@@ -38,6 +39,9 @@ namespace MeshBuilder
         public Data DistanceData { get; private set; }
         public int ColNum => DistanceData.ColNum;
         public int RowNum => DistanceData.RowNum;
+
+        public bool UseCullingData { get; set; } = true;
+        public bool UseVertexHeightData { get; set; } = true;
 
         public uint MeshDataBufferFlags { get; set; } = DefMeshDataBufferFlags;
 
@@ -53,49 +57,46 @@ namespace MeshBuilder
         private NativeList<float2> uvs;
         private NativeList<float3> normals;
 
-        private void Init(int colNum, int rowNum, float cellSize, float[] distanceData)
+        private void Init(Data distanceData, float cellSize)
         {
+            DistanceData = distanceData;
             CellSize = cellSize;
-
-            DistanceData?.Dispose();
-            DistanceData = new Data(colNum, rowNum, distanceData);
-            
             Inited();
         }
 
-        public void Init(int colNum, int rowNum, float cellSize, float yOffset = 0, float lerpToExactEdge = 1, float[] distanceData = null)
+        public void Init(Data distanceData, float cellSize, float yOffset = 0, float lerpToExactEdge = 1)
         {
             mesherInfo.Set(MesherInfo.Type.TopOnly, yOffset, 0, lerpToExactEdge);
-            Init(colNum, rowNum, cellSize, distanceData);
+            Init(distanceData, cellSize);
         }
 
-        public void InitForFullCell(int colNum, int rowNum, float cellSize, float height, bool hasBottom = false, float lerpToExactEdge = 1, float[] distanceData = null)
+        public void InitForFullCell(Data distanceData, float cellSize, float height, bool hasBottom = false, float lerpToExactEdge = 1)
         {
             mesherInfo.Set(hasBottom ? MesherInfo.Type.Full : MesherInfo.Type.NoBottom, height, 0, lerpToExactEdge);
-            Init(colNum, rowNum, cellSize, distanceData);
+            Init(distanceData, cellSize);
         }
 
-        public void InitForFullCellSimpleMesh(int colNum, int rowNum, float cellSize, float height, float lerpToExactEdge = 1, float[] distanceData = null)
+        public void InitForFullCellSimpleMesh(Data distanceData, float cellSize, float height, float lerpToExactEdge = 1)
         {
             mesherInfo.Set(MesherInfo.Type.FullSimple, height, 0, lerpToExactEdge);
-            Init(colNum, rowNum, cellSize, distanceData);
+            Init(distanceData, cellSize);
         }
 
-        public void InitForSideOnly(int colNum, int rowNum, float cellSize, float height, float lerpToExactEdge = 1, float[] distanceData = null)
+        public void InitForSideOnly(Data distanceData, float cellSize, float height, float lerpToExactEdge = 1)
         {
             mesherInfo.Set(MesherInfo.Type.SideOnly, height, 0, lerpToExactEdge);
-            Init(colNum, rowNum, cellSize, distanceData);
+            Init(distanceData, cellSize);
         }
 
-        public void InitForTaperedSideOnly(int colNum, int rowNum, float cellSize, float height, float topOffset, float bottomOffset, float lerpToExactEdge = 1, float[] distanceData = null)
+        public void InitForTaperedSideOnly(Data distanceData, float cellSize, float height, float topOffset, float bottomOffset, float lerpToExactEdge = 1)
         {
             mesherInfo.Set(MesherInfo.Type.SideOnly, height, bottomOffset, lerpToExactEdge);
             mesherInfo.bottomOffsetScale = bottomOffset;
             mesherInfo.topOffsetScale = topOffset;
-            Init(colNum, rowNum, cellSize, distanceData);
+            Init(distanceData, cellSize);
         }
 
-        public void InitForSegmentedSideOnly(int colNum, int rowNum, float cellSize, SideOffset[] offsets, float lerpToExactEdge = 1, float[] distanceData = null)
+        public void InitForSegmentedSideOnly(Data distanceData, float cellSize, SideOffset[] offsets, float lerpToExactEdge = 1)
         {
             mesherInfo.Set(MesherInfo.Type.SideOnly, offsets[0].vc, 0, lerpToExactEdge);
             mesherInfo.sideOffsets = offsets;
@@ -105,16 +106,16 @@ namespace MeshBuilder
                 Debug.LogError("segmented mesher offset count needs to be between 2 and MaxLayerCount(" + SegmentedSideMesher.MaxLayerCount + ")");
             }
 
-            Init(colNum, rowNum, cellSize, distanceData);
+            Init(distanceData, cellSize);
         }
 
-        public void InitForFullCellTapered(int colNum, int rowNum, float cellSize, float height, float bottomScaleOffset = 0.5f, bool hasBottom = false, float lerpToExactEdge = 1, float[] distanceData = null)
+        public void InitForFullCellTapered(Data distanceData, float cellSize, float height, float bottomScaleOffset = 0.5f, bool hasBottom = false, float lerpToExactEdge = 1)
         {
             mesherInfo.Set(hasBottom ? MesherInfo.Type.Full : MesherInfo.Type.NoBottom, height, bottomScaleOffset, lerpToExactEdge);
-            Init(colNum, rowNum, cellSize, distanceData);
+            Init(distanceData, cellSize);
         }
 
-        public void InitForFullCellSegmented(int colNum, int rowNum, float cellSize, SideOffset[] offsets, bool hasBottom = false, float lerpToExactEdge = 1, float[] distanceData = null)
+        public void InitForFullCellSegmented(Data distanceData, float cellSize, SideOffset[] offsets, bool hasBottom = false, float lerpToExactEdge = 1)
         {
             mesherInfo.Set(hasBottom ? MesherInfo.Type.Full : MesherInfo.Type.NoBottom, offsets[0].vc, 0, lerpToExactEdge);
             mesherInfo.sideOffsets = offsets;
@@ -124,15 +125,15 @@ namespace MeshBuilder
                 Debug.LogError("segmented mesher offset count needs to be between 2 and MaxLayerCount(" + SegmentedSideMesher.MaxLayerCount + ")");
             }
 
-            Init(colNum, rowNum, cellSize, distanceData);
+            Init(distanceData, cellSize);
         }
 
-        public void InitForOptimized(int colNum, int rowNum, float cellSize, float height, float lerpToExactEdge = 1, OptimizationMode optimizationMode = OptimizationMode.GreedyRect, float[] distanceData = null)
+        public void InitForOptimized(Data distanceData, float cellSize, float height, float lerpToExactEdge = 1, OptimizationMode optimizationMode = OptimizationMode.GreedyRect)
         {
             mesherInfo.Set(MesherInfo.Type.TopOnly, height, 0, lerpToExactEdge);
             mesherInfo.MakeOptimized(optimizationMode);
 
-            Init(colNum, rowNum, cellSize, distanceData);
+            Init(distanceData, cellSize);
         }
 
         override protected JobHandle StartGeneration(JobHandle lastHandle)
@@ -162,16 +163,15 @@ namespace MeshBuilder
 
             bool generateUVs = ShouldGenerateUV && cellMesher.CanGenerateUvs;
 
-            lastHandle = (DistanceData.HasCullingData) ?
+            lastHandle = (UseCullingData && DistanceData.HasCullingData) ?
                             GenerateCornersWithCulling<InfoType, MesherType>.Schedule(ColNum, RowNum, cellMesher, DistanceData.RawData, corners, vertices, triangles, normals, generateUVs, uvs, DistanceData.HasCullingData, DistanceData.CullingDataRawData, lastHandle) :
                             GenerateCorners<InfoType, MesherType>.Schedule(ColNum, RowNum, cellMesher, DistanceData.RawData, corners, vertices, triangles, normals, generateUVs, uvs, lastHandle);
 
             lastHandle = (cellMesher.NeedUpdateInfo) ?
                             UpdateCorners<InfoType, MesherType>.Schedule(ColNum, RowNum, cellMesher, corners, lastHandle) :
                             lastHandle;
-            
 
-            JobHandle vertexHandle = (DistanceData.HasHeights) ?
+            JobHandle vertexHandle = (UseVertexHeightData && DistanceData.HasHeights) ?
                             CalculateVerticesWithHeight<InfoType, MesherType>.Schedule(ColNum, CellSize, cellMesher, heightDataScale, DistanceData.HeightsRawData, corners, vertices, lastHandle) :
                             CalculateVertices<InfoType, MesherType>.Schedule(ColNum, CellSize, cellMesher, corners, vertices, lastHandle);
 
@@ -208,14 +208,6 @@ namespace MeshBuilder
 
                 data.UpdateMesh(mesh, MeshData.UpdateMode.Clear);
             }
-        }
-
-        public override void Dispose()
-        {
-            base.Dispose();
-
-            DistanceData?.Dispose();
-            DistanceData = null;
         }
 
         protected override void DisposeTemps()

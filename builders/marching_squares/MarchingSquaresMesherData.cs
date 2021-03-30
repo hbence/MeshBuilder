@@ -11,37 +11,37 @@ namespace MeshBuilder
     {
         public class Data : IDisposable
         {
-            private Volume<float> distances;
-            public NativeArray<float> RawData => distances.Data;
+            private Volume<float> distanceData;
+            public NativeArray<float> RawData => distanceData.Data;
 
-            private Volume<float> heights;
-            public NativeArray<float> HeightsRawData => heights != null ? heights.Data : default;
+            private Volume<float> heightData;
+            public NativeArray<float> HeightsRawData => heightData != null ? heightData.Data : default;
 
             private Volume<bool> cullingData;
             public NativeArray<bool> CullingDataRawData => cullingData != null ? cullingData.Data : default;
 
             public bool HasCullingData => cullingData != null;
 
-            public int ColNum => distances.Extents.X;
-            public int RowNum => distances.Extents.Z;
+            public int ColNum => distanceData.Extents.X;
+            public int RowNum => distanceData.Extents.Z;
 
-            public float DistanceAt(int x, int y) => distances[x, 0, y];
-            public float SetDistanceAt(int x, int y, float dist) => distances[x, 0, y] = dist;
+            public float DistanceAt(int x, int y) => distanceData[x, 0, y];
+            public float SetDistanceAt(int x, int y, float dist) => distanceData[x, 0, y] = dist;
 
-            public bool HasHeights => heights != null;
-            public float HeightAt(int x, int y) => heights[x, 0, y];
-            public float SetHeightAt(int x, int y, float dist) => heights[x, 0, y] = dist;
+            public bool HasHeights => heightData != null;
+            public float HeightAt(int x, int y) => heightData[x, 0, y];
+            public float SetHeightAt(int x, int y, float dist) => heightData[x, 0, y] = dist;
 
             public Data(int col, int row, float[] distanceData = null)
             {
-                distances = new Volume<float>(col, 1, row);
+                this.distanceData = new Volume<float>(col, 1, row);
                 if (distanceData != null)
                 {
-                    if (distances.Length == distanceData.Length)
+                    if (this.distanceData.Length == distanceData.Length)
                     {
                         for (int i = 0; i < distanceData.Length; ++i)
                         {
-                            distances[i] = distanceData[i];
+                            this.distanceData[i] = distanceData[i];
                         }
                     }
                     else
@@ -58,30 +58,30 @@ namespace MeshBuilder
 
             public void Dispose()
             {
-                SafeDispose(ref distances);
-                SafeDispose(ref heights);
+                SafeDispose(ref distanceData);
+                SafeDispose(ref heightData);
                 SafeDispose(ref cullingData);
             }
 
             public void UpdateData(float[] distanceData)
             {
-                if (distances.Length != distanceData.Length)
+                if (this.distanceData.Length != distanceData.Length)
                 {
                     Debug.LogWarning("distance data mismatch, clamped");
                 }
 
-                int length = Mathf.Min(distanceData.Length, distances.Length);
+                int length = Mathf.Min(distanceData.Length, this.distanceData.Length);
                 for (int i = 0; i < length; ++i)
                 {
-                    distances[i] = distanceData[i];
+                    this.distanceData[i] = distanceData[i];
                 }
             }
 
             public void InitHeights(float[] heightData = null)
             {
-                SafeDispose(ref heights);
+                SafeDispose(ref this.heightData);
 
-                heights = new Volume<float>(ColNum, 1, RowNum);
+                this.heightData = new Volume<float>(ColNum, 1, RowNum);
                 if (heightData != null)
                 {
                     UpdateHeights(heightData);
@@ -101,15 +101,15 @@ namespace MeshBuilder
 
             public void UpdateHeights(float[] heightData)
             {
-                if (heights.Length != heightData.Length)
+                if (this.heightData.Length != heightData.Length)
                 {
                     Debug.LogWarning("distance data mismatch, clamped");
                 }
 
-                int length = Mathf.Min(heightData.Length, heights.Length);
+                int length = Mathf.Min(heightData.Length, this.heightData.Length);
                 for (int i = 0; i < length; ++i)
                 {
-                    heights[i] = heightData[i];
+                    this.heightData[i] = heightData[i];
                 }
             }
 
@@ -129,15 +129,15 @@ namespace MeshBuilder
 
             public void Clear()
             {
-                for (int i = 0; i < distances.Length; ++i)
+                for (int i = 0; i < distanceData.Length; ++i)
                 {
-                    distances[i] = -1;
+                    distanceData[i] = -1;
                 }
-                if (heights != null)
+                if (heightData != null)
                 {
-                    for (int i = 0; i < heights.Length; ++i)
+                    for (int i = 0; i < heightData.Length; ++i)
                     {
-                        heights[i] = 0;
+                        heightData[i] = 0;
                     }
                 }
                 if (cullingData != null)
@@ -172,7 +172,7 @@ namespace MeshBuilder
                     {
                         float cx = col * cellSize;
                         float dist = CalcValue(cx, cy);
-                        distances[col, 0, row] = Mathf.Max(dist, distances[col, 0, row]);
+                        distanceData[col, 0, row] = Mathf.Max(dist, distanceData[col, 0, row]);
                     }
                 }
             }
@@ -188,7 +188,7 @@ namespace MeshBuilder
                     {
                         float cx = col * cellSize;
                         float dist = CalcValue(cx, cy);
-                        distances[col, 0, row] -= Mathf.Max(dist, 0);
+                        distanceData[col, 0, row] -= Mathf.Max(dist, 0);
                     }
                 }
             }
@@ -240,8 +240,8 @@ namespace MeshBuilder
                         float dist = CalcDist(cx, cy);
                         if (dist >= 0)
                         {
-                            heights[col, 0, row] += Interpolation(dist) * heightValue;
-                            heights[col, 0, row] = Mathf.Clamp(heights[col, 0, row], minLimit, maxLimit);
+                            heightData[col, 0, row] += Interpolation(dist) * heightValue;
+                            heightData[col, 0, row] = Mathf.Clamp(heightData[col, 0, row], minLimit, maxLimit);
                         }
                     }
                 }
@@ -260,7 +260,7 @@ namespace MeshBuilder
                         float dist = CalcDist(cx, cy);
                         if (dist >= 0)
                         {
-                            heights[col, 0, row] = Interpolation(dist) * heightValue;
+                            heightData[col, 0, row] = Interpolation(dist) * heightValue;
                         }
                     }
                 }
@@ -268,17 +268,17 @@ namespace MeshBuilder
 
             public void LimitHeight(float minimum, float maximum)
             {
-                for (int i = 0; i < heights.Length; ++i)
+                for (int i = 0; i < heightData.Length; ++i)
                 {
-                    heights[i] = math.clamp(heights[i], minimum, maximum);
+                    heightData[i] = math.clamp(heightData[i], minimum, maximum);
                 }
             }
 
             public void SetHeight(float value)
             {
-                for (int i = 0; i < heights.Length; ++i)
+                for (int i = 0; i < heightData.Length; ++i)
                 {
-                    heights[i] = value;
+                    heightData[i] = value;
                 }
             }
 
@@ -286,13 +286,13 @@ namespace MeshBuilder
             {
                 for (int col = 0; col < ColNum; ++col)
                 {
-                    distances[col, 0, 0] = -1;
-                    distances[col, 0, RowNum -1] = -1;
+                    distanceData[col, 0, 0] = -1;
+                    distanceData[col, 0, RowNum -1] = -1;
                 }
                 for (int row = 0; row < RowNum - 1; ++row)
                 {
-                    distances[0, 0, row] = -1;
-                    distances[ColNum - 1, 0, row] = -1;
+                    distanceData[0, 0, row] = -1;
+                    distanceData[ColNum - 1, 0, row] = -1;
                 }
             }
 
