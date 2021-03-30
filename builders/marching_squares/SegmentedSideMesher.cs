@@ -1,28 +1,25 @@
 ﻿using Unity.Collections;
 using Unity.Mathematics;
-using UnityEditor;
 using UnityEngine;
-using System.Runtime.InteropServices;
 
 namespace MeshBuilder
 {
     using CellInfo = MarchingSquaresMesher.TopCellMesher.CellInfo;
-    using CellVerts = MarchingSquaresMesher.TopCellMesher.CellVertices;
     using IndexSpan = MarchingSquaresMesher.TopCellMesher.IndexSpan;
     using EdgeNormals = MarchingSquaresMesher.ScalableTopCellMesher.EdgeNormals;
-    using VertsLayers = MarchingSquaresMesher.SegmentedSideMesher.Group8<MarchingSquaresMesher.TopCellMesher.CellVertices>;
+
+    using ValueGroup = MarchingSquaresMesher.SegmentedSideMesher.Group16<float>;
 
     public partial class MarchingSquaresMesher : Builder
     {
         public struct SegmentedSideMesher : ICellMesher<SegmentedSideMesher.SegmentedSideInfo>
         {
-            // the structs have to use blittable types, so I'm not sure how to make the size dynamic,
-            // perhaps with unsafe array, or the offset and vertex data struct could be generic arguments for this type
-            // so the user could provide structs with exactly as much data as required.
-            // Or I guess, I could use NativeArrays, small for the offsets and a large one to hold the vertex indices, and
-            // the info struct could hold a span into the large array. But then the mesher would require special handling,
-            // it would either have to take the arrays in the constructor or handle their lifetime.
-            public const int MaxLayerCount = 8;
+            // NOTE: since this struct is used in a job, it can't have an array or NativeArray as a member,
+            // everything has to be blittable. It uses spans for the vertex indices so those don't take up much
+            // space at any layerCount. I guess I could make this into a generic struct with the argument type providing
+            // the exact amount of data, but it would make the mesher a bit more annoying to use with little gain.
+            // Still, if there was a way to store dynamic amounts of offsets and vValues, that would be a cleaner solution.
+            public const int MaxLayerCount = ValueGroup.MaxLength;
 
             public struct SegmentedSideInfo
             {
@@ -37,7 +34,7 @@ namespace MeshBuilder
             public float lerpToExactEdge;
             public int layerCount;
             public OffsetInfo offsets;
-            public Group8<float> vValues;
+            public ValueGroup vValues;
 
             public SegmentedSideMesher(int layerCount, OffsetInfo offsets, float lerpToExactEdge = 1f)
             {
@@ -57,7 +54,7 @@ namespace MeshBuilder
                 this.offsets = offsets;
                 this.lerpToExactEdge = lerpToExactEdge;
 
-                vValues = new Group8<float>();
+                vValues = new ValueGroup();
                 float vDist = 0;
                 for (int i = 1; i < layerCount; ++i)
                 {
@@ -165,7 +162,7 @@ namespace MeshBuilder
                 }
             }
 
-            static private void CalcUV(IndexSpan span, Group8<float> vValues, NativeArray<float3> vertices, NativeArray<float2> uvs)
+            static private void CalcUV(IndexSpan span, ValueGroup vValues, NativeArray<float3> vertices, NativeArray<float2> uvs)
             {
                 float u = CalcU(span.start, vertices);
                 for (int i = 0; i < span.length; ++i)
@@ -269,9 +266,11 @@ namespace MeshBuilder
             private static int TopBottomEdge(SegmentedSideInfo info, int layer) => info.bottomVertex.start + layer;
             private static int BottomBottomEdge(SegmentedSideInfo info, int layer) => info.bottomVertex.start + layer + 1;
 
-            public struct Group8<T> where T : struct
+            public struct Group16<T> where T : struct
             {
-                public T value0, value1, value2, value3, value4, value5, value6, value7;
+                public const int MaxLength = 16;
+
+                public T value0, value1, value2, value3, value4, value5, value6, value7, value8, value9, value10, value11, value12, value13, value14, value15;
 
                 public T Get(int index)
                 {
@@ -285,6 +284,14 @@ namespace MeshBuilder
                         case 5: return value5;
                         case 6: return value6;
                         case 7: return value7;
+                        case 8: return value8;
+                        case 9: return value9;
+                        case 10: return value10;
+                        case 11: return value11;
+                        case 12: return value12;
+                        case 13: return value13;
+                        case 14: return value14;
+                        case 15: return value15;
                     }
                     return value0;
                 }
@@ -301,14 +308,22 @@ namespace MeshBuilder
                         case 5: value5 = val; break;
                         case 6: value6 = val; break;
                         case 7: value7 = val; break;
+                        case 8: value8 = val; break;
+                        case 9: value9 = val; break;
+                        case 10: value10 = val; break;
+                        case 11: value11 = val; break;
+                        case 12: value12 = val; break;
+                        case 13: value13 = val; break;
+                        case 14: value14 = val; break;
+                        case 15: value15 = val; break;
                     }
                 }
             }
 
             public struct OffsetInfo
             {
-                public Group8<float> hz;
-                public Group8<float> vc;
+                public ValueGroup hz;
+                public ValueGroup vc;
 
                 public float GetHZ(int index)
                     => hz.Get(index);
