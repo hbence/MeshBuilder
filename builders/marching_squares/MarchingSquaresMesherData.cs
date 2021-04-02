@@ -32,28 +32,24 @@ namespace MeshBuilder
             public float HeightAt(int x, int y) => heightData[x, 0, y];
             public float SetHeightAt(int x, int y, float dist) => heightData[x, 0, y] = dist;
 
-            public Data(int col, int row, float[] distanceData = null)
+            public Data(int col, int row, float[] defDistData = null, bool initHeights = false, float[] defHeightData = null, bool initCulling = false, bool[] defCullingData = null)
             {
-                this.distanceData = new Volume<float>(col, 1, row);
-                if (distanceData != null)
+                distanceData = new Volume<float>(col, 1, row);
+
+                if (defDistData != null)
                 {
-                    if (this.distanceData.Length == distanceData.Length)
-                    {
-                        for (int i = 0; i < distanceData.Length; ++i)
-                        {
-                            this.distanceData[i] = distanceData[i];
-                        }
-                    }
-                    else
-                    {
-                        Debug.LogError("distance data length mismatch!");
-                        Clear();
-                    }
+                    UpdateData(defDistData);
                 }
-                else
+                if (initHeights)
                 {
-                    Clear();
+                    InitHeights(defHeightData);
                 }
+                if (initCulling)
+                {
+                    InitCullingData(defCullingData);
+                }
+
+                Clear();
             }
 
             public void Dispose()
@@ -63,18 +59,14 @@ namespace MeshBuilder
                 SafeDispose(ref cullingData);
             }
 
-            public void UpdateData(float[] distanceData)
+            public void UpdateData(float[] data)
             {
-                if (this.distanceData.Length != distanceData.Length)
+                if (data.Length != distanceData.Length)
                 {
                     Debug.LogWarning("distance data mismatch, clamped");
                 }
 
-                int length = Mathf.Min(distanceData.Length, this.distanceData.Length);
-                for (int i = 0; i < length; ++i)
-                {
-                    this.distanceData[i] = distanceData[i];
-                }
+                SafeCopy(data, distanceData);
             }
 
             public void InitHeights(float[] heightData = null)
@@ -99,18 +91,14 @@ namespace MeshBuilder
                 }
             }
 
-            public void UpdateHeights(float[] heightData)
+            public void UpdateHeights(float[] data)
             {
-                if (this.heightData.Length != heightData.Length)
+                if (heightData.Length != data.Length)
                 {
                     Debug.LogWarning("distance data mismatch, clamped");
                 }
 
-                int length = Mathf.Min(heightData.Length, this.heightData.Length);
-                for (int i = 0; i < length; ++i)
-                {
-                    this.heightData[i] = heightData[i];
-                }
+                SafeCopy(data, heightData);
             }
 
             public void UpdateCullingData(bool[] data)
@@ -120,11 +108,13 @@ namespace MeshBuilder
                     Debug.LogWarning("culling data mismatch, clamped");
                 }
 
-                int length = Mathf.Min(cullingData.Length, data.Length);
-                for (int i = 0; i < length; ++i)
-                {
-                    cullingData[i] = data[i];
-                }
+                SafeCopy(data, cullingData);
+            }
+
+            static private void SafeCopy<T>(T[] source, Volume<T> dest) where T : struct
+            {
+                int length = Mathf.Min(source.Length, dest.Length);
+                NativeArray<T>.Copy(source, dest.Data, length);
             }
 
             public void Clear()
