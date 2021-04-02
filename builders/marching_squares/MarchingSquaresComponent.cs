@@ -6,6 +6,8 @@ namespace MeshBuilder
 {
     public class MarchingSquaresComponent : MonoBehaviour
     {
+        public enum InitializationPolicy { InAwake, InStart, Dont }
+
         [SerializeField] private MeshFilter meshFilter = null;
         public MeshFilter MeshFilter 
         { 
@@ -20,10 +22,15 @@ namespace MeshBuilder
             }
         }
 
-        [SerializeField] private bool initializeInAwake = true;
+        // the default is to initialize in Start() because Awake() is called after the component is added
+        // so if the user wants to avoid that, they have a chance to turn it off
+        [SerializeField] private InitializationPolicy initializationPolicy = InitializationPolicy.InStart;
         [SerializeField] private InitializationInfo initialization;
-        public InitializationInfo InitInfo => initialization;
+        public InitializationInfo InitInfo { get => initialization; set => initialization = value.Clone(); }
         public float CellSize => initialization.cellSize;
+
+        [SerializeField] private DataManagementPolicy dataCreationPolicy = DataManagementPolicy.CreateOwn;
+        [SerializeField] private DataCreationInfo dataCreationInfo;
 
         public MarchingSquaresMesher Mesher { get; private set; }
         public bool IsGenerating => Mesher != null && Mesher.IsGenerating;
@@ -34,13 +41,26 @@ namespace MeshBuilder
 
         private MesherDataHandler mesherData;
         public MarchingSquaresMesher.Data Data => mesherData != null ? mesherData.Data : null;
+        public int ColNum => Data != null ? Data.ColNum : 0;
+        public int RowNum => Data != null ? Data.RowNum : 0;
 
         public delegate void OnMeshChangedFn(Mesh mesh);
         public OnMeshChangedFn OnMeshChanged;
 
         private void Awake()
         {
-            if (initializeInAwake)
+            if (initializationPolicy == InitializationPolicy.InAwake)
+            {
+                if (Mesher == null)
+                {
+                    Init();
+                }
+            }
+        }
+
+        private void Start()
+        {
+            if (initializationPolicy == InitializationPolicy.InStart)
             {
                 if (Mesher == null)
                 {
@@ -71,19 +91,50 @@ namespace MeshBuilder
             }
         }
 
-        public void Init(InitializationInfo updatedInitInfo = null)
+        public void Init(InitializationInfo initInfo = null)
+            => Init(initInfo, dataCreationPolicy, dataCreationInfo);
+
+        public void ChangeDataInfo(DataManagementPolicy dataPolicy, DataCreationInfo dataInfo)
+        {
+            bool hasInfoChanged = !dataCreationInfo.DoesEqual(dataInfo);
+            if (hasInfoChanged)
+            {
+                dataCreationInfo = dataInfo.Clone();
+            }
+
+            bool hasDataPolicyChanged = dataCreationPolicy != dataPolicy;
+            dataCreationPolicy = dataPolicy;
+
+            if (mesherData != null)
+            {
+                if (dataCreationPolicy == DataManagementPolicy.CreateOwn)
+                {
+                    if (!mesherData.HasData || hasInfoChanged || hasDataPolicyChanged)
+                    {
+                        mesherData.CreateOwned(dataCreationInfo);
+                    }
+                }
+                else if(dataCreationPolicy == DataManagementPolicy.SetFromOutside)
+                {
+                    if (hasDataPolicyChanged)
+                    {
+                        // if the policy was switched from owning to borroing, it probably has it's own data which should be released
+                        mesherData.Dispose();
+                    }
+                }
+            }
+        }
+
+        public void Init(InitializationInfo initInfo, DataManagementPolicy dataPolicy, DataCreationInfo dataInfo)
         {
             CreateMesher();
 
-            if (updatedInitInfo != null)
+            if (initInfo != null)
             {
-                initialization = updatedInitInfo;
+                initialization = initInfo.Clone();
             }
-            
-            if (initialization.dataManagement == InitializationInfo.DataManagement.CreateOwn)
-            {
-                mesherData.CreateOwned(initialization.DataInfo);
-            }
+
+            ChangeDataInfo(dataPolicy, dataInfo);
 
             if (mesherData.HasData)
             {
@@ -97,12 +148,12 @@ namespace MeshBuilder
 
             if (updatedInitInfo != null)
             {
-                initialization = updatedInitInfo;
+                initialization = updatedInitInfo.Clone();
             }
 
-            if (initialization.dataManagement == InitializationInfo.DataManagement.CreateOwn)
+            if (dataCreationPolicy == DataManagementPolicy.CreateOwn)
             {
-                mesherData.CreateOwned(initialization.DataInfo);
+                mesherData.CreateOwned(dataCreationInfo);
                 mesherData.Copy(data);
             }
             else
@@ -176,7 +227,7 @@ namespace MeshBuilder
             public MarchingSquaresMesher.Data Data { get; private set; }
             public bool HasData => Data != null;
 
-            public void CreateOwned(InitializationInfo.DataCreationInfo dataInfo, bool clear = ClearData)
+            public void CreateOwned(DataCreationInfo dataInfo, bool clear = ClearData)
             {
                 if (owned && HasData && DoAttritbutesMatch(dataInfo, Data))
                 {
@@ -236,10 +287,57 @@ namespace MeshBuilder
                 Data = null;
             }
 
-            private static bool DoAttritbutesMatch(InitializationInfo.DataCreationInfo info, MarchingSquaresMesher.Data data)
+            private static bool DoAttritbutesMatch(DataCreationInfo info, MarchingSquaresMesher.Data data)
             {
                 return info.ColNum == data.ColNum && info.RowNum == data.RowNum && info.HasHeightData == data.HasHeights && info.HasCullingData == data.HasCullingData;
             }
+        }
+
+        public enum DataManagementPolicy
+        {
+            CreateOwn,
+            SetFromOutside
+        }
+
+        [Serializable]
+        public class DataCreationInfo
+        {
+            [SerializeField] private int colNum = 10;
+            public int ColNum => colNum;
+            [SerializeField] private int rowNum = 10;
+            public int RowNum => rowNum;
+            [SerializeField] private bool hasHeightData = false;
+            public bool HasHeightData => hasHeightData;
+            [SerializeField] private bool hasCullingData = false;
+            public bool HasCullingData => hasCullingData;
+
+            public DataCreationInfo(int col, int row, bool hasHeight = false, bool hasCulling = false)
+            {
+                colNum = col;
+                rowNum = row;
+                hasHeightData = hasHeight;
+                hasCullingData = hasCulling;
+            }
+
+            public DataCreationInfo Clone()
+                => new DataCreationInfo(colNum, rowNum, hasHeightData, HasCullingData);
+
+            public MarchingSquaresMesher.Data Create()
+            {
+                var data = new MarchingSquaresMesher.Data(colNum, rowNum);
+                if (hasHeightData)
+                {
+                    data.InitHeights();
+                }
+                if (hasCullingData)
+                {
+                    data.InitCullingData();
+                }
+                return data;
+            }
+
+            public bool DoesEqual(DataCreationInfo other)
+                => colNum == other.colNum && rowNum == other.rowNum && hasHeightData == other.hasHeightData && hasCullingData == other.hasCullingData;
         }
 
         [Serializable]
@@ -266,9 +364,6 @@ namespace MeshBuilder
                 SimpleFullCell
             }
 
-            public DataManagement dataManagement = DataManagement.CreateOwn;
-            public DataCreationInfo dataCreationInfo;
-            public DataCreationInfo DataInfo => dataCreationInfo;
             public Type type = Type.FullCell;
             public float cellSize = 1f;
             public float height = 0f;
@@ -276,6 +371,23 @@ namespace MeshBuilder
             public float taperedTopOffset = 0.0f;
             public float taperedBottomOffset = 0.5f;
             public MarchingSquaresMesher.SideOffset[] segmentedOffsets;
+
+            public InitializationInfo Clone()
+            {
+                var info = new InitializationInfo();
+                info.type = type;
+                info.cellSize = cellSize;
+                info.height = height;
+                info.lerpToExactEdge = lerpToExactEdge;
+                info.taperedTopOffset = taperedTopOffset;
+                info.taperedBottomOffset = taperedBottomOffset;
+                if (segmentedOffsets != null)
+                {
+                    info.segmentedOffsets = new MarchingSquaresMesher.SideOffset[segmentedOffsets.Length];
+                    Array.Copy(segmentedOffsets, info.segmentedOffsets, segmentedOffsets.Length);
+                }
+                return info;
+            }
 
             public void Init(MarchingSquaresMesher mesher, MarchingSquaresMesher.Data data)
             {
@@ -309,39 +421,6 @@ namespace MeshBuilder
                             Debug.LogError("Unhandled mesher initialization type: " + type);
                             break;
                         }
-                }
-            }
-
-            public enum DataManagement
-            {
-                CreateOwn,
-                SetFromOutside
-            }
-
-            [Serializable]
-            public class DataCreationInfo
-            {
-                [SerializeField] private int colNum = 10;
-                public int ColNum => colNum;
-                [SerializeField] private int rowNum = 10;
-                public int RowNum => rowNum;
-                [SerializeField] private bool hasHeightData = false;
-                public bool HasHeightData => hasHeightData;
-                [SerializeField] private bool hasCullingData = false;
-                public bool HasCullingData => hasCullingData;
-
-                public MarchingSquaresMesher.Data Create()
-                {
-                    var data = new MarchingSquaresMesher.Data(colNum, rowNum);
-                    if (hasHeightData)
-                    {
-                        data.InitHeights();
-                    }
-                    if (hasCullingData)
-                    {
-                        data.InitCullingData();
-                    }
-                    return data;
                 }
             }
         }
