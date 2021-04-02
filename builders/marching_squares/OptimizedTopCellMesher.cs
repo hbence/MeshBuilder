@@ -387,7 +387,7 @@ namespace MeshBuilder
 
                     public static void Fill(int cornerColNum, int cornerRowNum, NativeArray<OptimizationCellInfo> cells)
                     {
-                        List<int> candidates = new List<int>();
+                        Queue<int> candidates = new Queue<int>();
 
                         CellDist[] cellDist = new CellDist[cells.Length];
                         for (int i = 0; i < cellDist.Length; ++i)
@@ -395,12 +395,12 @@ namespace MeshBuilder
                             var cell = new CellDist { dist = 0, index = i, x = i % cornerColNum, y = i / cornerColNum };
                             if (cells[i].isFull)
                             {
-                                cell.dist = int.MaxValue;
+                                cell.dist = Mathf.Min(cell.x, cell.y, cornerColNum - cell.x - 1, cornerRowNum - cell.y - 1);
 
                                 if (IsOnEdge(i, cell.x, cell.y))
                                 {
                                     cell.dist = 1;
-                                    candidates.Add(i);
+                                    candidates.Enqueue(i);
                                 }
                             }
                             cellDist[i] = cell;
@@ -408,29 +408,25 @@ namespace MeshBuilder
 
                         while (candidates.Count > 0)
                         {
-                            int i = candidates[0];
-                            candidates.RemoveAt(0);
+                            int i = candidates.Dequeue();
 
                             var cell = cellDist[i];
                             int curVal = cell.dist + 1;
 
-                            if (cell.x > 0) TestAdjacent(i - 1, curVal);
-                            if (i % cornerColNum < cornerColNum - 1) TestAdjacent(i + 1, curVal);
-                            if (i >= cornerColNum) TestAdjacent(i - cornerColNum, curVal);
-                            if (i <= cells.Length - cornerColNum - 1) TestAdjacent(i + cornerColNum, curVal);
+                            if (cell.x > 0) ProcessAdjacent(i - 1, curVal);
+                            if (cell.x < cornerColNum - 1) ProcessAdjacent(i + 1, curVal);
+                            if (cell.y > 0) ProcessAdjacent(i - cornerColNum, curVal);
+                            if (cell.y < cornerRowNum - 1) ProcessAdjacent(i + cornerColNum, curVal);
                         }
 
                         Array.Sort(cellDist, (CellDist a, CellDist b) => { return b.dist.CompareTo(a.dist); });
-                        
+
                         for (int i = 0; i < cellDist.Length; ++i)
                         {
-                            int index = cellDist[i].index;
-                            if (cells[index].isFull && !cells[index].wasChecked)
+                            CellDist distInfo = cellDist[i];
+                            if (cells[distInfo.index].isFull && !cells[distInfo.index].wasChecked)
                             {
-                                int x = index % cornerColNum;
-                                int y = index / cornerColNum;
-
-                                Area area = FindFullAreaAround(x, y, cornerColNum, cornerRowNum, cells);
+                                Area area = FindFullAreaAround(distInfo.x, distInfo.y, cornerColNum, cornerRowNum, cells);
                                 TriangulateArea(area, cornerColNum, cells);
                                 CheckEdgeVertices(area, cornerColNum, cells);
                                 MarkChecked(area, cornerColNum, cells);
@@ -439,23 +435,16 @@ namespace MeshBuilder
 
                         bool IsOnEdge(int i, int x, int y)
                         {
-                            if (x > 0 && !cells[i - 1].isFull) return true;
-                            if (x < cornerColNum - 1 && !cells[i + 1].isFull) return true;
-                            if (y > 0 && !cells[i - cornerColNum].isFull) return true;
-                            if (y < cornerRowNum - 1 && !cells[i + cornerColNum].isFull) return true;
-                            return false;
+                           return   (x > 0 && !cells[i - 1].isFull) || (x < cornerColNum - 1 && !cells[i + 1].isFull) ||
+                                    (y > 0 && !cells[i - cornerColNum].isFull) || (y < cornerRowNum - 1 && !cells[i + cornerColNum].isFull);
                         }
 
-                        void TestAdjacent(int adj, int curVal)
+                        void ProcessAdjacent(int adj, int curVal)
                         {
-                            if (cells[adj].isFull)
+                            if (cells[adj].isFull && cellDist[adj].dist > curVal)
                             {
-                                int val = cellDist[adj].dist;
-                                if (val > curVal)
-                                {
-                                    cellDist[adj].dist = curVal;
-                                    candidates.Add(adj);
-                                }
+                                cellDist[adj].dist = curVal;
+                                candidates.Enqueue(adj);
                             }
                         }
                     }
@@ -485,15 +474,8 @@ namespace MeshBuilder
                             if (canGrow)
                             {
                                 int testX = posX + dir;
-                                if (testX >= 0 && testX <= colNum - 1)
-                                {
-                                    if (IsValidVertical(testX, fromY, toY)) { posX = testX; }
-                                    else { canGrow = false; }
-                                }
-                                else
-                                {
-                                    canGrow = false;
-                                }
+                                canGrow = testX >= 0 && testX <= colNum - 1 && IsValidVertical(testX, fromY, toY);
+                                posX = canGrow ? testX : posX;
                             }
                         }
                         void GrowVertical(ref bool canGrow, ref int posY, int dir, int fromX, int toX)
@@ -501,9 +483,8 @@ namespace MeshBuilder
                             if (canGrow)
                             {
                                 int testY = posY + dir;
-                                if (testY >= 0 && testY <= rowNum - 1)
-                                if (IsValidHorizontal(testY, fromX, toX)) { posY = testY; }
-                                else { canGrow = false; }
+                                canGrow = testY >= 0 && testY <= rowNum - 1 && IsValidHorizontal(testY, fromX, toX);
+                                posY = canGrow ? testY : posY;
                             }
                         }
                         bool IsValidVertical(int testX, int fromY, int toY)
@@ -538,7 +519,7 @@ namespace MeshBuilder
                         }
                     }
                 }
-
+                
                 static void CheckEdgeVertices(Area area, int colNum, NativeArray<OptimizationCellInfo> cells)
                 {
                     if (area.startY > 0)
@@ -572,7 +553,7 @@ namespace MeshBuilder
                         return !cells[left].isFull || !cells[bottom].isFull || !cells[bottomLeft].isFull;
                     }
                 }
-
+                
                 static void MarkChecked(int x, int y, int colNum, NativeArray<OptimizationCellInfo> cells)
                 {
                     int index = ToIndex(x, y, colNum);
@@ -595,16 +576,16 @@ namespace MeshBuilder
                     UpdateCell(tlIndex, cells, true);
                     UpdateCell(trIndex, cells, true);
                 }
-
+                
                 static private void UpdateCell(int index, NativeArray<OptimizationCellInfo> cells, bool needsVertex)
                 {
                     var cell = cells[index];
                     cell.needsVertex = needsVertex;
                     cells[index] = cell;
                 }
-
+                
                 static private void UpdateCell(int index, NativeArray<OptimizationCellInfo> cells, bool needsVertex,
-                    byte triangleCount = 0, int a0 = -1, int a1 = -1, int a2 = -1, int b0 = -1, int b1 = -1, int b2 = -1)
+                    byte triangleCount, int a0, int a1, int a2, int b0, int b1, int b2)
                 {
                     var cell = cells[index];
                     cell.needsVertex = needsVertex;
