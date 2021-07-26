@@ -177,6 +177,16 @@ namespace MeshBuilder
             {
                 vertices[index] = vertices[index] + offset;
             }
+
+            public static JobHandle Schedule(NativeArray<float3> vertices, float3 offset, int innerBatch = 1024, JobHandle dependOn = default)
+            {
+                var job = new VertexOffsetJob
+                {
+                    offset = offset,
+                    vertices = vertices
+                };
+                return job.Schedule(vertices.Length, innerBatch,  dependOn);
+            }
         }
 
         [BurstCompile]
@@ -188,6 +198,16 @@ namespace MeshBuilder
             public void Execute(int index)
             {
                 uvs[index] = uvs[index] * scale;
+            }
+
+            public static JobHandle Schedule(NativeArray<float2> uvs, float2 scale, int innerBatch = 1024, JobHandle dependOn = default)
+            {
+                var job = new UVScaleJob
+                {
+                    scale = scale,
+                    uvs = uvs
+                };
+                return job.Schedule(uvs.Length, innerBatch, dependOn);
             }
         }
     }
