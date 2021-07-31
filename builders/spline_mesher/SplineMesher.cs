@@ -1,5 +1,7 @@
-﻿using Unity.Burst;
+﻿using System.Collections.Generic;
+using Unity.Burst;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
@@ -8,79 +10,120 @@ namespace MeshBuilder
 {
     public class SplineMesher : Builder
     {
+        private const uint DefaultMeshBufferFlags = (uint)(MeshData.Buffer.Vertex | MeshData.Buffer.Triangle);
+
+        private const int DefaultVertexOffsetInnerBatchNum = 1024;
+
+        public int VertexOffsetInnerBatchnum = DefaultVertexOffsetInnerBatchNum;
+
         private float3 meshVertexOffset;
         private SplineCache splineCache;
 
-        private int colNum;
-        private int rowNum;
-        private float cellWidth;
-        private float cellHeight;
-
+        private GenerationHandler generationHandler = new GenerationHandler();
+        
         private MeshData meshData;
+        private SplineModifier splineModifier = new SplineModifier();
 
         public void Init(SplineCache splineCache, int cellColCount, float meshCellWidth, float meshCellLength, float3 positionOffset = default)
         {
             this.splineCache = splineCache;
-
-            colNum = cellColCount;
-            rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength) + 1;
-            cellWidth = meshCellWidth;
-            cellHeight = meshCellLength;
             meshVertexOffset = positionOffset;
+
+            int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength) + 1;
+            generationHandler.InitSimpleGrid(meshCellWidth, meshCellLength, cellColCount, rowNum);
+
+            splineModifier.Init(this.splineCache, meshCellLength);
 
             Inited();
         }
 
+        public void Init(SplineCache splineCache, float3[] crossSection, float meshCellLength, float3 positionOffset = default)
+        {
+            this.splineCache = splineCache;
+            meshVertexOffset = positionOffset;
+
+            int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength) + 1;
+            generationHandler.InitSubmeshEdges(meshCellLength, rowNum);
+            generationHandler.AddSubmeshEdge(0, crossSection);
+
+            splineModifier.Init(this.splineCache, meshCellLength);
+
+            Inited();
+        }
+
+        public void Init(SplineCache splineCache, float3[][] crossSections, float meshCellLength, float3 positionOffset = default)
+        {
+            this.splineCache = splineCache;
+            meshVertexOffset = positionOffset;
+
+            int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength) + 1;
+            generationHandler.InitSubmeshEdges(meshCellLength, rowNum);
+
+            foreach (float3[] cross in crossSections)
+            {
+                generationHandler.AddSubmeshEdge(0, cross);
+            }
+
+            splineModifier.Init(this.splineCache, meshCellLength);
+
+            Inited();
+        }
+
+        public void Init(SplineCache splineCache, float3[][][] crossSections, float meshCellLength, float3 positionOffset = default)
+        {
+            this.splineCache = splineCache;
+            meshVertexOffset = positionOffset;
+
+            int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength) + 1;
+            generationHandler.InitSubmeshEdges(meshCellLength, rowNum);
+
+            for (int submesh = 0; submesh < crossSections.Length; ++submesh)
+            {
+                foreach (float3[] cross in crossSections[submesh])
+                {
+                    generationHandler.AddSubmeshEdge(submesh, cross);
+                }
+            }
+
+            splineModifier.Init(this.splineCache, meshCellLength);
+
+            Inited();
+        }
+
+        public void InitForMultipleSubmeshes(SplineCache splineCache, float meshCellLength, float3 positionOffset = default)
+        {
+            this.splineCache = splineCache;
+            meshVertexOffset = positionOffset;
+
+            int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength) + 1;
+            generationHandler.InitSubmeshEdges(meshCellLength, rowNum);
+
+            splineModifier.Init(this.splineCache, meshCellLength);
+
+            Inited();
+        }
+
+        public void AddSubmesh(int submesh, float3[] crossSection)
+        {
+            Debug.Assert(IsInitialized && generationHandler.IsInitedForSubmeshes, "not initized for submeshes");
+            generationHandler.AddSubmeshEdge(submesh, crossSection);
+        }
+
+        public void AddSubmesh(int submesh, float3[][] crossSections)
+        {
+            Debug.Assert(IsInitialized && generationHandler.IsInitedForSubmeshes, "not initized for submeshes");
+
+            foreach (var cross in crossSections)
+            {
+                generationHandler.AddSubmeshEdge(submesh, cross);
+            }
+        }
+
         protected override JobHandle StartGeneration(JobHandle dependOn)
         {
-            int vertexCount = (colNum + 1) * (rowNum + 1);
-            int indexCount = (colNum * rowNum) * 2 * 3;
+            dependOn = generationHandler.StartGeneration(dependOn, this);
 
-            var transforms = new NativeArray<RigidTransform>(rowNum, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-            AddTemp(transforms);
-
-            meshData = new MeshData(vertexCount, indexCount, Allocator.TempJob, (uint)(MeshData.Buffer.Vertex | MeshData.Buffer.Triangle));
-            AddTemp(meshData);
-
-            dependOn = GenerateGrid.Schedule(colNum, rowNum, cellWidth, cellHeight, meshData, dependOn);
-
-            dependOn = GenerateTransforms.Schedule(splineCache, transforms, cellHeight, 512, dependOn);
-
-            var lerpedTransforms = new NativeArray<RigidTransform>(rowNum, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-            AddTemp(lerpedTransforms);
-
-            /*
-            dependOn = ApplyTransforms.Schedule(meshData.Vertices, transforms, cellHeight, dependOn);
-            */
-
-            ///////////
-
-            var lerps = new LerpValue[] 
-            {
-                new LerpValue { distance = -2, scale = 0.25f },
-                new LerpValue { distance = -1, scale = 0.5f },
-                new LerpValue { distance = 1, scale = 0.5f },
-                new LerpValue { distance = 2, scale = 0.25f },
-            };
-
-            var lerps2 = new LerpValue[]
-            {
-                new LerpValue { distance = -2.5f, scale = 0.25f },
-                new LerpValue { distance = -1f, scale = 0.5f },
-                new LerpValue { distance = 1f, scale = 0.5f },
-                new LerpValue { distance = 2.5f, scale = 0.25f },
-            };
-
-            
-            var lerpArray = new NativeArray<LerpValue>(lerps2, Allocator.TempJob);
-            AddTemp(lerpArray);
-
-            dependOn = ApplyLerpedTransforms.Schedule(meshData.Vertices, transforms, lerpArray, 1f, cellHeight, 1024, dependOn);
-            
-
-            /*
-            dependOn = ApplyLerpedTransformsLimited.Schedule(meshData.Vertices, transforms, lerps2, 1f, cellHeight, 1024, dependOn);
-            */
+            dependOn = splineModifier.Start(meshData, dependOn);
 
             if (!meshVertexOffset.Equals(default))
             {
@@ -92,9 +135,162 @@ namespace MeshBuilder
 
         protected override void EndGeneration(Mesh mesh)
         {
+            splineModifier.Complete();
+
             meshData.UpdateMesh(mesh);
         }
 
+        private class GenerationHandler
+        {
+            private enum Type { Simple, SubmeshEdges }
+
+            private Type type = Type.Simple;
+            public bool IsInitedForSubmeshes => type == Type.SubmeshEdges;
+
+            public uint MeshDataBufferFlags { get; set; } = DefaultMeshBufferFlags;
+
+            private List<SubmeshEdge> submeshEdges = new List<SubmeshEdge>();
+
+            public float CellWidth { get; private set; }
+            public float CellLength { get; private set; }
+
+            public int ColNum { get; private set; }
+            public int RowNum { get; private set; }
+
+            public void InitSimpleGrid(float cellWidth, float cellLength, int colNum, int rowNum)
+            {
+                type = Type.Simple;
+
+                submeshEdges.Clear();
+
+                CellWidth = cellWidth;
+                CellLength = cellLength;
+                ColNum = colNum;
+                RowNum = rowNum;
+            }
+
+            public void InitSubmeshEdges(float cellLength, int rowNum)
+            {
+                InitSimpleGrid(0, cellLength, 0, rowNum);
+                type = Type.SubmeshEdges;
+            }
+            public void AddSubmeshEdge(int submeshIndex, float3[] edge)
+            {
+                Debug.Assert(edge.Length > 1, "a cross section needs more than one vertex");
+                submeshEdges.Add(new SubmeshEdge(submeshIndex, edge));
+            }
+            public JobHandle StartGeneration(JobHandle dependOn, SplineMesher mesher)
+            {
+                Debug.Assert(CellLength > 0, "cell length is not set!");
+                Debug.Assert(RowNum > 0, "row num is not set");
+
+                if (type == Type.Simple)
+                {
+                    Debug.Assert(CellWidth > 0, "cell width is not set!");
+                    Debug.Assert(ColNum > 0, "col num is not set");
+
+                    int vertexCount = GenerateGrid.CalculateVertexCount(ColNum, RowNum);
+                    int indexCount = GenerateGrid.CalculateIndexCount(ColNum, RowNum);
+
+                    mesher.meshData = new MeshData(vertexCount, indexCount, Allocator.TempJob, MeshDataBufferFlags);
+                    mesher.AddTemp(mesher.meshData);
+
+                    dependOn = GenerateGrid.Schedule(ColNum, RowNum, CellWidth, CellLength, mesher.meshData, dependOn);
+                }
+                else
+                {
+                    Debug.Assert(submeshEdges.Count > 0, "submeshes are not set!");
+
+                    if (submeshEdges.Count == 1)
+                    {
+                        NativeArray<float3> edge = new NativeArray<float3>(submeshEdges[0].EdgeVertices, Allocator.TempJob);
+                        mesher.AddTemp(edge);
+
+                        int vertexCount = GenerateVertexEdgeGrid.CalculateVertexCount(edge.Length, RowNum);
+                        int indexCount = GenerateVertexEdgeGrid.CalculateIndexCount(edge.Length, RowNum);
+
+                        mesher.meshData = new MeshData(vertexCount, indexCount, Allocator.TempJob, MeshDataBufferFlags);
+                        mesher.AddTemp(mesher.meshData);
+
+                        dependOn = GenerateVertexEdgeGrid.Schedule(edge, RowNum, CellLength, 0, 0, mesher.meshData, dependOn);
+                    }
+                    else
+                    {
+                        submeshEdges.Sort((SubmeshEdge a, SubmeshEdge b) => a.SubmeshIndex.CompareTo(b.SubmeshIndex));
+
+                        VertexEdgeInfo[] edges = new VertexEdgeInfo[submeshEdges.Count];
+                        List<Utils.Offset> submeshOffsets = new List<Utils.Offset>();
+                        int vertexCount = 0;
+                        int indexCount = 0;
+                        Utils.Offset submeshOffset = new Utils.Offset { index = 0, length = 0 };
+                        int lastSubmesh = submeshEdges[0].SubmeshIndex;
+                        for (int i = 0; i < submeshEdges.Count; ++i)
+                        {
+                            var edge = new NativeArray<float3>(submeshEdges[i].EdgeVertices, Allocator.TempJob);
+                            mesher.AddTemp(edge);
+
+                            edges[i] = new VertexEdgeInfo(edge, vertexCount, indexCount);
+
+                            vertexCount += GenerateVertexEdgeGrid.CalculateVertexCount(edge.Length, RowNum);
+                            indexCount += GenerateVertexEdgeGrid.CalculateIndexCount(edge.Length, RowNum);
+
+                            submeshOffset.length += GenerateVertexEdgeGrid.CalculateIndexCount(edge.Length, RowNum);
+
+                            int nextSubmesh = (i + 1 >= submeshEdges.Count) ? -1 : submeshEdges[i + 1].SubmeshIndex;
+                            if (lastSubmesh != nextSubmesh)
+                            {
+                                lastSubmesh = nextSubmesh;
+
+                                submeshOffsets.Add(submeshOffset);
+                                submeshOffset = new Utils.Offset { index = indexCount, length = 0 };
+                            }
+                        }
+
+                        mesher.meshData = new MeshData(vertexCount, indexCount, submeshOffsets.ToArray(), Allocator.TempJob, MeshDataBufferFlags);
+                        mesher.AddTemp(mesher.meshData);
+
+                        JobHandle genResult = default;
+                        foreach(var edgeInfo in edges)
+                        {
+                            genResult = JobHandle.CombineDependencies(genResult, edgeInfo.Generate(RowNum, CellLength, mesher.meshData, dependOn));
+                        }
+                        dependOn = genResult;
+                    }
+                }
+
+                return dependOn;
+            }
+
+            private class VertexEdgeInfo
+            {
+                public NativeArray<float3> edge;
+                public int vertexStart;
+                public int indexStart;
+
+                public VertexEdgeInfo(NativeArray<float3> edge, int vertexStart, int indexStart)
+                {
+                    this.edge = edge;
+                    this.vertexStart = vertexStart;
+                    this.indexStart = indexStart;
+                }
+
+                public JobHandle Generate(int rowNum, float cellLength, MeshData meshData, JobHandle dependOn)
+                    => GenerateVertexEdgeGrid.Schedule(edge, rowNum, cellLength, vertexStart, indexStart, meshData, dependOn);
+            }
+        }
+
+        private class SubmeshEdge
+        {
+            public int SubmeshIndex { get; private set; }
+            public float3[] EdgeVertices { get; private set; }
+            public SubmeshEdge(int submeshIndex, float3[] edge)
+            {
+                SubmeshIndex = submeshIndex;
+                EdgeVertices = edge;
+            }
+        }
+
+        [BurstCompile]
         private struct GenerateGrid : IJob
         {
             public int colNum;
@@ -102,8 +298,8 @@ namespace MeshBuilder
             public float cellWidth;
             public float cellLength;
 
-            public NativeArray<float3> vertices;
-            public NativeArray<int> indices;
+            [WriteOnly] public NativeArray<float3> vertices;
+            [WriteOnly] public NativeArray<int> indices;
 
             public void Execute()
             {
@@ -154,224 +350,88 @@ namespace MeshBuilder
                 };
                 return generateGrid.Schedule(dependOn);
             }
+
+            public static int CalculateVertexCount(int cellColNum, int cellRowNum)
+                => (cellColNum + 1) * (cellRowNum + 1);
+
+            public static int CalculateIndexCount(int cellColNum, int cellRowNum)
+                => (cellColNum * cellRowNum) * 2 * 3;
         }
 
         [BurstCompile]
-        private struct GenerateTransforms : IJobParallelFor
+        private struct GenerateVertexEdgeGrid : IJob
         {
-            public float cacheStepDistance;
-            public float transfromStepDistance;
+            public int cellRowNum;
+            public float cellLength;
 
-            [ReadOnly] public NativeArray<float3> splineCachePositions;
-            [WriteOnly] public NativeArray<RigidTransform> transforms;
+            public int vertexStart;
+            public int indexStart;
 
-            public void Execute(int i)
+            [ReadOnly] public NativeArray<float3> edgeVertices;
+
+            // this job is used to write parts of the mesh so it should be safe 
+            // to write mesh data at the same time, there is no overlap
+            [NativeDisableContainerSafetyRestriction][WriteOnly] public NativeArray<float3> vertices;
+            [NativeDisableContainerSafetyRestriction][WriteOnly] public NativeArray<int> indices;
+
+            public void Execute()
             {
-                float distance = i * transfromStepDistance;
-
-                int cacheIndex = math.min(Mathf.FloorToInt(distance / cacheStepDistance), splineCachePositions.Length - 2);
-                float3 a = splineCachePositions[cacheIndex];
-                float3 b = splineCachePositions[cacheIndex + 1];
-                float t = CalcCacheT(distance, cacheIndex);
-
-                float3 pos = math.lerp(a, b, t);
-                float3 forward = math.normalize(b - a);
-                float3 right = math.cross(forward, new float3(0, 1, 0));
-                float3 up = -math.cross(forward, right);
-                quaternion rot = quaternion.LookRotation(forward, up);
-                transforms[i] = math.RigidTransform(rot, pos);
-            }
-
-            private float CalcCacheT(float distance, int index)
-            {
-                float start = index * cacheStepDistance;
-                return (distance - start) / cacheStepDistance;
-            }
-
-            public static JobHandle Schedule(SplineCache spline, NativeArray<RigidTransform> transforms, float transfromStepDistance, int innerBatchCount, JobHandle dependOn)
-            {
-                var generateTransforms = new GenerateTransforms
+                int vertexColNum = edgeVertices.Length;
+                float distance = 0;
+                for (int row = 0; row <= cellRowNum; ++row)
                 {
-                    cacheStepDistance = spline.CacheStepDistance,
-                    transfromStepDistance = transfromStepDistance,
-                    splineCachePositions = spline.Positions,
-                    transforms = transforms
-                };
-                return generateTransforms.Schedule(transforms.Length, innerBatchCount, dependOn);
-            }
-        }
-
-        private struct LerpValue
-        {
-            public float distance;
-            public float scale;
-        }
-
-        [BurstCompile]
-        private struct ApplyTransforms : IJobParallelFor
-        {
-            public float transfromStepDistance;
-
-            [ReadOnly] public NativeArray<RigidTransform> transforms;
-            public NativeArray<float3> vertices;
-
-            public void Execute(int i)
-            {
-                float3 v = vertices[i];
-                var transform = GetTransform(v.z);
-                v.z = 0;
-                vertices[i] = math.transform(transform, v);
-            }
-
-            private RigidTransform GetTransform(float distance)
-                => SplineMesher.GetTransform(distance, transforms, transfromStepDistance);
-            
-            public static JobHandle Schedule(NativeArray<float3> vertices, NativeArray<RigidTransform> transforms, float transfromStepDistance, int innerBatchCount, JobHandle dependOn)
-            {
-                var applyTransforms = new ApplyTransforms
-                {
-                    transfromStepDistance = transfromStepDistance,
-                    transforms = transforms,
-                    vertices = vertices
-                };
-                return applyTransforms.Schedule(vertices.Length, innerBatchCount, dependOn);
-            }
-        }
-
-        [BurstCompile]
-        private struct ApplyLerpedTransforms : IJobParallelFor
-        {
-            public float transfromStepDistance;
-            public float maxHalfWidth;
-
-            [ReadOnly] public NativeArray<LerpValue> lerpValues;
-
-            [ReadOnly] public NativeArray<RigidTransform> transforms;
-            public NativeArray<float3> vertices;
-
-            public void Execute(int i)
-            {
-                float3 v = vertices[i];
-
-                float distance = v.z;
-                var transform = GetTransform(distance);
-
-                float sideRatio = math.abs(v.x) / maxHalfWidth;
-
-                float weight = 1f;
-                float4 rotValue = transform.rot.value;
-
-                for (int j = 0; j < lerpValues.Length; ++j)
-                {
-                    var sv = lerpValues[j];
-                    var other = GetTransform(distance + sv.distance);
-                    float scale = sv.scale * sideRatio;
-                    rotValue += other.rot.value * scale;
-                    weight += sv.scale;
+                    for (int col = 0; col < vertexColNum; ++col)
+                    {
+                        var v = edgeVertices[col];
+                        v.z += distance;
+                        vertices[vertexStart + row * vertexColNum + col] = v;
+                    }
+                    distance += cellLength;
                 }
 
-                rotValue /= weight;
-                transform.rot = math.normalize(math.quaternion(rotValue));
-
-                v.z = 0;
-                vertices[i] = math.transform(transform, v);
-            }
-
-            private RigidTransform GetTransform(float distance)
-                => SplineMesher.GetTransform(distance, transforms, transfromStepDistance);
-
-            public static JobHandle Schedule(NativeArray<float3> vertices, NativeArray<RigidTransform> transforms, NativeArray<LerpValue> lerpedValues, float maxHalfWidth, float transfromStepDistance, int innerBatchCount, JobHandle dependOn)
-            {
-                var applyTransforms = new ApplyLerpedTransforms
+                for (int row = 0; row < cellRowNum; ++row)
                 {
-                    transfromStepDistance = transfromStepDistance,
-                    maxHalfWidth = maxHalfWidth,
-                    lerpValues = lerpedValues,
-                    transforms = transforms,
-                    vertices = vertices,
-                };
-                return applyTransforms.Schedule(vertices.Length, innerBatchCount, dependOn);
-            }
-        }
-
-        [BurstCompile]
-        private struct ApplyLerpedTransformsLimited : IJobParallelFor
-        {
-            public float transfromStepDistance;
-            public float maxHalfWidth;
-
-            public LerpValue lerpValue0;
-            public LerpValue lerpValue1;
-            public LerpValue lerpValue2;
-            public LerpValue lerpValue3;
-
-            [ReadOnly] public NativeArray<RigidTransform> transforms;
-            public NativeArray<float3> vertices;
-
-            public void Execute(int i)
-            {
-                float3 v = vertices[i];
-
-                float distance = v.z;
-                var transform = GetTransform(distance);
-
-                float sideRatio = math.abs(v.x) / maxHalfWidth;
-
-                float4 rotValue = transform.rot.value;
-
-                AddLerpValue(distance, sideRatio, lerpValue0, ref rotValue);
-                AddLerpValue(distance, sideRatio, lerpValue1, ref rotValue);
-                AddLerpValue(distance, sideRatio, lerpValue2, ref rotValue);
-                AddLerpValue(distance, sideRatio, lerpValue3, ref rotValue);
-
-                float weight = 1f + lerpValue0.scale + lerpValue1.scale + lerpValue2.scale + lerpValue3.scale;
-                rotValue /= weight;
-                transform.rot = math.normalize(math.quaternion(rotValue));
-
-                v.z = 0;
-                vertices[i] = math.transform(transform, v);
-            }
-
-            private void AddLerpValue(float distance, float sideRatio, LerpValue lerpValue, ref float4 rot)
-            {
-                var other = GetTransform(distance + lerpValue.distance);
-                float scale = lerpValue.scale * sideRatio;
-                rot += other.rot.value * scale;
-            }
-
-            private RigidTransform GetTransform(float distance)
-                => SplineMesher.GetTransform(distance, transforms, transfromStepDistance);
-
-            public static JobHandle Schedule(NativeArray<float3> vertices, NativeArray<RigidTransform> transforms, LerpValue[] lerpValues, float maxHalfWidth, float transfromStepDistance, int innerBatchCount, JobHandle dependOn)
-            {
-                if (lerpValues.Length > 4)
-                {
-                    Debug.LogWarning("ApplyLerpedTransformsLimited can't handle more than four values!");
+                    for (int col = 0; col < vertexColNum - 1; ++col)
+                    {
+                        SetIndices(col, row, vertexColNum);
+                    }
                 }
-
-                var applyTransforms = new ApplyLerpedTransformsLimited
-                {
-                    transfromStepDistance = transfromStepDistance,
-                    maxHalfWidth = maxHalfWidth,
-                    lerpValue0 = GetOrDefault(0, lerpValues),
-                    lerpValue1 = GetOrDefault(1, lerpValues),
-                    lerpValue2 = GetOrDefault(2, lerpValues),
-                    lerpValue3 = GetOrDefault(3, lerpValues),
-                    transforms = transforms,
-                    vertices = vertices,
-                };
-                return applyTransforms.Schedule(vertices.Length, innerBatchCount, dependOn);
             }
 
-            private static LerpValue GetOrDefault(int index, LerpValue[] array)
-                => index < array.Length ? array[index] : new LerpValue { distance = 0, scale = 0 };
-        }
+            private void SetIndices(int col, int row, int vertexColNum)
+            {
+                int vertex = vertexStart + row * vertexColNum + col;
+                int start = indexStart + ((row * (vertexColNum - 1)) + col) * 6;
 
-        static private RigidTransform GetTransform(float distance, NativeArray<RigidTransform> transforms, float transformStep)
-        {
-            int index = Mathf.FloorToInt(distance / transformStep);
-            index = math.clamp(index, 0, transforms.Length - 1);
-            return transforms[index];
+                indices[start] = vertex;
+                indices[start + 1] = vertex + vertexColNum;
+                indices[start + 2] = vertex + 1;
+
+                indices[start + 3] = vertex + vertexColNum;
+                indices[start + 4] = vertex + vertexColNum + 1;
+                indices[start + 5] = vertex + 1;
+            }
+
+            public static JobHandle Schedule(NativeArray<float3> edgeVertices, int cellRowNum, float cellLength, int vertexStart, int indexStart, MeshData meshData, JobHandle dependOn)
+            {
+                var generateGrid = new GenerateVertexEdgeGrid
+                {
+                    cellRowNum = cellRowNum,
+                    cellLength = cellLength,
+                    vertexStart = vertexStart,
+                    indexStart = indexStart,
+                    edgeVertices = edgeVertices,
+                    vertices = meshData.Vertices,
+                    indices = meshData.Triangles
+                };
+                return generateGrid.Schedule(dependOn);
+            }
+
+            public static int CalculateVertexCount(int vertexEdgeLength, int cellRowCount)
+                => vertexEdgeLength * (cellRowCount + 1);
+
+            public static int CalculateIndexCount(int vertexEdgeLength, int cellRowCount)
+                => (vertexEdgeLength - 1) * cellRowCount * 6;
         }
     }
 }
