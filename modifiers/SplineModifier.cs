@@ -8,61 +8,57 @@ namespace MeshBuilder
 {
     public class SplineModifier : Modifier
     {
-        private SplineCache splineCache;
-        private float transformStepDistance;
+        private const int DefGenerateTransformsInnerBatchCount = 512;
+        private const int DefApplyTransformsInnerBatchCount = 512;
 
-        public void Init(SplineCache splineCache, float transformStepDistance)
+        public int GenerateTransformsInnerBatchCount { get; set; } = DefGenerateTransformsInnerBatchCount;
+        public int ApplyTransformsInnerBatchCount { get; set; } = DefApplyTransformsInnerBatchCount;
+
+        public SplineCache SplineCache { get; set; }
+        
+        public float TransformStepDistance { get; set; }
+
+        public float MaxHalfWidth { get; set; }
+
+        public LerpValue[] LerpValues { get; set; } = null;
+
+        public void Init(SplineCache splineCache, float transformStepDistance, float maxHalfWidth = 1f, LerpValue[] lerpValues = null)
         {
-            this.splineCache = splineCache;
-            this.transformStepDistance = transformStepDistance;
+            SplineCache = splineCache;
+            TransformStepDistance = transformStepDistance;
+            MaxHalfWidth = maxHalfWidth;
+            LerpValues = lerpValues;
 
             Inited();
         }
 
         protected override JobHandle StartGeneration(MeshData meshData, JobHandle dependOn)
         {
-            int rowNum = Mathf.CeilToInt(splineCache.Distance / transformStepDistance) + 1;
+            int rowNum = Mathf.CeilToInt(SplineCache.Distance / TransformStepDistance) + 1;
 
             var transforms = new NativeArray<RigidTransform>(rowNum, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
             AddTemp(transforms);
 
-            dependOn = GenerateTransforms.Schedule(splineCache, transforms, transformStepDistance, 512, dependOn);
+            dependOn = GenerateTransforms.Schedule(SplineCache, transforms, TransformStepDistance, GenerateTransformsInnerBatchCount, dependOn);
 
-            var lerpedTransforms = new NativeArray<RigidTransform>(rowNum, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
-            AddTemp(lerpedTransforms);
-
-            //*
-            //dependOn = ApplyTransforms.Schedule(meshData.Vertices, transforms, cellHeight, 512, dependOn);
-            //*/
-
-            ///////////
-            /*
-            var lerps = new LerpValue[] 
+            if (LerpValues == null)
             {
-                new LerpValue { distance = -2, scale = 0.25f },
-                new LerpValue { distance = -1, scale = 0.5f },
-                new LerpValue { distance = 1, scale = 0.5f },
-                new LerpValue { distance = 2, scale = 0.25f },
-            };
-            */
-            var lerps2 = new LerpValue[]
+                dependOn = ApplyTransforms.Schedule(meshData.Vertices, transforms, TransformStepDistance, ApplyTransformsInnerBatchCount, dependOn);
+            }
+            else
             {
-                new LerpValue { distance = -2.5f, scale = 0.25f },
-                new LerpValue { distance = -1f, scale = 0.5f },
-                new LerpValue { distance = 1f, scale = 0.5f },
-                new LerpValue { distance = 2.5f, scale = 0.25f },
-            };
+                if (LerpValues.Length <= ApplyLerpedTransformsLimited.MaxLerpValueCount)
+                {
+                    dependOn = ApplyLerpedTransformsLimited.Schedule(meshData.Vertices, transforms, LerpValues, MaxHalfWidth, TransformStepDistance, ApplyTransformsInnerBatchCount, dependOn);
+                }
+                else
+                {
+                    var lerpArray = new NativeArray<LerpValue>(LerpValues, Allocator.TempJob);
+                    AddTemp(lerpArray);
 
-            /*
-            var lerpArray = new NativeArray<LerpValue>(lerps2, Allocator.TempJob);
-            AddTemp(lerpArray);
-
-            dependOn = ApplyLerpedTransforms.Schedule(meshData.Vertices, transforms, lerpArray, 1f, cellHeight, 1024, dependOn);
-           */
-
-            //*
-            dependOn = ApplyLerpedTransformsLimited.Schedule(meshData.Vertices, transforms, lerps2, 1f, transformStepDistance, 1024, dependOn);
-            //*/
+                    dependOn = ApplyLerpedTransforms.Schedule(meshData.Vertices, transforms, lerpArray, MaxHalfWidth, TransformStepDistance, ApplyTransformsInnerBatchCount, dependOn);
+                }
+            }
 
             return dependOn;
         }
@@ -72,10 +68,15 @@ namespace MeshBuilder
             
         }
 
-        private struct LerpValue
+        public struct LerpValue
         {
-            public float distance;
+            public float sampleDistance;
             public float scale;
+            public LerpValue(float sampleDistance, float scale) 
+            {
+                this.sampleDistance = sampleDistance;
+                this.scale = scale;
+            }
         }
 
 
@@ -181,7 +182,7 @@ namespace MeshBuilder
                 for (int j = 0; j < lerpValues.Length; ++j)
                 {
                     var sv = lerpValues[j];
-                    var other = GetTransform(distance + sv.distance);
+                    var other = GetTransform(distance + sv.sampleDistance);
                     float scale = sv.scale * sideRatio;
                     rotValue += other.rot.value * scale;
                     weight += sv.scale;
@@ -214,6 +215,8 @@ namespace MeshBuilder
         [BurstCompile]
         private struct ApplyLerpedTransformsLimited : IJobParallelFor
         {
+            public const int MaxLerpValueCount = 4;
+
             public float transfromStepDistance;
             public float maxHalfWidth;
 
@@ -251,7 +254,7 @@ namespace MeshBuilder
 
             private void AddLerpValue(float distance, float sideRatio, LerpValue lerpValue, ref float4 rot)
             {
-                var other = GetTransform(distance + lerpValue.distance);
+                var other = GetTransform(distance + lerpValue.sampleDistance);
                 float scale = lerpValue.scale * sideRatio;
                 rot += other.rot.value * scale;
             }
@@ -281,7 +284,7 @@ namespace MeshBuilder
             }
 
             private static LerpValue GetOrDefault(int index, LerpValue[] array)
-                => index < array.Length ? array[index] : new LerpValue { distance = 0, scale = 0 };
+                => index < array.Length ? array[index] : new LerpValue { sampleDistance = 0, scale = 0 };
         }
 
         static private RigidTransform GetTransform(float distance, NativeArray<RigidTransform> transforms, float transformStep)

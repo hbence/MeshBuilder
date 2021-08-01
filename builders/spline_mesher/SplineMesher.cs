@@ -8,6 +8,8 @@ using UnityEngine;
 
 namespace MeshBuilder
 {
+    using LerpValue = SplineModifier.LerpValue;
+
     public class SplineMesher : Builder
     {
         private const uint DefaultMeshBufferFlags = (uint)(MeshData.Buffer.Vertex | MeshData.Buffer.Triangle);
@@ -22,9 +24,9 @@ namespace MeshBuilder
         private GenerationHandler generationHandler = new GenerationHandler();
         
         private MeshData meshData;
-        private SplineModifier splineModifier = new SplineModifier();
+        public SplineModifier SplineModifier { get; private set; } = new SplineModifier();
 
-        public void Init(SplineCache splineCache, int cellColCount, float meshCellWidth, float meshCellLength, float3 positionOffset = default)
+        public void Init(SplineCache splineCache, int cellColCount, float meshCellWidth, float meshCellLength, float3 positionOffset = default, LerpValue[] lerpValues = null)
         {
             this.splineCache = splineCache;
             meshVertexOffset = positionOffset;
@@ -32,12 +34,13 @@ namespace MeshBuilder
             int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength) + 1;
             generationHandler.InitSimpleGrid(meshCellWidth, meshCellLength, cellColCount, rowNum);
 
-            splineModifier.Init(this.splineCache, meshCellLength);
+            float halfWidth = cellColCount * meshCellWidth * 0.5f;
+            SplineModifier.Init(this.splineCache, meshCellLength, halfWidth, lerpValues);
 
             Inited();
         }
 
-        public void Init(SplineCache splineCache, float3[] crossSection, float meshCellLength, float3 positionOffset = default)
+        public void Init(SplineCache splineCache, float3[] crossSection, float meshCellLength, float3 positionOffset = default, LerpValue[] lerpValues = null)
         {
             this.splineCache = splineCache;
             meshVertexOffset = positionOffset;
@@ -46,12 +49,13 @@ namespace MeshBuilder
             generationHandler.InitSubmeshEdges(meshCellLength, rowNum);
             generationHandler.AddSubmeshEdge(0, crossSection);
 
-            splineModifier.Init(this.splineCache, meshCellLength);
+            float halfWidth = CalculateCrossSectionWidth(crossSection) * 0.5f;
+            SplineModifier.Init(this.splineCache, meshCellLength, halfWidth, lerpValues);
 
             Inited();
         }
 
-        public void Init(SplineCache splineCache, float3[][] crossSections, float meshCellLength, float3 positionOffset = default)
+        public void Init(SplineCache splineCache, float3[][] crossSections, float meshCellLength, float3 positionOffset = default, LerpValue[] lerpValues = null)
         {
             this.splineCache = splineCache;
             meshVertexOffset = positionOffset;
@@ -64,12 +68,17 @@ namespace MeshBuilder
                 generationHandler.AddSubmeshEdge(0, cross);
             }
 
-            splineModifier.Init(this.splineCache, meshCellLength);
+            float maxWidth = 0;
+            foreach(var cross in crossSections)
+            {
+                maxWidth = math.max(maxWidth, CalculateCrossSectionWidth(cross));
+            }
+            SplineModifier.Init(this.splineCache, meshCellLength, maxWidth * 0.5f, lerpValues);
 
             Inited();
         }
 
-        public void Init(SplineCache splineCache, float3[][][] crossSections, float meshCellLength, float3 positionOffset = default)
+        public void Init(SplineCache splineCache, float3[][][] crossSections, float meshCellLength, float3 positionOffset = default, LerpValue[] lerpValues = null)
         {
             this.splineCache = splineCache;
             meshVertexOffset = positionOffset;
@@ -85,12 +94,32 @@ namespace MeshBuilder
                 }
             }
 
-            splineModifier.Init(this.splineCache, meshCellLength);
+            float maxWidth = 0;
+            foreach (var submeshCross in crossSections)
+            {
+                foreach (var cross in submeshCross)
+                {
+                    maxWidth = math.max(maxWidth, CalculateCrossSectionWidth(cross));
+                }
+            }
+
+            SplineModifier.Init(this.splineCache, meshCellLength, maxWidth * 0.5f, lerpValues);
 
             Inited();
         }
 
-        public void InitForMultipleSubmeshes(SplineCache splineCache, float meshCellLength, float3 positionOffset = default)
+        private static float CalculateCrossSectionWidth(float3[] cross)
+        {
+            float minX = 0, maxX = 0;
+            foreach(var v in cross)
+            {
+                minX = math.min(minX, v.x);
+                maxX = math.max(maxX, v.x);
+            }
+            return maxX - minX;
+        }
+
+        public void InitForMultipleSubmeshes(SplineCache splineCache, float meshCellLength, float3 positionOffset = default, LerpValue[] lerpValues = null)
         {
             this.splineCache = splineCache;
             meshVertexOffset = positionOffset;
@@ -98,7 +127,7 @@ namespace MeshBuilder
             int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength) + 1;
             generationHandler.InitSubmeshEdges(meshCellLength, rowNum);
 
-            splineModifier.Init(this.splineCache, meshCellLength);
+            SplineModifier.Init(this.splineCache, meshCellLength, 1f, lerpValues);
 
             Inited();
         }
@@ -107,6 +136,7 @@ namespace MeshBuilder
         {
             Debug.Assert(IsInitialized && generationHandler.IsInitedForSubmeshes, "not initized for submeshes");
             generationHandler.AddSubmeshEdge(submesh, crossSection);
+            SplineModifier.MaxHalfWidth = math.max(SplineModifier.MaxHalfWidth, CalculateCrossSectionWidth(crossSection));
         }
 
         public void AddSubmesh(int submesh, float3[][] crossSections)
@@ -116,6 +146,7 @@ namespace MeshBuilder
             foreach (var cross in crossSections)
             {
                 generationHandler.AddSubmeshEdge(submesh, cross);
+                SplineModifier.MaxHalfWidth = math.max(SplineModifier.MaxHalfWidth, CalculateCrossSectionWidth(cross));
             }
         }
 
@@ -123,7 +154,7 @@ namespace MeshBuilder
         {
             dependOn = generationHandler.StartGeneration(dependOn, this);
 
-            dependOn = splineModifier.Start(meshData, dependOn);
+            dependOn = SplineModifier.Start(meshData, dependOn);
 
             if (!meshVertexOffset.Equals(default))
             {
@@ -135,7 +166,7 @@ namespace MeshBuilder
 
         protected override void EndGeneration(Mesh mesh)
         {
-            splineModifier.Complete();
+            SplineModifier.Complete();
 
             meshData.UpdateMesh(mesh);
         }
