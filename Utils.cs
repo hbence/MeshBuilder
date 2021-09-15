@@ -52,7 +52,7 @@ namespace MeshBuilder
             }
         }
 
-        static public void SafeDispose<T>(ref NativeList<T> collection) where T : struct
+        static public void SafeDispose<T>(ref NativeList<T> collection) where T : unmanaged
         {
             if (collection.IsCreated)
             {

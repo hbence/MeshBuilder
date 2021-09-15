@@ -642,24 +642,6 @@ namespace MeshBuilder
             public int At(int index, NativeArray<int> indices) { return indices[start + index]; }
         }
 
-        static private void SafeDispose<T>(ref NativeArray<T> collection) where T : struct
-        {
-            if (collection.IsCreated)
-            {
-                collection.Dispose();
-                collection = default;
-            }
-        }
-
-        static private void SafeDispose<T>(ref NativeList<T> collection) where T : struct
-        {
-            if (collection.IsCreated)
-            {
-                collection.Dispose();
-                collection = default;
-            }
-        }
-
         [System.Serializable]
         internal class HeightMapData
         {

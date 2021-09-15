@@ -700,7 +700,7 @@ namespace MeshBuilder
             }
         }
 
-        public struct CombineBufferJob<T> : IJob where T : struct 
+        public struct CombineBufferJob<T> : IJob where T : unmanaged 
         {
             [ReadOnly] public NativeArray<DataInstance> instances;
 
@@ -857,7 +857,7 @@ namespace MeshBuilder
                 uvs4 = Initialize<float2>(meshDataBufferFlags, BufferType.UV4, allocator);
             }
 
-            static private NativeList<T> Initialize<T>(uint meshDataBufferFlags, BufferType type, Allocator allocator) where T : struct
+            static private NativeList<T> Initialize<T>(uint meshDataBufferFlags, BufferType type, Allocator allocator) where T : unmanaged
             {
                 return MeshData.HasFlag(meshDataBufferFlags, type) ? new NativeList<T>(allocator) : default;
             }
@@ -875,7 +875,8 @@ namespace MeshBuilder
                 SafeDispose(ref uvs4);
             }
 
-            private bool Has<T>(NativeList<T> list) where T : struct { return list.IsCreated; }
+            private bool Has<T>(NativeList<T> list) where T : unmanaged 
+                => list.IsCreated;
 
             public void UpdateMesh(Mesh mesh, ResultMeshInfo meshInfo)
             {
