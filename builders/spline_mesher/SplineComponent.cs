@@ -7,6 +7,9 @@ namespace MeshBuilder
     {
         [SerializeField] private Spline spline = null;
         public Spline Spline => spline;
+        public int SegmentCount => spline == null ? 0 :
+                                    spline.IsClosed ? spline.ControlPointsCount : 
+                                                      spline.ControlPointsCount - 1;
 
         public Vector3[] ControlPoints
         {
@@ -14,6 +17,16 @@ namespace MeshBuilder
             set
             {
                 spline.CopyControlPointsFrom(value);
+                UpdateCache();
+            }
+        }
+
+        public int ControlPointCount => ControlPoints.Length;
+        public void UpdateControlPoint(int index, Vector3 pos)
+        {
+            if (ControlPoints != null && index < ControlPointCount)
+            {
+                spline.SetControlPoint(index, pos);
                 UpdateCache();
             }
         }
@@ -39,14 +52,8 @@ namespace MeshBuilder
         [Header("cache")]
         [SerializeField] private int maxCachePositionCount = SplineCache.DefaultMaxPositionCount;
         [SerializeField] private int segmentLookupCount = 20;
+        public int SegmentLookupCount => segmentLookupCount;
         [SerializeField] private float cacheStepDistance = 0.1f;
-        [Header("control points")]
-        [SerializeField] private bool updateControlPointsFromChildren = false;
-        [Header("debug")]
-        [SerializeField] private bool drawGizmo = true;
-        [SerializeField] private bool drawControlPoints = true;
-        [SerializeField] private Color controlPointsColor = Color.blue;
-        [SerializeField] private Color lineColor = Color.blue;
 
         private CacheHandler cache = null;
         public SplineCache SplineCache => cache.Cache;
@@ -67,11 +74,6 @@ namespace MeshBuilder
 
         private void CreateCache()
         {
-            if (updateControlPointsFromChildren)
-            {
-                UpdateControlPointsFromChildren();
-            }
-
             if (cache == null)
             {
                 cache = new CacheHandler(spline, cacheStepDistance, maxCachePositionCount, segmentLookupCount);
@@ -80,36 +82,6 @@ namespace MeshBuilder
             {
                 cache.Update(spline, cacheStepDistance);
             }
-        }
-
-        private void OnTransformChildrenChanged()
-        {
-            if (updateControlPointsFromChildren)
-            {
-                UpdateControlPointsFromChildren();
-            }
-        }
-
-        private void UpdateControlPointsFromChildren()
-        {
-            if (spline.ControlPoints == null || spline.ControlPointsCount != transform.childCount)
-            {
-                Vector3[] controlPoints = new Vector3[transform.childCount];
-                for(int i = 0; i < transform.childCount; ++i)
-                {
-                    controlPoints[i] = transform.GetChild(i).position;
-                }
-                spline.CopyControlPointsFrom(controlPoints);
-            }
-            else
-            {
-                for (int i = 0; i < transform.childCount; ++i)
-                {
-                    spline.SetControlPoint(i, transform.GetChild(i).position);
-                }
-            }
-
-            UpdateCache();
         }
 
         public void UpdateCache()
@@ -124,10 +96,6 @@ namespace MeshBuilder
                 spline.ArcCalculator = ArcCalculator;
                 UpdateCache();
             }
-            if (updateControlPointsFromChildren)
-            {
-                UpdateControlPointsFromChildren();
-            }
         }
 
         private void OnDestroy()
@@ -139,66 +107,66 @@ namespace MeshBuilder
             }
         }
 
-        private void OnDrawGizmos()
+        public int CalculateDebugSplinePoints(Vector3[] outPoints)
         {
-            if (drawGizmo)
+            if (cache != null)
             {
-                if (drawControlPoints)
-                {
-                    Gizmos.color = controlPointsColor;
-                    if (spline != null && spline.ControlPoints != null)
-                    {
-                        for (int i = 0; i < spline.ControlPointsCount; ++i)
-                        {
-                            Gizmos.DrawSphere(spline.GetControlPoint(i), 0.5f);
-                        }
-                    }
-                }
-
-                if (cache != null)
-                {
-                    cache.DebugDraw(lineColor);
-                }
-                else
-                {
-                    DrawNonCachedGizmo();
-                }
+                return FromCacheDebugSplinePoints(outPoints);
+            }
+            else
+            {
+                return CalculateSplinePoints(outPoints);
             }
         }
 
-        private void DrawNonCachedGizmo()
+        private int FromCacheDebugSplinePoints(Vector3[] outPoints)
         {
-            Gizmos.color = lineColor;
-            if (updateControlPointsFromChildren)
+            if (cache == null)
             {
-                if (transform.childCount > 1)
-                {
-                    Vector3[] controlPoints = new Vector3[transform.childCount];
-                    for (int i = 0; i < controlPoints.Length; ++i)
-                    {
-                        controlPoints[i] = transform.GetChild(i).position;
-                    }
-                    spline.CopyControlPointsFrom(controlPoints);
-                }
+                Debug.LogError("cache is not generated!");
+                return 0;
             }
 
+            int count = Mathf.Min(outPoints.Length, cache.Cache.CachedPositionCount);
+            var convertedArray = Utils.ToFloat3Array(outPoints);
+            Unity.Collections.NativeArray<float3>.Copy(cache.Cache.Positions, convertedArray, count);
+
+            return count;
+        }
+
+        public int CalculateSplinePoints(Vector3[] outPoints)
+        {
+            if (outPoints == null || outPoints.Length < 2)
+            {
+                Debug.LogError("outPoints needs to be larger!");
+                return 0;
+            }
+
+            int resCount = 0;
             if (spline.ControlPoints != null && spline.ControlPointsCount > 1)
             {
                 var controlPoints = Utils.ToFloat3Array(spline.ControlPoints);
                 int perSegment = 10;
                 float step = 1f / perSegment;
-                float3 prev = spline.ControlPoints[0];
-                int segmentCount = spline.IsClosed ? spline.ControlPointsCount : spline.ControlPointsCount - 1;
-                for (int i = 0; i < segmentCount; ++i)
+                outPoints[0] = spline.ControlPoints[0];
+                ++resCount;
+                for (int i = 0; i < SegmentCount; ++i)
                 {
                     for (int j = 1; j <= perSegment; ++j)
                     {
+                        if (resCount >= outPoints.Length)
+                        {
+                            break;
+                        }
+                       
                         float3 cur = ArcCalculator.Calculate(controlPoints, i, (i + 1) % spline.ControlPointsCount, step * j, spline.IsClosed);
-                        Gizmos.DrawLine(prev, cur);
-                        prev = cur;
+                        outPoints[resCount] = cur;
+                        ++resCount;
                     }
                 }
             }
+
+            return resCount;
         }
 
         private class CacheHandler
