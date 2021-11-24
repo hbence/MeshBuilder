@@ -24,12 +24,36 @@ namespace MeshBuilder
         public int ControlPointCount => ControlPoints.Length;
         public void UpdateControlPoint(int index, Vector3 pos)
         {
-            if (ControlPoints != null && index < ControlPointCount)
+            if (IsValidSplineControlPointIndex(index))
             {
                 spline.SetControlPoint(index, pos);
                 UpdateCache();
             }
         }
+
+        public void AddControlPoint(int index, Vector3 pos)
+        {
+            if (spline != null)
+            {
+                if (spline.ControlPoints == null || (index >= 0 && index <= ControlPointCount))
+                {
+                    spline.AddControlPoint(index, pos);
+                    UpdateCache();
+                }
+            }
+        }
+
+        public void RemoveControlPoint(int index)
+        {
+            if (IsValidSplineControlPointIndex(index))
+            {
+                spline.RemoveControlPoint(index);
+                UpdateCache();
+            }
+        }
+
+        private bool IsValidSplineControlPointIndex(int index)
+            => spline != null && spline.ControlPoints != null & index >= 0 && index < ControlPointCount;
 
         [Header("spline")]
         [SerializeField] private ArcType arcType = ArcType.CatmullRom;
@@ -56,6 +80,7 @@ namespace MeshBuilder
         [SerializeField] private float cacheStepDistance = 0.1f;
 
         private CacheHandler cache = null;
+        public bool HasCache => cache != null;
         public SplineCache SplineCache => cache.Cache;
 
         private void Awake()
@@ -76,7 +101,7 @@ namespace MeshBuilder
         {
             if (cache == null)
             {
-                cache = new CacheHandler(spline, cacheStepDistance, maxCachePositionCount, segmentLookupCount);
+                cache = new CacheHandler(transform, spline, cacheStepDistance, maxCachePositionCount, segmentLookupCount);
             }
             else
             {
@@ -104,18 +129,6 @@ namespace MeshBuilder
             {
                 cache.Destroy();
                 cache = null;
-            }
-        }
-
-        public int CalculateDebugSplinePoints(Vector3[] outPoints)
-        {
-            if (cache != null)
-            {
-                return FromCacheDebugSplinePoints(outPoints);
-            }
-            else
-            {
-                return CalculateSplinePoints(outPoints);
             }
         }
 
@@ -176,9 +189,12 @@ namespace MeshBuilder
             private Spline cachedSpline;
             private float cacheStepDistance;
 
-            public CacheHandler(Spline spline, float cacheStepDistance, int maxPositionCount, int segmentLookupCount)
+            private Transform Root { get; }
+
+            public CacheHandler(Transform root, Spline spline, float cacheStepDistance, int maxPositionCount, int segmentLookupCount)
             {
                 this.cacheStepDistance = cacheStepDistance;
+                Root = root;
 
                 cachedSpline = new Spline();
                 cachedSpline.FromOther(spline);
@@ -192,6 +208,7 @@ namespace MeshBuilder
                 {
                     cacheStepDistance = cacheStepDist;
                     cachedSpline.FromOther(spline);
+                
                     Cache.Recalculate(cachedSpline, cacheStepDistance);
                 }
             }

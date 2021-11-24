@@ -46,7 +46,7 @@ namespace MeshBuilder
 
             for (int i = 0; i < transform.childCount; ++i)
             {
-                controlPointsBuffer[i] = transform.GetChild(i).position;
+                controlPointsBuffer[i] = transform.GetChild(i).localPosition;
             }
 
             if (DoesSplineNeedsUpdate)

@@ -50,10 +50,68 @@ namespace MeshBuilder
             }
         }
 
-        public int ControlPointsCount => controlPoints.Length;
+        public int ControlPointsCount => controlPoints != null ? controlPoints.Length : 0;
 
         public Vector3 GetControlPoint(int index) => controlPoints[index];
         public void SetControlPoint(int index, Vector3 pos) => controlPoints[index] = pos;
+
+        public void AddControlPoint(int index, Vector3 pos)
+        {
+            if (controlPoints == null)
+            {
+                controlPoints = new Vector3[1] { pos };
+            }
+
+            if (index < 0 || index > controlPoints.Length)
+            {
+                Debug.LogWarning($"can't add at invalid index {index}, added at end");
+                index = controlPoints.Length;
+            }
+
+            var newControlPoints = new Vector3[controlPoints.Length + 1];
+            int nextIndex = 0;
+            for (int i = 0; i < newControlPoints.Length; ++i)
+            {
+                if (i == index)
+                {
+                    newControlPoints[i] = pos;
+                }
+                else
+                {
+                    newControlPoints[i] = controlPoints[nextIndex];
+                    ++nextIndex;
+                }
+            }
+            controlPoints = newControlPoints;
+        }
+
+        public void RemoveControlPoint(int index)
+        {
+            if (index < 0 || index >= controlPoints.Length)
+            {
+                Debug.LogError($"invalid index: {index}");
+                return;
+            }
+
+            if (controlPoints.Length == 1)
+            {
+                controlPoints = null;
+                return;
+            }
+
+            var newControlPoints = new Vector3[controlPoints.Length - 1];
+            int nextIndex = 0;
+            for (int i = 0; i < controlPoints.Length; ++i)
+            {
+                if (i == index)
+                {
+                    continue;
+                }
+                newControlPoints[nextIndex] = controlPoints[i];
+                ++nextIndex;
+            }
+            controlPoints = newControlPoints;
+        }
 
         public Spline()
         {
