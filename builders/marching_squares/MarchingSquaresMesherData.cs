@@ -21,16 +21,18 @@ namespace MeshBuilder
             public NativeArray<bool> CullingDataRawData => cullingData != null ? cullingData.Data : default;
 
             public bool HasCullingData => cullingData != null;
+            public bool CullingAt(int x, int y) => cullingData[x, 0, y];
+            public void SetCullingAt(int x, int y, bool culling) => cullingData[x, 0, y] = culling;
 
             public int ColNum => distanceData.Extents.X;
             public int RowNum => distanceData.Extents.Z;
 
             public float DistanceAt(int x, int y) => distanceData[x, 0, y];
-            public float SetDistanceAt(int x, int y, float dist) => distanceData[x, 0, y] = dist;
+            public void SetDistanceAt(int x, int y, float dist) => distanceData[x, 0, y] = dist;
 
             public bool HasHeights => heightData != null;
             public float HeightAt(int x, int y) => heightData[x, 0, y];
-            public float SetHeightAt(int x, int y, float dist) => heightData[x, 0, y] = dist;
+            public void SetHeightAt(int x, int y, float dist) => heightData[x, 0, y] = dist;
 
             public Data(int col, int row, float[] defDistData = null, bool initHeights = false, float[] defHeightData = null, bool initCulling = false, bool[] defCullingData = null)
             {
@@ -48,8 +50,6 @@ namespace MeshBuilder
                 {
                     InitCullingData(defCullingData);
                 }
-
-                Clear();
             }
 
             public void Dispose()
@@ -237,6 +237,32 @@ namespace MeshBuilder
                 }
             }
 
+            public void SetHeightCircleFlat(float x, float y, float rad, float value, float cellSize, float interpolationMultiplier)
+                => SetHeightCircle(x, y, rad, value, cellSize,
+                    (float dist) => { return Linear(dist, 1) * interpolationMultiplier; });
+
+            public void SetHeightCircleSmooth(float x, float y, float rad, float value, float cellSize, float interpolationMultiplier)
+                => SetHeightCircle(x, y, rad, value, cellSize,
+                    (float dist) => { return Linear(dist, 1f / (rad / cellSize)) * interpolationMultiplier; });
+
+            public void SetHeightCircle(float x, float y, float rad, float value, float cellSize, Func<float, float> Interpolation)
+                => SetHeight(x - rad, y - rad, x + rad, y + rad, cellSize, value,
+                    (float cx, float cy) => CircleDist(cx, cy, x, y, rad, cellSize),
+                    Interpolation);
+
+            public void SetHeightRectangleFlat(float x, float y, float halfWidth, float halfHeight, float value, float cellSize, float interpolationMultiplier)
+                => SetHeightRectangle(x - halfWidth, y - halfHeight, x + halfWidth, y + halfHeight, cellSize, value,
+                    (float dist) => { return Linear(dist, 1) * interpolationMultiplier; });
+
+            public void SetHeightRectangleSmooth(float x, float y, float halfWidth, float halfHeight, float value, float cellSize, float interpolationMultiplier)
+                => SetHeightRectangle(x - halfWidth, y - halfHeight, x + halfWidth, y + halfHeight, cellSize, value,
+                    (float dist) => { return Linear(dist, 1f / (Mathf.Min(halfWidth, halfHeight) / cellSize)) * interpolationMultiplier; });
+
+            public void SetHeightRectangle(float x, float y, float halfWidth, float halfHeight, float value, float cellSize, Func<float, float> Interpolation)
+                => SetHeight(x - halfWidth, y - halfHeight, x + halfWidth, y + halfHeight, cellSize, value,
+                    (float cx, float cy) => RectangleDist(cx, cy, x, y, halfWidth, halfHeight, cellSize),
+                    Interpolation);
+
             public void SetHeight(float left, float bottom, float right, float top, float cellSize, float heightValue, Func<float, float, float> CalcDist, Func<float, float> Interpolation)
             {
                 RangeInt cols, rows;
@@ -250,7 +276,7 @@ namespace MeshBuilder
                         float dist = CalcDist(cx, cy);
                         if (dist >= 0)
                         {
-                            heightData[col, 0, row] = Interpolation(dist) * heightValue;
+                            heightData[col, 0, row] = Mathf.Lerp(heightData[col, 0, row], heightValue, Interpolation(dist));
                         }
                     }
                 }
