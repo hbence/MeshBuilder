@@ -31,31 +31,37 @@ namespace MeshBuilder
         public void Init(DataCreationInfo info)
          => Init(info.ColNum, info.RowNum, info.HasHeightData, info.HasCullingData);
 
-        public void UpdateData(Data data)
+        public void UpdateData(Data newData)
         {
-            Init(data.ColNum, data.RowNum, data.HasHeights, data.HasCullingData);
-            if (heightData != null && data.HasHeights)
+            Init(newData.ColNum, newData.RowNum, newData.HasHeights, newData.HasCullingData);
+            
+            NativeArray<float>.Copy(newData.RawData, data);
+
+            if (heightData != null && newData.HasHeights)
             {
-                NativeArray<float>.Copy(data.HeightsRawData, heightData);
+                NativeArray<float>.Copy(newData.HeightsRawData, heightData);
             }
-            if (cullingData != null && data.HasCullingData)
+            if (cullingData != null && newData.HasCullingData)
             {
-                NativeArray<bool>.Copy(data.CullingDataRawData, cullingData);
+                NativeArray<bool>.Copy(newData.CullingDataRawData, cullingData);
             }
         }
 
         public Data CreateData()
         {
-            var data = info.Create();
-            if (heightData != null && data.HasHeights)
+            var copyData = info.Create();
+
+            NativeArray<float>.Copy(data, copyData.RawData);
+
+            if (heightData != null && copyData.HasHeights)
             {
-                NativeArray<float>.Copy(heightData, data.HeightsRawData);
+                NativeArray<float>.Copy(heightData, copyData.HeightsRawData);
             }
-            if (cullingData != null && data.HasCullingData)
+            if (cullingData != null && copyData.HasCullingData)
             {
-                NativeArray<bool>.Copy(cullingData, data.CullingDataRawData);
+                NativeArray<bool>.Copy(cullingData, copyData.CullingDataRawData);
             }
-            return data;
+            return copyData;
         }
     }
 }

@@ -48,6 +48,9 @@ namespace MeshBuilder
 
         private void Awake()
         {
+            Data?.Dispose();
+            Data = null;
+
             if (initPolicy == InitPolicy.InAwake)
             {
                 Init();
@@ -97,8 +100,7 @@ namespace MeshBuilder
 
         public void Load()
         {
-            Data?.Dispose();
-            Data = null;
+            var oldData = Data;
 
             if (serializationPolicy == SerializationPolicy.BuiltIn)
             {
@@ -124,6 +126,8 @@ namespace MeshBuilder
             }
 
             Changed();
+
+            oldData?.Dispose();
         }
 
         public void UpdateData(Data newData)
@@ -211,7 +215,16 @@ namespace MeshBuilder
                         var heights = data.HeightsRawData;
                         for (int i = 0; i < length; ++i)
                         {
-                            dist[i] = reader.ReadSingle();
+                            heights[i] = reader.ReadSingle();
+                        }
+                    }
+
+                    if (hasCulling)
+                    {
+                        var culling = data.CullingDataRawData;
+                        for (int i = 0; i < length; ++i)
+                        {
+                            culling[i] = reader.ReadBoolean();
                         }
                     }
 
