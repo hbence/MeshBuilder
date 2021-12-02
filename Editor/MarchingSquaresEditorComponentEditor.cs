@@ -28,66 +28,31 @@ namespace MeshBuilder
         private float DefButtonHeight => EditorGUIUtility.singleLineHeight;
         private const float BrushSettingsGUIBorder = 10;
 
-
         private static readonly Color DefBrushColor = Color.yellow;
         private static readonly Color InvalidBrushColor = Color.red;
 
-        private class PropName
+        private enum PropName
         {
-            public const string DataComponent = "dataComponent";
-            public const string Meshers = "meshers";
-            public const string EditMode = "editMode";
-            public const string BrushShape = "brushShape";
-            public const string CellSize = "cellSize";
-            public const string BrushRadius = "brushRadius";
-            public const string HeightBrush = "heightBrush";
-            public const string HeightChange = "heightChange";
-            public const string ChangeScale = "changeScale";
-            public const string HeightChangeValue = "heightChangeValue";
-            public const string MinHeightLevel = "minHeightLevel";
-            public const string MaxHeightLevel = "maxHeightLevel";
-            public const string AbsoluteHeightLevel = "absoluteHeightLevel";
+            dataComponent,
+            meshers,
+            editMode,
+            brushShape,
+            cellSize,
+            brushRadius,
+            heightBrush,
+            heightChange,
+            changeScale,
+            heightChangeValue,
+            minHeightLevel,
+            maxHeightLevel,
+            absoluteHeightLevel,
         }
 
-        private class Props
-        {
-            public SerializedProperty dataComponent;
-            public SerializedProperty meshers;
-            public SerializedProperty editMode;
-            public SerializedProperty brushShape;
-            public SerializedProperty cellSize;
-            public SerializedProperty brushRadius;
-            public SerializedProperty heightBrush;
-            public SerializedProperty heightChange;
-            public SerializedProperty changeScale;
-            public SerializedProperty heightChangeValue;
-            public SerializedProperty minHeightLevel;
-            public SerializedProperty maxHeightLevel;
-            public SerializedProperty absoluteHeightLevel;
-
-            public void FindProps(SerializedObject serializedObject)
-            {
-                dataComponent = serializedObject.FindProperty(PropName.DataComponent);
-                meshers = serializedObject.FindProperty(PropName.Meshers);
-                editMode = serializedObject.FindProperty(PropName.EditMode);
-                brushShape = serializedObject.FindProperty(PropName.BrushShape);
-                cellSize = serializedObject.FindProperty(PropName.CellSize);
-                brushRadius = serializedObject.FindProperty(PropName.BrushRadius);
-                heightBrush = serializedObject.FindProperty(PropName.HeightBrush);
-                heightChange = serializedObject.FindProperty(PropName.HeightChange);
-                changeScale = serializedObject.FindProperty(PropName.ChangeScale);
-                heightChangeValue = serializedObject.FindProperty(PropName.HeightChangeValue);
-                minHeightLevel = serializedObject.FindProperty(PropName.MinHeightLevel);
-                maxHeightLevel = serializedObject.FindProperty(PropName.MaxHeightLevel);
-                absoluteHeightLevel = serializedObject.FindProperty(PropName.AbsoluteHeightLevel);
-            }
-        }
-
-        private Props props;
+        private Utils.ComponentProperties<PropName> props;
 
         private MarchingSquaresEditorComponent editor;
         private List<EditorMesher> meshers;
-        //  private Data data;
+
         private Data Data => editor.DataComponent != null ? editor.DataComponent.Data : null;
 
         private bool editMode = false;
@@ -116,10 +81,12 @@ namespace MeshBuilder
 
             CreateMeshers();
 
-            editor.DataComponent?.Load();
+            if (editor.DataComponent != null && editor.DataComponent.Data == null)
+            {
+                editor.DataComponent.Load();
+            }
 
-            props = new Props();
-            props.FindProps(serializedObject);
+            props = new Utils.ComponentProperties<PropName>(serializedObject);
 
             editMode = EditorPrefs.GetBool(PrefEditMode, false);
             showGrid = EditorPrefs.GetBool(PrefShowGrid, true);
@@ -166,15 +133,35 @@ namespace MeshBuilder
 
         public override void OnInspectorGUI()
         {
+            if (props == null)
+            {
+                return;
+            }
+
             serializedObject.Update();
 
-            EditorGUILayout.PropertyField(props.dataComponent);
-            EditorGUILayout.PropertyField(props.meshers);
+            props.Draw(PropName.dataComponent);
+            props.Draw(PropName.meshers);
+
             EditorGUILayout.LabelField("Brush Settings");
-            EditorGUILayout.PropertyField(props.editMode);
-            EditorGUILayout.PropertyField(props.brushShape);
-            EditorGUILayout.PropertyField(props.cellSize);
-            EditorGUILayout.PropertyField(props.brushRadius);
+
+            props.Draw(PropName.editMode);
+            props.Draw(PropName.brushShape);
+            props.Draw(PropName.cellSize);
+
+            if (editor.Meshers != null && editor.Meshers.Length > 0)
+            {
+                foreach (var mesher in editor.Meshers)
+                {
+                    if (mesher.CellSize != editor.CellSize)
+                    {
+                        EditorGUILayout.HelpBox("Editor and a mesher has a CellSize mismatch! Is it intentional?", MessageType.Warning, true);
+                        break;
+                    }
+                }
+            }
+
+            props.Draw(PropName.brushRadius);
 
             Mode editMode = editor.EditMode;
             if (editMode == Mode.HeightChange)
@@ -183,20 +170,20 @@ namespace MeshBuilder
                 heightBrushFoldout = EditorGUILayout.BeginFoldoutHeaderGroup(heightBrushFoldout, "Height Brush Settings");
                 if (heightBrushFoldout)
                 {
-                    EditorGUILayout.PropertyField(props.heightBrush);
-                    EditorGUILayout.PropertyField(props.heightChange);
-                    EditorGUILayout.PropertyField(props.changeScale);
+                    props.Draw(PropName.heightBrush);
+                    props.Draw(PropName.heightChange);
+                    props.Draw(PropName.changeScale);
 
                     HeightChangeMode addMode = editor.HeightChange;
                     if (addMode == HeightChangeMode.Absolute)
                     {
-                        EditorGUILayout.PropertyField(props.absoluteHeightLevel);
-                        EditorGUILayout.PropertyField(props.minHeightLevel);
-                        EditorGUILayout.PropertyField(props.maxHeightLevel);
+                        props.Draw(PropName.absoluteHeightLevel);
                     }
                     else
                     {
-                        EditorGUILayout.PropertyField(props.heightChangeValue);
+                        props.Draw(PropName.heightChangeValue);
+                        props.Draw(PropName.minHeightLevel);
+                        props.Draw(PropName.maxHeightLevel);
                     }
                 }
             }
@@ -208,6 +195,8 @@ namespace MeshBuilder
                 if (GUILayout.Button("Load"))
                 {
                     editor.DataComponent.Load();
+
+                    Regenerate();
                 }
 
                 if (GUILayout.Button("Save"))
@@ -235,7 +224,7 @@ namespace MeshBuilder
 
         public void OnSceneGUI()
         {
-            if (editor == null || editor.DataComponent == null || Data == null || props == null)
+            if (editor == null || editor.DataComponent == null || Data == null)
             {
                 return;
             }
@@ -251,18 +240,6 @@ namespace MeshBuilder
 
         private void CheckChanges()
         {
-            if (editor.DataComponent != null)
-            {
-                if (Data != null && !DoesDataMatch(Data, editor.DataComponent.CreationInfo))
-                {
-                    using (var newData = editor.DataComponent.CreationInfo.Create())
-                    {
-                        CopyData(Data, newData);
-                        editor.DataComponent.UpdateData(newData);
-                    }
-                }
-            }
-
             if (editor.Meshers != null)
             {
                 if (meshers == null || meshers.Count != editor.Meshers.Length)
@@ -403,7 +380,7 @@ namespace MeshBuilder
                 GUILayout.Label("No meshers set to draw data!");
             }
             else
-            {
+            {    
                 if (GUILayout.Button("Regenerate"))
                 {
                     Regenerate();
