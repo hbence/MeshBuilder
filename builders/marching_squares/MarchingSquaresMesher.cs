@@ -493,7 +493,7 @@ namespace MeshBuilder
             public bool generateUVs;
             public NativeList<float2> uvs;
 
-            public NativeArray<bool> cullingData;
+            [ReadOnly] public NativeArray<bool> cullingData;
 
             public void Execute()
             {
