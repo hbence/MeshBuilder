@@ -198,38 +198,7 @@ namespace MeshBuilder
             {
                 using (BinaryReader reader = new BinaryReader(File.OpenRead(path)))
                 {
-                    int colNum = reader.ReadInt32();
-                    int rowNum = reader.ReadInt32();
-                    bool hasHeights = reader.ReadBoolean();
-                    bool hasCulling = reader.ReadBoolean();
-
-                    var data = new Data(colNum, rowNum, null, hasHeights, null, hasCulling, null);
-                    var dist = data.RawData;
-                    int length = colNum * rowNum;
-                    for (int i = 0; i < length; ++i)
-                    {
-                        dist[i] = reader.ReadSingle();
-                    }
-
-                    if (hasHeights)
-                    {
-                        var heights = data.HeightsRawData;
-                        for (int i = 0; i < length; ++i)
-                        {
-                            heights[i] = reader.ReadSingle();
-                        }
-                    }
-
-                    if (hasCulling)
-                    {
-                        var culling = data.CullingDataRawData;
-                        for (int i = 0; i < length; ++i)
-                        {
-                            culling[i] = reader.ReadBoolean();
-                        }
-                    }
-
-                    return data;
+                    return ReadData(reader);
                 }
             }
             catch (Exception e)
@@ -237,6 +206,42 @@ namespace MeshBuilder
                 Debug.LogError(e);
             }
             return null;
+        }
+
+        static public Data ReadData(BinaryReader reader)
+        {
+            int colNum = reader.ReadInt32();
+            int rowNum = reader.ReadInt32();
+            bool hasHeights = reader.ReadBoolean();
+            bool hasCulling = reader.ReadBoolean();
+
+            var data = new Data(colNum, rowNum, null, hasHeights, null, hasCulling, null);
+            var dist = data.RawData;
+            int length = colNum * rowNum;
+            for (int i = 0; i < length; ++i)
+            {
+                dist[i] = reader.ReadSingle();
+            }
+
+            if (hasHeights)
+            {
+                var heights = data.HeightsRawData;
+                for (int i = 0; i < length; ++i)
+                {
+                    heights[i] = reader.ReadSingle();
+                }
+            }
+
+            if (hasCulling)
+            {
+                var culling = data.CullingDataRawData;
+                for (int i = 0; i < length; ++i)
+                {
+                    culling[i] = reader.ReadBoolean();
+                }
+            }
+
+            return data;
         }
 
         static public void SaveBinary(string path, Data data)
@@ -251,37 +256,42 @@ namespace MeshBuilder
             {
                 using (BinaryWriter writer = new BinaryWriter(File.Open(path, FileMode.Create)))
                 {
-                    writer.Write(data.ColNum);
-                    writer.Write(data.RowNum);
-                    writer.Write(data.HasHeights);
-                    writer.Write(data.HasCullingData);
-
-                    int length = data.ColNum * data.RowNum;
-                    for (int i = 0; i < length; ++i)
-                    {
-                        writer.Write(data.RawData[i]);
-                    }
-
-                    if (data.HasHeights)
-                    {
-                        for (int i = 0; i < length; ++i)
-                        {
-                            writer.Write(data.HeightsRawData[i]);
-                        }
-                    }
-
-                    if (data.HasCullingData)
-                    {
-                        for (int i = 0; i < length; ++i)
-                        {
-                            writer.Write(data.CullingDataRawData[i]);
-                        }
-                    }
+                    WriteData(writer, data);
                 }
             }
             catch (Exception e)
             {
                 Debug.LogError(e);
+            }
+        }
+
+        static public void WriteData(BinaryWriter writer, Data data)
+        {
+            writer.Write(data.ColNum);
+            writer.Write(data.RowNum);
+            writer.Write(data.HasHeights);
+            writer.Write(data.HasCullingData);
+
+            int length = data.ColNum * data.RowNum;
+            for (int i = 0; i < length; ++i)
+            {
+                writer.Write(data.RawData[i]);
+            }
+
+            if (data.HasHeights)
+            {
+                for (int i = 0; i < length; ++i)
+                {
+                    writer.Write(data.HeightsRawData[i]);
+                }
+            }
+
+            if (data.HasCullingData)
+            {
+                for (int i = 0; i < length; ++i)
+                {
+                    writer.Write(data.CullingDataRawData[i]);
+                }
             }
         }
 
