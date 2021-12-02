@@ -166,6 +166,7 @@ namespace MeshBuilder
             if (mesherData.HasData)
             {
                 initialization.Init(Mesher, mesherData.Data);
+                Regenerate();
             }
         }
 
@@ -271,6 +272,7 @@ namespace MeshBuilder
 
             mesherData.SetBorrowed(data);
             Regenerate();
+            CompleteGeneration();
         }
 
         private class MesherDataHandler : IDisposable

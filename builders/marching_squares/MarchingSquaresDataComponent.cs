@@ -101,6 +101,7 @@ namespace MeshBuilder
         public void Load()
         {
             var oldData = Data;
+            Data = null;
 
             if (serializationPolicy == SerializationPolicy.BuiltIn)
             {
