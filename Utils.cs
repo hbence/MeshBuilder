@@ -33,6 +33,12 @@ namespace MeshBuilder
                 => EditorGUILayout.PropertyField(Get(name));
         }
 
+        static public void GUILabel(string text)
+            => GUILayout.Label(text);
+
+        static public void GUILabel(string text, int width)
+            => GUILayout.Label(text, GUILayout.Width(width));
+
         public struct Offset
         {
             public int index;

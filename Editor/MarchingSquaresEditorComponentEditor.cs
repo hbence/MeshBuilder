@@ -7,6 +7,8 @@ using UnityEditor;
 using static MeshBuilder.MarchingSquaresEditorComponent;
 using static MeshBuilder.MarchingSquaresMesher;
 
+using static MeshBuilder.Utils;
+
 namespace MeshBuilder
 {
     [CustomEditor(typeof(MarchingSquaresEditorComponent))]
@@ -46,9 +48,12 @@ namespace MeshBuilder
             minHeightLevel,
             maxHeightLevel,
             absoluteHeightLevel,
+            limitDistance,
+            minLimitDistance,
+            maxLimitDistance,
         }
 
-        private Utils.ComponentProperties<PropName> props;
+        private ComponentProperties<PropName> props;
 
         private MarchingSquaresEditorComponent editor;
         private List<EditorMesher> meshers;
@@ -57,6 +62,7 @@ namespace MeshBuilder
 
         private bool editMode = false;
         private bool showGrid = true;
+        private bool showDistances = false;
         private int brushModeIndex = 0;
         private int brushShapeIndex = 0;
         private int heightBrushModeIndex = 0;
@@ -86,7 +92,7 @@ namespace MeshBuilder
                 editor.DataComponent.Load();
             }
 
-            props = new Utils.ComponentProperties<PropName>(serializedObject);
+            props = new ComponentProperties<PropName>(serializedObject);
 
             editMode = EditorPrefs.GetBool(PrefEditMode, false);
             showGrid = EditorPrefs.GetBool(PrefShowGrid, true);
@@ -186,6 +192,15 @@ namespace MeshBuilder
                         props.Draw(PropName.maxHeightLevel);
                     }
                 }
+            }
+            
+            EditorGUILayout.Space();
+
+            props.Draw(PropName.limitDistance);
+            if (editor.LimitDistance)
+            {
+                props.Draw(PropName.minLimitDistance);
+                props.Draw(PropName.maxLimitDistance);
             }
 
             EditorGUILayout.Space();
@@ -318,6 +333,12 @@ namespace MeshBuilder
 
             MarchingSquaresEditorComponent.DrawAt(x, y, Data, editor);
 
+            var data = editor.DataComponent.Data.RawData;
+            for (int i = 0; i < data.Length; ++i)
+            {
+                data[i] = Mathf.Clamp(data[i], -1, 1);
+            }
+
             if (removeBorder)
             {
                 Data.RemoveBorder();
@@ -391,6 +412,7 @@ namespace MeshBuilder
 
             if (editMode)
             {
+                showDistances = GUILayout.Toggle(showDistances, "Show Distance");
                 removeBorder = GUILayout.Toggle(removeBorder, "Remove Border");
             }
 
@@ -423,13 +445,13 @@ namespace MeshBuilder
                     {
                         GUILayout.BeginHorizontal();
 
-                        GUILayout.Label("Height Brush", GUILayout.Width(80));
+                        GUILabel("Height Brush", 80);
                         editor.HeightBrush = GUIEnumButton<HeightBrushMode>(ref heightBrushModeIndex, 55);
 
-                        GUILayout.Label("Level Change", GUILayout.Width(85));
+                        GUILabel("Level Change", 85);
                         editor.HeightChange = GUIEnumButton<HeightChangeMode>(ref heightChangeModeIndex, 60);
 
-                        GUILayout.Label("Change Scale", GUILayout.Width(60));
+                        GUILabel("Change Scale", 60);
                         editor.ChangeScale = FloatRangeSlider(editor.ChangeScale, 0, 1f, 40);
 
                         GUILayout.EndHorizontal();
@@ -437,36 +459,36 @@ namespace MeshBuilder
                         GUILayout.BeginHorizontal();
                         if (editor.HeightChange == HeightChangeMode.Absolute)
                         {
-                            GUILayout.Label("Height", GUILayout.Width(45));
+                            GUILabel("Height", 45);
                             editor.AbsoluteHeightLevel = FloatRangeSlider(editor.AbsoluteHeightLevel, editor.MinHeightLevel, editor.MaxHeightLevel, 60);
                         }
                         else
                         {
-                            GUILayout.Label("Min", GUILayout.Width(30));
+                            GUILabel("Min", 30);
                             editor.MinHeightLevel = EditorGUILayout.DelayedFloatField(editor.MinHeightLevel, GUILayout.Width(25));
-                            GUILayout.Label("Max", GUILayout.Width(30));
+                            GUILabel("Max", 30);
                             editor.MaxHeightLevel = EditorGUILayout.DelayedFloatField(editor.MaxHeightLevel, GUILayout.Width(25));
 
-                            GUILayout.Label("Value", GUILayout.Width(45));
+                            GUILabel("Value", 45);
                             editor.HeightChangeValue = FloatRangeSlider(editor.HeightChangeValue, -0.5f, 0.5f, 60);
                         }
                         GUILayout.EndHorizontal();
                     }
                     else
                     {
-                        GUILayout.Label("Data has no heights data!");
+                        GUILabel("Data has no heights data!");
                     }
                 }
 
                 GUILayout.BeginHorizontal();
                 
-                GUILayout.Label("Mode", GUILayout.Width(45));
+                GUILabel("Mode", 45);
                 editor.EditMode = GUIEnumButton<Mode>(ref brushModeIndex, 100);
 
-                GUILayout.Label("Shape", GUILayout.Width(45));
+                GUILabel("Shape", 45);
                 editor.BrushShape = GUIEnumButton<Shape>(ref brushShapeIndex, 70);
 
-                GUILayout.Label("Radius", GUILayout.Width(45));
+                GUILabel("Radius", 45);
                 editor.BrushRadius = FloatRangeSlider(editor.BrushRadius, 0.1f, 5f, 60);
   
                 GUILayout.EndHorizontal();
@@ -585,6 +607,27 @@ namespace MeshBuilder
                     start.z = i * editor.CellSize;
                     end.z = start.z;
                     Handles.DrawLine(start, end);
+                }
+            }
+
+            if (showDistances)
+            {
+                if (editor.DataComponent != null && editor.DataComponent.Data != null)
+                {
+                    pos = new Vector3(0, 0.5f, 0);
+                    for (int y = 0; y < Data.RowNum; ++y)
+                    {
+                        for (int x = 0; x < Data.ColNum; ++x)
+                        {
+                            pos.x = x * editor.CellSize + editor.CellSize * 0.5f;
+                            pos.z = y * editor.CellSize + editor.CellSize * 0.5f;
+
+                            if (Mathf.Abs(brushPosition.x - pos.x) < editor.BrushRadius && Mathf.Abs(brushPosition.z - pos.z) < editor.BrushRadius)
+                            {
+                                Handles.Label(pos, editor.DataComponent.Data.DistanceAt(x, y).ToString("0.00"));
+                            }
+                        }
+                    }
                 }
             }
         }

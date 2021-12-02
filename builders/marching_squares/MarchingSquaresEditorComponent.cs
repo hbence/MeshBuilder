@@ -106,6 +106,27 @@ namespace MeshBuilder
             set => absoluteHeightLevel = value;
         }
 
+        [SerializeField] private bool limitDistance = false;
+        public bool LimitDistance
+        {
+            get => limitDistance;
+            set => limitDistance = value;
+        }
+
+        [SerializeField] private float minLimitDistance = -1;
+        public float MinLimitDistance
+        {
+            get => minLimitDistance;
+            set => minLimitDistance = value;
+        }
+
+        [SerializeField] private float maxLimitDistance = 1;
+        public float MaxLimitDistance
+        {
+            get => maxLimitDistance;
+            set => maxLimitDistance = value;
+        }
+
         public void DrawAt(float x, float y)
         {
             if (dataComponent != null && dataComponent.Data != null)
@@ -214,6 +235,20 @@ namespace MeshBuilder
                         }
                         break;
                     }
+            }
+
+            if (editor.limitDistance)
+            {
+                LimitDataDistance(data, editor.minLimitDistance, editor.maxLimitDistance);
+            }
+        }
+
+        static private void LimitDataDistance(MarchingSquaresMesher.Data data, float min, float max)
+        {
+            var dist = data.RawData;
+            for (int i = 0; i < dist.Length; ++i)
+            {
+                dist[i] = Mathf.Clamp(dist[i], min, max);
             }
         }
 
