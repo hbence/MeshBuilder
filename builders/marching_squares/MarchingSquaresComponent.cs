@@ -30,7 +30,27 @@ namespace MeshBuilder
         public float CellSize => initialization.cellSize;
 
         [SerializeField] private DataManagementPolicy dataCreationPolicy = DataManagementPolicy.CreateOwn;
+        public DataManagementPolicy DataCreation => dataCreationPolicy;
         [SerializeField] private DataCreationInfo dataCreationInfo;
+        [SerializeField] private MarchingSquaresDataComponent dataComponent = null;
+        public MarchingSquaresDataComponent DataComponent
+        {
+            get => dataComponent;
+            set
+            {
+                if (dataComponent != null)
+                {
+                    dataComponent.OnDataChange -= OnDataComponentChanged;
+                }
+
+                dataComponent = value;
+
+                if (dataComponent != null && isActiveAndEnabled)
+                {
+                    dataComponent.OnDataChange += OnDataComponentChanged;
+                }
+            }
+        }
 
         public MarchingSquaresMesher Mesher { get; private set; }
         public bool IsGenerating => Mesher != null && Mesher.IsGenerating;
@@ -114,12 +134,19 @@ namespace MeshBuilder
                         mesherData.CreateOwned(dataCreationInfo);
                     }
                 }
-                else if(dataCreationPolicy == DataManagementPolicy.SetFromOutside)
+                else if (dataCreationPolicy == DataManagementPolicy.SetFromOutside)
                 {
                     if (hasDataPolicyChanged)
                     {
-                        // if the policy was switched from owning to borroing, it probably has it's own data which should be released
+                        // if the policy was switched from owning to borrowing, it probably has it's own data which should be released
                         mesherData.Dispose();
+                    }
+                }
+                else if (dataCreationPolicy == DataManagementPolicy.FromDataComponent)
+                {
+                    if (dataComponent != null)
+                    {
+                        mesherData.SetBorrowed(dataComponent.Data);
                     }
                 }
             }
@@ -192,8 +219,23 @@ namespace MeshBuilder
         private void LateUpdate() 
             => AutoComplete();
 
-        private void OnDisable() 
-            => AutoComplete();
+        private void OnEnable()
+        {
+            if (dataCreationPolicy == DataManagementPolicy.FromDataComponent && dataComponent != null)
+            {
+                dataComponent.OnDataChange += OnDataComponentChanged;
+            }
+        }
+
+        private void OnDisable()
+        {   
+            AutoComplete();
+
+            if (dataComponent != null)
+            {
+                dataComponent.OnDataChange -= OnDataComponentChanged;
+            }
+        }
 
         private void AutoComplete()
         {
@@ -216,6 +258,19 @@ namespace MeshBuilder
         {
             Mesher?.Dispose();
             mesherData?.Dispose();
+        }
+
+        private void OnDataComponentChanged(MarchingSquaresMesher.Data data)
+        {
+            if (Mesher == null)
+            {
+                Init();
+            }
+
+            CompleteGeneration();
+
+            mesherData.SetBorrowed(data);
+            Regenerate();
         }
 
         private class MesherDataHandler : IDisposable
@@ -296,7 +351,8 @@ namespace MeshBuilder
         public enum DataManagementPolicy
         {
             CreateOwn,
-            SetFromOutside
+            SetFromOutside,
+            FromDataComponent
         }
 
         [Serializable]
