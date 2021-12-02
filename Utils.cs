@@ -1,6 +1,7 @@
 ﻿using System.Runtime.InteropServices;
 
 using UnityEngine;
+using UnityEditor;
 using Unity.Jobs;
 using Unity.Burst;
 using Unity.Collections;
@@ -10,6 +11,28 @@ namespace MeshBuilder
 {
     public class Utils
     {
+        public class ComponentProperties<T> where T : System.Enum
+        {
+            private SerializedProperty[] props;
+
+            public ComponentProperties(SerializedObject serializedObject)
+            {
+                var names = System.Enum.GetNames(typeof(T));
+                int count = names.Length;
+                props = new SerializedProperty[count];
+                for (int i = 0; i < count; ++i)
+                {
+                    props[i] = serializedObject.FindProperty(names[i]);
+                }
+            }
+
+            public SerializedProperty Get(T name)
+                => props[(int)(object)name];
+
+            public void Draw(T name)
+                => EditorGUILayout.PropertyField(Get(name));
+        }
+
         public struct Offset
         {
             public int index;
