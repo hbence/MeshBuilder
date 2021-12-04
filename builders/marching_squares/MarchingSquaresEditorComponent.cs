@@ -127,6 +127,13 @@ namespace MeshBuilder
             set => maxLimitDistance = value;
         }
 
+        [SerializeField] private float clearValue = MarchingSquaresMesher.Data.DefaultClearDistance;
+        public float ClearValue
+        {
+            get => clearValue;
+            set => clearValue = value;
+        }
+
         public void DrawAt(float x, float y)
         {
             if (dataComponent != null && dataComponent.Data != null)
@@ -243,7 +250,7 @@ namespace MeshBuilder
             }
         }
 
-        static private void LimitDataDistance(MarchingSquaresMesher.Data data, float min, float max)
+        public static void LimitDataDistance(MarchingSquaresMesher.Data data, float min, float max)
         {
             var dist = data.RawData;
             for (int i = 0; i < dist.Length; ++i)

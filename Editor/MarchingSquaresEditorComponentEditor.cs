@@ -23,6 +23,7 @@ namespace MeshBuilder
         private const string PrefHeightChangeModeIndex = "MSECE_heightChangeModeIndex";
         private const string PrefHeightBrushFoldout = "MSECE_heightBrushFoldout";
         private const string PrefRemoveBorder = "MSECE_removeBorder";
+        private const string PrefAutoSave = "MSECE_autoSave";
 
         private const int LeftMouseButton = 0;
 
@@ -51,6 +52,7 @@ namespace MeshBuilder
             limitDistance,
             minLimitDistance,
             maxLimitDistance,
+            clearValue,
         }
 
         private ComponentProperties<PropName> props;
@@ -69,6 +71,7 @@ namespace MeshBuilder
         private int heightChangeModeIndex = 0;
         private bool heightBrushFoldout = false;
         private bool removeBorder = false;
+        private bool autoSave = false;
 
         private bool shouldDrawBrush = false;
         private Vector3 brushPosition;
@@ -102,6 +105,7 @@ namespace MeshBuilder
             heightChangeModeIndex = EditorPrefs.GetInt(PrefHeightChangeModeIndex, 0);
             heightBrushFoldout = EditorPrefs.GetBool(PrefHeightBrushFoldout, false);
             removeBorder = EditorPrefs.GetBool(PrefRemoveBorder, false);
+            autoSave = EditorPrefs.GetBool(PrefAutoSave, false);
 
             SceneView.beforeSceneGui -= BeforeSceneGUI;
             SceneView.beforeSceneGui += BeforeSceneGUI;
@@ -131,6 +135,12 @@ namespace MeshBuilder
             EditorPrefs.SetInt(PrefHeightChangeModeIndex, heightChangeModeIndex);
             EditorPrefs.SetBool(PrefHeightBrushFoldout, heightBrushFoldout);
             EditorPrefs.SetBool(PrefRemoveBorder, removeBorder);
+            EditorPrefs.SetBool(PrefAutoSave, autoSave);
+
+            if (autoSave)
+            {
+                editor.DataComponent?.Save();
+            }
 
             meshers?.Clear();
 
@@ -157,9 +167,10 @@ namespace MeshBuilder
 
             if (editor.Meshers != null && editor.Meshers.Length > 0)
             {
-                foreach (var mesher in editor.Meshers)
+                for (int i = 0; i < editor.Meshers.Length; ++i)
                 {
-                    if (mesher.CellSize != editor.CellSize)
+                    var mesher = editor.Meshers[i];
+                    if (mesher != null && mesher.CellSize != editor.CellSize)
                     {
                         EditorGUILayout.HelpBox("Editor and a mesher has a CellSize mismatch! Is it intentional?", MessageType.Warning, true);
                         break;
@@ -205,8 +216,67 @@ namespace MeshBuilder
 
             EditorGUILayout.Space();
 
-            if (editor.DataComponent != null)
+            if (editor.DataComponent != null && editor.DataComponent.Data != null)
             {
+                EditorGUILayout.Space();
+
+                props.Draw(PropName.clearValue);
+
+                if (GUILayout.Button("Clear Data"))
+                {
+                    var rawData = editor.DataComponent.Data.RawData;
+                    for (int i = 0; i < rawData.Length; ++i)
+                    {
+                        rawData[i] = editor.ClearValue;
+                    }
+
+                    Regenerate();
+                }
+                if (editor.DataComponent.Data.HasHeights)
+                {
+                    if (GUILayout.Button("Clear Height Data"))
+                    {
+                        var rawData = editor.DataComponent.Data.HeightsRawData;
+                        for (int i = 0; i < rawData.Length; ++i)
+                        {
+                            rawData[i] = 0;
+                        }
+
+                        Regenerate();
+                    }
+                }
+                EditorGUILayout.Space();
+
+                if (Data != null)
+                {
+                    var creationInfo = editor.DataComponent.CreationInfo;
+                    bool sizeMatches = Data.ColNum == creationInfo.ColNum && Data.RowNum == creationInfo.RowNum;
+                    bool heightMatches = Data.HasHeights == creationInfo.HasHeightData;
+                    bool cullingMatches = Data.HasCullingData == creationInfo.HasCullingData;
+                    if (!sizeMatches || !heightMatches || !cullingMatches)
+                    {
+                        EditorGUILayout.Space();
+                        if (!sizeMatches)
+                        {
+                            EditorGUILayout.HelpBox("Data size and creation info size are mismatched!", MessageType.Warning, true);
+                        }
+                        if (!heightMatches)
+                        {
+                            EditorGUILayout.HelpBox($"Data has heights:{Data.HasHeights} creation info hasHeights:{creationInfo.HasHeightData}, mismatch!", MessageType.Warning, true);
+                        }
+                        if (!cullingMatches)
+                        {
+                            EditorGUILayout.HelpBox($"Data has culling:{Data.HasCullingData} creation info has culling:{creationInfo.HasCullingData}, mismatch!", MessageType.Warning, true);
+                        }
+                        if (GUILayout.Button("Recreate Data"))
+                        {
+                            editor.DataComponent.Create(creationInfo);
+                            Regenerate();
+                        }
+                        EditorGUILayout.Space();
+                    }
+                }
+
                 if (GUILayout.Button("Load"))
                 {
                     editor.DataComponent.Load();
@@ -299,7 +369,6 @@ namespace MeshBuilder
                         if (e.button == LeftMouseButton)
                         {
                             DrawAt(hitPos.x, hitPos.z);
-                            Regenerate();
                             e.Use();
                         }
                         break;
@@ -332,12 +401,6 @@ namespace MeshBuilder
             }
 
             MarchingSquaresEditorComponent.DrawAt(x, y, Data, editor);
-
-            var data = editor.DataComponent.Data.RawData;
-            for (int i = 0; i < data.Length; ++i)
-            {
-                data[i] = Mathf.Clamp(data[i], -1, 1);
-            }
 
             if (removeBorder)
             {
@@ -412,6 +475,7 @@ namespace MeshBuilder
 
             if (editMode)
             {
+                autoSave = GUILayout.Toggle(autoSave, "AutoSave");
                 showDistances = GUILayout.Toggle(showDistances, "Show Distance");
                 removeBorder = GUILayout.Toggle(removeBorder, "Remove Border");
             }
@@ -476,7 +540,12 @@ namespace MeshBuilder
                     }
                     else
                     {
+                        GUILayout.BeginHorizontal();
                         GUILabel("Data has no heights data!");
+                        GUILayout.EndHorizontal();
+                        GUILayout.BeginHorizontal();
+                        GUILabel("---");
+                        GUILayout.EndHorizontal();
                     }
                 }
 
@@ -575,9 +644,9 @@ namespace MeshBuilder
         private void DrawBoundingBox()
         {
             var size = Vector3.one;
-            size.x = editor.CellSize * Data.ColNum;
+            size.x = editor.CellSize * (Data.ColNum - 1);
             size.y = 0.1f;
-            size.z = editor.CellSize * Data.RowNum;
+            size.z = editor.CellSize * (Data.RowNum - 1);
 
             var pos = Vector3.zero;
             pos.x += size.x / 2f;
@@ -593,7 +662,7 @@ namespace MeshBuilder
 
                 Vector3 start = new Vector3(0, 0, 0);
                 Vector3 end = new Vector3(0, 0, size.z);
-                for (int i = 0; i < Data.ColNum; ++i)
+                for (int i = 0; i < Data.ColNum - 1; ++i)
                 {
                     start.x = i * editor.CellSize;
                     end.x = start.x;
@@ -602,7 +671,7 @@ namespace MeshBuilder
 
                 start = new Vector3(0, 0, 0);
                 end = new Vector3(size.x, 0, 0);
-                for (int i = 0; i < Data.RowNum; ++i)
+                for (int i = 0; i < Data.RowNum - 1; ++i)
                 {
                     start.z = i * editor.CellSize;
                     end.z = start.z;
