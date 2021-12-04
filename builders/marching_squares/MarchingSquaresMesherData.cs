@@ -11,6 +11,10 @@ namespace MeshBuilder
     {
         public class Data : IDisposable
         {
+            public const float DefaultClearDistance = -1f;
+            public const float DefaultClearHeight = 0f;
+            public const bool DefaultClearCulling = false;
+
             private Volume<float> distanceData;
             public NativeArray<float> RawData => distanceData.Data;
 
@@ -69,6 +73,16 @@ namespace MeshBuilder
                 SafeCopy(data, distanceData);
             }
 
+            public void UpdateData(NativeArray<float> data)
+            {
+                if (data.Length != distanceData.Length)
+                {
+                    Debug.LogWarning("distance data mismatch, clamped");
+                }
+
+                SafeCopy(data, distanceData);
+            }
+
             public void InitHeights(float[] heightData = null)
             {
                 SafeDispose(ref this.heightData);
@@ -117,24 +131,30 @@ namespace MeshBuilder
                 NativeArray<T>.Copy(source, dest.Data, length);
             }
 
-            public void Clear()
+            static private void SafeCopy<T>(NativeArray<T> source, Volume<T> dest) where T : struct
+            {
+                int length = Mathf.Min(source.Length, dest.Length);
+                NativeArray<T>.Copy(source, dest.Data, length);
+            }
+
+            public void Clear(float distanceClearValue = DefaultClearDistance, float heightClearValue = DefaultClearHeight, bool defaultCullingValue = DefaultClearCulling)
             {
                 for (int i = 0; i < distanceData.Length; ++i)
                 {
-                    distanceData[i] = -1;
+                    distanceData[i] = distanceClearValue;
                 }
                 if (heightData != null)
                 {
                     for (int i = 0; i < heightData.Length; ++i)
                     {
-                        heightData[i] = 0;
+                        heightData[i] = heightClearValue;
                     }
                 }
                 if (cullingData != null)
                 {
                     for (int i = 0; i < cullingData.Length; ++i)
                     {
-                        cullingData[i] = false;
+                        cullingData[i] = defaultCullingValue;
                     }
                 }
             }
