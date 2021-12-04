@@ -96,6 +96,7 @@ namespace MeshBuilder
             creationInfo = info;
             Data?.Dispose();
             Data = info.Create();
+            Data.Clear();
         }
 
         public void Load()
@@ -141,8 +142,9 @@ namespace MeshBuilder
                     Data.Dispose();
                     Data = new Data(newData.ColNum, newData.RowNum, null, newData.HasHeights, null, newData.HasHeights, null);
                 }
-                    
+
                 NativeArray<float>.Copy(newData.RawData, Data.RawData);
+                
                 if (newData.HasHeights)
                 {
                     NativeArray<float>.Copy(newData.HeightsRawData, Data.HeightsRawData);
@@ -154,6 +156,39 @@ namespace MeshBuilder
             }
 
             Changed();
+        }
+
+        static public void ClearDistanceData(Data data, float clearingValue = Data.DefaultClearDistance)
+        {
+            var rawData = data.RawData;
+            for(int i = 0; i < rawData.Length; ++i)
+            {
+                rawData[i] = clearingValue;
+            }
+        }
+
+        static public void ClearHeightData(Data data, float clearingValue = Data.DefaultClearHeight)
+        {
+            if (data.HasHeights)
+            {
+                var rawData = data.HeightsRawData;
+                for (int i = 0; i < rawData.Length; ++i)
+                {
+                    rawData[i] = clearingValue;
+                }
+            }
+        }
+
+        static public void ClearCullingData(Data data, bool clearingValue = Data.DefaultClearCulling)
+        {
+            if (data.HasHeights)
+            {
+                var rawData = data.CullingDataRawData;
+                for (int i = 0; i < rawData.Length; ++i)
+                {
+                    rawData[i] = clearingValue;
+                }
+            }
         }
 
         public void Save()
