@@ -19,9 +19,10 @@ namespace MeshBuilder
         }
 
         public void Render(Camera cam, Transform transform, int layer)
-        {
-            renderer.Draw(transform, Mesh, cam, layer);
-        }
+            => renderer.Draw(transform, Mesh, cam, layer);
+
+        public void Render(Camera cam, Matrix4x4 matrix, int layer)
+            => renderer.Draw(matrix, Mesh, cam, layer);
 
         [System.Serializable]
         public class RenderInfo
