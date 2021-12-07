@@ -99,28 +99,37 @@ namespace MeshBuilder
             Data.Clear();
         }
 
-        public void Load()
+        public Data LoadData()
         {
-            var oldData = Data;
-            Data = null;
-
+            Data data = null;
             if (serializationPolicy == SerializationPolicy.BuiltIn)
             {
-                if (serializedData != null && serializedData.colNum > 0 && serializedData.rowNum > 0 && serializedData.data != null)
+                if (serializedData != null && 
+                    serializedData.ColNum > 0 && serializedData.ColNum > 0 && 
+                    serializedData.Data != null && serializedData.Data.Length == serializedData.ColNum * serializedData.RowNum)
                 {
-                    Data = new Data(serializedData.colNum, serializedData.rowNum, serializedData.data,
-                                serializedData.heightData != null, serializedData.heightData,
-                                serializedData.cullingData != null, serializedData.cullingData);
+                    data = new Data(serializedData.ColNum, serializedData.RowNum, serializedData.Data,
+                                serializedData.HasHeights, serializedData.HeightData,
+                                serializedData.HasCulling, serializedData.CullingData);
                 }
             }
             if (serializationPolicy == SerializationPolicy.Binary)
             {
-                Data = LoadBinary(binaryDataPath);
+                data = LoadBinary(binaryDataPath);
             }
             else if (serializationPolicy == SerializationPolicy.DataAsset)
             {
-                Data = LoadDataAsset(dataAsset);
+                data = LoadDataAsset(dataAsset);
             }
+
+            return data;
+        }
+
+        public void Load()
+        {
+            var oldData = Data;
+            
+            Data = LoadData();
 
             if (Data == null)
             {
@@ -134,25 +143,23 @@ namespace MeshBuilder
 
         public void UpdateData(Data newData)
         {
-            if (Data != null)
+            if (Data == null ||
+                Data.ColNum != newData.ColNum || Data.RowNum != newData.RowNum ||
+                Data.HasHeights != newData.HasHeights || Data.HasCullingData != newData.HasCullingData)
             {
-                if (Data.ColNum != newData.ColNum || Data.RowNum != newData.RowNum ||
-                    Data.HasHeights != newData.HasHeights || Data.HasCullingData != newData.HasCullingData)
-                {
-                    Data.Dispose();
-                    Data = new Data(newData.ColNum, newData.RowNum, null, newData.HasHeights, null, newData.HasHeights, null);
-                }
+                Data?.Dispose();
+                Data = new Data(newData.ColNum, newData.RowNum, null, newData.HasHeights, null, newData.HasCullingData, null);
+            }
 
-                NativeArray<float>.Copy(newData.RawData, Data.RawData);
+            NativeArray<float>.Copy(newData.RawData, Data.RawData);
                 
-                if (newData.HasHeights)
-                {
-                    NativeArray<float>.Copy(newData.HeightsRawData, Data.HeightsRawData);
-                }
-                if (newData.HasCullingData)
-                {
-                    NativeArray<bool>.Copy(newData.CullingDataRawData, Data.CullingDataRawData);
-                }
+            if (newData.HasHeights)
+            {
+                NativeArray<float>.Copy(newData.HeightsRawData, Data.HeightsRawData);
+            }
+            if (newData.HasCullingData)
+            {
+                NativeArray<bool>.Copy(newData.CullingDataRawData, Data.CullingDataRawData);
             }
 
             Changed();
@@ -193,22 +200,27 @@ namespace MeshBuilder
 
         public void Save()
         {
+            if (Data != null)
+            {
+                Save(Data);
+            }
+        }
+
+        public void Save(Data data)
+        {
             if (serializationPolicy == SerializationPolicy.BuiltIn)
             {
-                if (Data != null)
-                {
-                    serializedData = SerializableData.CreateFromData(Data);
-                }
+                serializedData = SerializableData.CreateFromData(data);
             }
             else if (serializationPolicy == SerializationPolicy.Binary)
             {
-                SaveBinary(binaryDataPath, Data);
+                SaveBinary(binaryDataPath, data);
             }
             else if (serializationPolicy == SerializationPolicy.DataAsset)
             {
-                SaveDataAsset(dataAsset, Data);
+                SaveDataAsset(dataAsset, data);
             }
-        }
+        }    
 
         static public Data LoadDataAsset(MarchingSquaresDataAsset asset)
         {
@@ -330,6 +342,93 @@ namespace MeshBuilder
             }
         }
 
+        static public void WriteDataLimited(BinaryWriter writer, Data data, float minDist, float maxDist)
+        {
+            writer.Write(data.ColNum);
+            writer.Write(data.RowNum);
+            writer.Write(data.HasHeights);
+            writer.Write(data.HasCullingData);
+
+            int length = data.ColNum * data.RowNum;
+            WriteDataLimitedToByte(writer, data.RawData, minDist, maxDist);
+
+            if (data.HasHeights)
+            {
+                for (int i = 0; i < length; ++i)
+                {
+                    writer.Write(data.HeightsRawData[i]);
+                }
+            }
+
+            if (data.HasCullingData)
+            {
+                for (int i = 0; i < length; ++i)
+                {
+                    writer.Write(data.CullingDataRawData[i]);
+                }
+            }
+        }
+
+        static public Data ReadDataLimited(BinaryReader reader, float minDist, float maxDist)
+        {
+            int colNum = reader.ReadInt32();
+            int rowNum = reader.ReadInt32();
+            bool hasHeights = reader.ReadBoolean();
+            bool hasCulling = reader.ReadBoolean();
+
+            var data = new Data(colNum, rowNum, null, hasHeights, null, hasCulling, null);
+            var dist = data.RawData;
+            int length = colNum * rowNum;
+            ReadDataLimitedFromByte(reader, dist, minDist, maxDist);
+
+            if (hasHeights)
+            {
+                var heights = data.HeightsRawData;
+                for (int i = 0; i < length; ++i)
+                {
+                    heights[i] = reader.ReadSingle();
+                }
+            }
+
+            if (hasCulling)
+            {
+                var culling = data.CullingDataRawData;
+                for (int i = 0; i < length; ++i)
+                {
+                    culling[i] = reader.ReadBoolean();
+                }
+            }
+
+            return data;
+        }
+
+        static public void WriteDataLimitedToByte(BinaryWriter writer, NativeArray<float> data, float min, float max)
+        {
+            for(int i = 0; i < data.Length; ++i)
+            {
+                byte val = LimitToByte(data[i], min, max);
+                writer.Write(val);
+            }
+        }
+
+        static public void ReadDataLimitedFromByte(BinaryReader reader, NativeArray<float> data, float min, float max)
+        {
+            float delta = max - min;
+            for (int i = 0; i < data.Length; ++i)
+            {
+                byte val = reader.ReadByte();
+                float scaledValue = (val / 255f) * delta;
+                data[i] = scaledValue;
+            }
+        }
+
+        static private byte LimitToByte(float value, float min, float max)
+        {
+            value = Mathf.Clamp(value, min, max - Mathf.Epsilon);
+            float t = (value - min) / (max - min);
+            return (byte)Mathf.FloorToInt(t * 256f);
+        }
+
         public void Changed()
         {
             OnDataChange?.Invoke(Data);   
@@ -338,11 +437,20 @@ namespace MeshBuilder
         [Serializable]
         private class SerializableData
         {
-            [SerializeField] public int colNum = 0;
-            [SerializeField] public int rowNum = 0;
-            [SerializeField] public float[] data = null;
-            [SerializeField] public float[] heightData = null;
-            [SerializeField] public bool[] cullingData = null;
+            [SerializeField] private int colNum = 0;
+            public int ColNum => colNum;
+            [SerializeField] private int rowNum = 0;
+            public int RowNum => rowNum;
+            [SerializeField] private float[] data = null;
+            public float[] Data => data;
+            [SerializeField] private bool hasHeights = false;
+            public bool HasHeights => hasHeights;
+            [SerializeField] private float[] heightData = null;
+            public float[] HeightData => heightData;
+            [SerializeField] private bool hasCulling = false;
+            public bool HasCulling => hasCulling;
+            [SerializeField] private bool[] cullingData = null;
+            public bool[] CullingData => cullingData;
 
             public void FromData(Data data)
             {
@@ -350,15 +458,27 @@ namespace MeshBuilder
                 rowNum = data.RowNum;
                 this.data = new float[data.RawData.Length];
                 NativeArray<float>.Copy(data.RawData, this.data);
-                if (data.HasHeights)
+
+                hasHeights = data.HasHeights;
+                if (hasHeights)
                 {
                     heightData = new float[data.HeightsRawData.Length];
                     NativeArray<float>.Copy(data.HeightsRawData, heightData);
                 }
-                if (data.HasCullingData)
+                else
+                {
+                    heightData = null;
+                }
+
+                hasCulling = data.HasCullingData;
+                if (hasCulling)
                 {
                     cullingData = new bool[data.CullingDataRawData.Length];
                     NativeArray<bool>.Copy(data.CullingDataRawData, cullingData);
+                }
+                else
+                {
+                    cullingData = null;
                 }
             }
 
