@@ -418,15 +418,15 @@ namespace MeshBuilder
             {
                 byte val = reader.ReadByte();
                 float scaledValue = (val / 255f) * delta;
-                data[i] = scaledValue;
+                data[i] = min + scaledValue;
             }
         }
 
-        static private byte LimitToByte(float value, float min, float max)
+        static public byte LimitToByte(float value, float min, float max)
         {
-            value = Mathf.Clamp(value, min, max - Mathf.Epsilon);
+            value = Mathf.Clamp(value, min, max);
             float t = (value - min) / (max - min);
-            return (byte)Mathf.FloorToInt(t * 256f);
+            return (byte)Mathf.FloorToInt(t * 255f);
         }
 
         public void Changed()
