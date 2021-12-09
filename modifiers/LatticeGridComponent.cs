@@ -161,14 +161,17 @@ namespace MeshBuilder
 
         public void SaveGrid(string path)
         {
+#if UNITY_EDITOR
             var asset = ScriptableObject.CreateInstance<VertexGridAsset>();
             asset.Grid = new VertexGrid(grid);
             AssetDatabase.CreateAsset(asset, path);
             Debug.Log("lattice: grid saved as:" + path);
+#endif
         }
 
         public void LoadGrid(string path)
         {
+#if UNITY_EDITOR
             int index = path.IndexOf("/Assets/") + 1;
             path = path.Substring(index);
             
@@ -181,6 +184,7 @@ namespace MeshBuilder
             {
                 Debug.LogError("lattice: couldn't load grid from: " + path);
             }
+#endif
         }
 
         public void CopyFrom(VertexGrid sourceGrid)

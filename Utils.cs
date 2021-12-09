@@ -11,6 +11,7 @@ namespace MeshBuilder
 {
     public class Utils
     {
+#if UNITY_EDITOR
         public class ComponentProperties<T> where T : System.Enum
         {
             private SerializedProperty[] props;
@@ -38,7 +39,7 @@ namespace MeshBuilder
 
         static public void GUILabel(string text, int width)
             => GUILayout.Label(text, GUILayout.Width(width));
-
+#endif
         public struct Offset
         {
             public int index;
