@@ -429,6 +429,12 @@ namespace MeshBuilder
             return (byte)Mathf.FloorToInt(t * 255f);
         }
 
+        static public float FromLimitedToByte(byte value, float min, float max)
+        {
+            float scaledValue = (value / 255f) * (max - min);
+            return min + scaledValue;
+        }
+
         public void Changed()
         {
             OnDataChange?.Invoke(Data);   
