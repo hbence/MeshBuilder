@@ -441,7 +441,7 @@ namespace MeshBuilder
         }
 
         [Serializable]
-        private class SerializableData
+        public class SerializableData
         {
             [SerializeField] private int colNum = 0;
             public int ColNum => colNum;
@@ -487,6 +487,9 @@ namespace MeshBuilder
                     cullingData = null;
                 }
             }
+
+            public Data CreateData()
+                => new Data(ColNum, RowNum, Data, HasHeights, HeightData, HasCulling, CullingData);
 
             static public SerializableData CreateFromData(Data data)
             {
