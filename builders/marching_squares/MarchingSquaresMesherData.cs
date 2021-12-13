@@ -46,6 +46,11 @@ namespace MeshBuilder
                 {
                     UpdateData(defDistData);
                 }
+                else
+                {
+                    ClearDistances();
+                }
+
                 if (initHeights)
                 {
                     InitHeights(defHeightData);
@@ -92,6 +97,10 @@ namespace MeshBuilder
                 {
                     UpdateHeights(heightData);
                 }
+                else
+                {
+                    ClearHeights();
+                }
             }
 
             public void InitCullingData(bool[] data = null)
@@ -102,6 +111,10 @@ namespace MeshBuilder
                 if (data != null)
                 {
                     UpdateCullingData(data);
+                }
+                else
+                {
+                    ClearCulling();
                 }
             }
 
@@ -137,26 +150,41 @@ namespace MeshBuilder
                 NativeArray<T>.Copy(source, dest.Data, length);
             }
 
-            public void Clear(float distanceClearValue = DefaultClearDistance, float heightClearValue = DefaultClearHeight, bool defaultCullingValue = DefaultClearCulling)
+            public void ClearDistances(float distanceClearValue = DefaultClearDistance)
             {
                 for (int i = 0; i < distanceData.Length; ++i)
                 {
                     distanceData[i] = distanceClearValue;
                 }
+            }
+
+            public void ClearHeights(float clearHeightValue = DefaultClearHeight)
+            {
                 if (heightData != null)
                 {
                     for (int i = 0; i < heightData.Length; ++i)
                     {
-                        heightData[i] = heightClearValue;
+                        heightData[i] = clearHeightValue;
                     }
                 }
+            }
+
+            public void ClearCulling(bool clearValue = DefaultClearCulling)
+            {
                 if (cullingData != null)
                 {
                     for (int i = 0; i < cullingData.Length; ++i)
                     {
-                        cullingData[i] = defaultCullingValue;
+                        cullingData[i] = clearValue;
                     }
                 }
+            }
+
+            public void Clear(float distanceClearValue = DefaultClearDistance, float heightClearValue = DefaultClearHeight, bool defaultCullingValue = DefaultClearCulling)
+            {
+                ClearDistances(distanceClearValue);
+                ClearHeights(heightClearValue);
+                ClearCulling(defaultCullingValue);
             }
 
             public void ApplyCircle(float x, float y, float rad, float cellSize)
