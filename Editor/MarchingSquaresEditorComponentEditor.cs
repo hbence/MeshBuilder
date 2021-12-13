@@ -271,36 +271,38 @@ namespace MeshBuilder
                         }
                         if (GUILayout.Button("Recreate Data"))
                         {
-                            using var data = creationInfo.Create();
-                            var oldData = editor.DataComponent.Data;
-                            int col = Math.Min(data.ColNum, oldData.ColNum);
-                            int row = Math.Min(data.RowNum, oldData.RowNum);
-                            for (int y = 0; y < row; ++y)
+                            using (var data = creationInfo.Create())
                             {
-                                for (int x = 0; x < col; ++x)
+                                var oldData = editor.DataComponent.Data;
+                                int col = Math.Min(data.ColNum, oldData.ColNum);
+                                int row = Math.Min(data.RowNum, oldData.RowNum);
+                                for (int y = 0; y < row; ++y)
                                 {
-                                    data.SetDistanceAt(x, y, oldData.DistanceAt(x, y));
+                                    for (int x = 0; x < col; ++x)
+                                    {
+                                        data.SetDistanceAt(x, y, oldData.DistanceAt(x, y));
 
-                                    if (data.HasHeights && oldData.HasHeights)
-                                    {
-                                        data.SetHeightAt(x, y, oldData.HeightAt(x, y));
-                                    }
-                                    
-                                    if (data.HasCullingData && oldData.HasCullingData)
-                                    {
-                                        data.SetCullingAt(x, y, oldData.CullingAt(x, y));
+                                        if (data.HasHeights && oldData.HasHeights)
+                                        {
+                                            data.SetHeightAt(x, y, oldData.HeightAt(x, y));
+                                        }
+
+                                        if (data.HasCullingData && oldData.HasCullingData)
+                                        {
+                                            data.SetCullingAt(x, y, oldData.CullingAt(x, y));
+                                        }
                                     }
                                 }
+
+                                editor.DataComponent.UpdateData(data);
+
+                                if (autoSave)
+                                {
+                                    editor.DataComponent.Save();
+                                }
+
+                                Regenerate();
                             }
-
-                            editor.DataComponent.UpdateData(data);
-
-                            if (autoSave)
-                            {
-                                editor.DataComponent.Save();
-                            }
-
-                            Regenerate();
                         }
                         EditorGUILayout.Space();
                     }
