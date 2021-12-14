@@ -4,6 +4,10 @@ using System.IO;
 using UnityEngine;
 using Unity.Collections;
 
+#if UNITY_EDITOR
+using UnityEditor;
+#endif
+
 using static MeshBuilder.MarchingSquaresComponent;
 using static MeshBuilder.MarchingSquaresMesher;
 
@@ -48,9 +52,6 @@ namespace MeshBuilder
 
         private void Awake()
         {
-            Data?.Dispose();
-            Data = null;
-
             if (initPolicy == InitPolicy.InAwake)
             {
                 Init();
@@ -78,6 +79,9 @@ namespace MeshBuilder
 
         public void Init()
         {
+            Data?.Dispose();
+            Data = null;
+
             if ((serializationPolicy == SerializationPolicy.BuiltIn) || 
                 (serializationPolicy == SerializationPolicy.DataAsset && dataAsset != null) ||
                 (serializationPolicy == SerializationPolicy.Binary && DoesPathExist(binaryDataPath)))
@@ -234,6 +238,11 @@ namespace MeshBuilder
         static public void SaveDataAsset(MarchingSquaresDataAsset asset, Data data)
         {
             asset.UpdateData(data);
+#if UNITY_EDITOR
+            EditorUtility.SetDirty(asset);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+#endif
         }
 
         static public bool DoesPathExist(string path)

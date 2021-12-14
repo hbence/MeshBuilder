@@ -71,10 +71,7 @@ namespace MeshBuilder
         {
             if (initializationPolicy == InitializationPolicy.InAwake)
             {
-                if (Mesher == null)
-                {
-                    Init();
-                }
+                Init();
             }
         }
 
@@ -82,10 +79,7 @@ namespace MeshBuilder
         {
             if (initializationPolicy == InitializationPolicy.InStart)
             {
-                if (Mesher == null)
-                {
-                    Init();
-                }
+                Init();
             }
         }
 
