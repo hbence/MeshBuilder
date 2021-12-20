@@ -34,7 +34,7 @@ namespace MeshBuilder
 
         protected override JobHandle StartGeneration(MeshData meshData, JobHandle dependOn)
         {
-            int rowNum = Mathf.CeilToInt(SplineCache.Distance / TransformStepDistance) + 1;
+            int rowNum = Mathf.CeilToInt(SplineCache.Distance / TransformStepDistance);
 
             var transforms = new NativeArray<RigidTransform>(rowNum, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
             AddTemp(transforms);
@@ -78,7 +78,6 @@ namespace MeshBuilder
                 this.scale = scale;
             }
         }
-
 
         [BurstCompile]
         private struct GenerateTransforms : IJobParallelFor
@@ -132,17 +131,15 @@ namespace MeshBuilder
 
             [ReadOnly] public NativeArray<RigidTransform> transforms;
             public NativeArray<float3> vertices;
-
+  
             public void Execute(int i)
             {
                 float3 v = vertices[i];
-                var transform = GetTransform(v.z);
-                v.z = 0;
-                vertices[i] = math.transform(transform, v);
+                int index = GetTransformIndex(v.z, transforms, transfromStepDistance);
+                float transformDist = index * transfromStepDistance;
+                v.z -= transformDist;
+                vertices[i] = math.transform(transforms[index], v);
             }
-
-            private RigidTransform GetTransform(float distance)
-                => SplineModifier.GetTransform(distance, transforms, transfromStepDistance);
 
             public static JobHandle Schedule(NativeArray<float3> vertices, NativeArray<RigidTransform> transforms, float transfromStepDistance, int innerBatchCount, JobHandle dependOn)
             {
@@ -172,7 +169,10 @@ namespace MeshBuilder
                 float3 v = vertices[i];
 
                 float distance = v.z;
-                var transform = GetTransform(distance);
+                int index = GetTransformIndex(distance, transforms, transfromStepDistance);
+                float transformDist = index * transfromStepDistance;
+
+                var transform = transforms[index];
 
                 float sideRatio = math.abs(v.x) / maxHalfWidth;
 
@@ -191,12 +191,15 @@ namespace MeshBuilder
                 rotValue /= weight;
                 transform.rot = math.normalize(math.quaternion(rotValue));
 
-                v.z = 0;
+                v.z -= transformDist;
                 vertices[i] = math.transform(transform, v);
             }
-
+            
             private RigidTransform GetTransform(float distance)
-                => SplineModifier.GetTransform(distance, transforms, transfromStepDistance);
+            {
+                int index = GetTransformIndex(distance, transforms, transfromStepDistance);
+                return transforms[index];
+            }
 
             public static JobHandle Schedule(NativeArray<float3> vertices, NativeArray<RigidTransform> transforms, NativeArray<LerpValue> lerpedValues, float maxHalfWidth, float transfromStepDistance, int innerBatchCount, JobHandle dependOn)
             {
@@ -233,7 +236,11 @@ namespace MeshBuilder
                 float3 v = vertices[i];
 
                 float distance = v.z;
-                var transform = GetTransform(distance);
+
+                int index = GetTransformIndex(distance, transforms, transfromStepDistance);
+                float transformDist = index * transfromStepDistance;
+
+                var transform = transforms[index];
 
                 float sideRatio = math.abs(v.x) / maxHalfWidth;
 
@@ -248,7 +255,7 @@ namespace MeshBuilder
                 rotValue /= weight;
                 transform.rot = math.normalize(math.quaternion(rotValue));
 
-                v.z = 0;
+                v.z -= transformDist;
                 vertices[i] = math.transform(transform, v);
             }
 
@@ -260,7 +267,10 @@ namespace MeshBuilder
             }
 
             private RigidTransform GetTransform(float distance)
-                => SplineModifier.GetTransform(distance, transforms, transfromStepDistance);
+            {
+                int index = GetTransformIndex(distance, transforms, transfromStepDistance);
+                return transforms[index];
+            }
 
             public static JobHandle Schedule(NativeArray<float3> vertices, NativeArray<RigidTransform> transforms, LerpValue[] lerpValues, float maxHalfWidth, float transfromStepDistance, int innerBatchCount, JobHandle dependOn)
             {
@@ -287,11 +297,7 @@ namespace MeshBuilder
                 => index < array.Length ? array[index] : new LerpValue { sampleDistance = 0, scale = 0 };
         }
 
-        static private RigidTransform GetTransform(float distance, NativeArray<RigidTransform> transforms, float transformStep)
-        {
-            int index = Mathf.FloorToInt(distance / transformStep);
-            index = math.clamp(index, 0, transforms.Length - 1);
-            return transforms[index];
-        }
+        static private int GetTransformIndex(float distance, NativeArray<RigidTransform> transforms, float transformStep)
+            => math.clamp(Mathf.FloorToInt(distance / transformStep), 0, transforms.Length - 1);
     }
 }

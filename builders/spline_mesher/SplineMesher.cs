@@ -31,22 +31,22 @@ namespace MeshBuilder
             this.splineCache = splineCache;
             meshVertexOffset = positionOffset;
 
-            int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength) + 1;
-            generationHandler.InitSimpleGrid(meshCellWidth, meshCellLength, cellColCount, rowNum);
+            int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength);
+            generationHandler.InitSimpleGrid(meshCellWidth, meshCellLength, cellColCount, rowNum, splineCache.Distance);
 
             float halfWidth = cellColCount * meshCellWidth * 0.5f;
             SplineModifier.Init(this.splineCache, meshCellLength, halfWidth, lerpValues);
 
             Inited();
         }
-
+        
         public void Init(SplineCache splineCache, float3[] crossSection, float meshCellLength, float3 positionOffset = default, LerpValue[] lerpValues = null)
         {
             this.splineCache = splineCache;
             meshVertexOffset = positionOffset;
 
-            int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength) + 1;
-            generationHandler.InitSubmeshEdges(meshCellLength, rowNum);
+            int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength);
+            generationHandler.InitSubmeshEdges(meshCellLength, rowNum, splineCache.Distance);
             generationHandler.AddSubmeshEdge(0, crossSection);
 
             float halfWidth = CalculateCrossSectionWidth(crossSection) * 0.5f;
@@ -54,14 +54,14 @@ namespace MeshBuilder
 
             Inited();
         }
-
+        
         public void Init(SplineCache splineCache, float3[][] crossSections, float meshCellLength, float3 positionOffset = default, LerpValue[] lerpValues = null)
         {
             this.splineCache = splineCache;
             meshVertexOffset = positionOffset;
 
-            int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength) + 1;
-            generationHandler.InitSubmeshEdges(meshCellLength, rowNum);
+            int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength);
+            generationHandler.InitSubmeshEdges(meshCellLength, rowNum, splineCache.Distance);
 
             foreach (float3[] cross in crossSections)
             {
@@ -77,14 +77,14 @@ namespace MeshBuilder
 
             Inited();
         }
-
+        
         public void Init(SplineCache splineCache, float3[][][] crossSections, float meshCellLength, float3 positionOffset = default, LerpValue[] lerpValues = null)
         {
             this.splineCache = splineCache;
             meshVertexOffset = positionOffset;
 
-            int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength) + 1;
-            generationHandler.InitSubmeshEdges(meshCellLength, rowNum);
+            int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength);
+            generationHandler.InitSubmeshEdges(meshCellLength, rowNum, splineCache.Distance);
 
             for (int submesh = 0; submesh < crossSections.Length; ++submesh)
             {
@@ -107,7 +107,7 @@ namespace MeshBuilder
 
             Inited();
         }
-
+        
         private static float CalculateCrossSectionWidth(float3[] cross)
         {
             float minX = 0, maxX = 0;
@@ -118,20 +118,20 @@ namespace MeshBuilder
             }
             return maxX - minX;
         }
-
+        
         public void InitForMultipleSubmeshes(SplineCache splineCache, float meshCellLength, float3 positionOffset = default, LerpValue[] lerpValues = null)
         {
             this.splineCache = splineCache;
             meshVertexOffset = positionOffset;
 
             int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength) + 1;
-            generationHandler.InitSubmeshEdges(meshCellLength, rowNum);
+            generationHandler.InitSubmeshEdges(meshCellLength, rowNum, splineCache.Distance);
 
             SplineModifier.Init(this.splineCache, meshCellLength, 1f, lerpValues);
 
             Inited();
         }
-
+        
         public void AddSubmesh(int submesh, float3[] crossSection)
         {
             Debug.Assert(IsInitialized && generationHandler.IsInitedForSubmeshes, "not initized for submeshes");
@@ -185,10 +185,12 @@ namespace MeshBuilder
             public float CellWidth { get; private set; }
             public float CellLength { get; private set; }
 
+            public float Distance { get; private set; }
+
             public int ColNum { get; private set; }
             public int RowNum { get; private set; }
 
-            public void InitSimpleGrid(float cellWidth, float cellLength, int colNum, int rowNum)
+            public void InitSimpleGrid(float cellWidth, float cellLength, int colNum, int rowNum, float distance)
             {
                 type = Type.Simple;
 
@@ -196,13 +198,14 @@ namespace MeshBuilder
 
                 CellWidth = cellWidth;
                 CellLength = cellLength;
+                Distance = distance;
                 ColNum = colNum;
                 RowNum = rowNum;
             }
 
-            public void InitSubmeshEdges(float cellLength, int rowNum)
+            public void InitSubmeshEdges(float cellLength, int rowNum, float distance)
             {
-                InitSimpleGrid(0, cellLength, 0, rowNum);
+                InitSimpleGrid(0, cellLength, 0, rowNum, distance);
                 type = Type.SubmeshEdges;
             }
             public void AddSubmeshEdge(int submeshIndex, float3[] edge)
@@ -226,7 +229,7 @@ namespace MeshBuilder
                     mesher.meshData = new MeshData(vertexCount, indexCount, Allocator.TempJob, MeshDataBufferFlags);
                     mesher.AddTemp(mesher.meshData);
 
-                    dependOn = GenerateGrid.Schedule(ColNum, RowNum, CellWidth, CellLength, mesher.meshData, dependOn);
+                    dependOn = GenerateGrid.Schedule(ColNum, RowNum, CellWidth, CellLength, Distance, mesher.meshData, dependOn);
                 }
                 else
                 {
@@ -243,7 +246,7 @@ namespace MeshBuilder
                         mesher.meshData = new MeshData(vertexCount, indexCount, Allocator.TempJob, MeshDataBufferFlags);
                         mesher.AddTemp(mesher.meshData);
 
-                        dependOn = GenerateVertexEdgeGrid.Schedule(edge, RowNum, CellLength, 0, 0, mesher.meshData, dependOn);
+                        dependOn = GenerateVertexEdgeGrid.Schedule(edge, RowNum, CellLength, 0, 0, Distance, mesher.meshData, dependOn);
                     }
                     else
                     {
@@ -283,7 +286,7 @@ namespace MeshBuilder
                         JobHandle genResult = default;
                         foreach(var edgeInfo in edges)
                         {
-                            genResult = JobHandle.CombineDependencies(genResult, edgeInfo.Generate(RowNum, CellLength, mesher.meshData, dependOn));
+                            genResult = JobHandle.CombineDependencies(genResult, edgeInfo.Generate(RowNum, CellLength, Distance, mesher.meshData, dependOn));
                         }
                         dependOn = genResult;
                     }
@@ -305,8 +308,8 @@ namespace MeshBuilder
                     this.indexStart = indexStart;
                 }
 
-                public JobHandle Generate(int rowNum, float cellLength, MeshData meshData, JobHandle dependOn)
-                    => GenerateVertexEdgeGrid.Schedule(edge, rowNum, cellLength, vertexStart, indexStart, meshData, dependOn);
+                public JobHandle Generate(int rowNum, float cellLength, float distance, MeshData meshData, JobHandle dependOn)
+                    => GenerateVertexEdgeGrid.Schedule(edge, rowNum, cellLength, vertexStart, indexStart, distance, meshData, dependOn);
             }
         }
 
@@ -328,6 +331,7 @@ namespace MeshBuilder
             public int rowNum;
             public float cellWidth;
             public float cellLength;
+            public float distance;
 
             [WriteOnly] public NativeArray<float3> vertices;
             [WriteOnly] public NativeArray<int> indices;
@@ -337,12 +341,19 @@ namespace MeshBuilder
                 int vertexColNum = colNum + 1;
 
                 float3 offset = new float3(colNum * cellWidth * -0.5f, 0, 0);
-                for (int row = 0; row <= rowNum; ++row)
+                for (int row = 0; row < rowNum; ++row)
                 {
+                    int rowStart = row * vertexColNum;
+                    float z = row * cellLength + offset.z;
                     for (int col = 0; col <= colNum; ++col)
                     {
-                        vertices[row * vertexColNum + col] = new float3(col * cellWidth, 0, row * cellLength) + offset;
+                        vertices[rowStart + col] = new float3(col * cellWidth + offset.x, offset.y, z);
                     }
+                }
+
+                for (int col = 0; col <= colNum; ++col)
+                {
+                    vertices[rowNum * vertexColNum + col] = new float3(col * cellWidth, 0, distance) + offset;
                 }
 
                 for (int row = 0; row < rowNum; ++row)
@@ -368,7 +379,7 @@ namespace MeshBuilder
                 indices[start + 5] = vertex + 1;
             }
 
-            public static JobHandle Schedule(int colNum, int rowNum, float cellWidth, float cellHeight, MeshData meshData, JobHandle dependOn)
+            public static JobHandle Schedule(int colNum, int rowNum, float cellWidth, float cellHeight, float distance, MeshData meshData, JobHandle dependOn)
             {
                 var generateGrid = new GenerateGrid
                 {
@@ -376,6 +387,7 @@ namespace MeshBuilder
                     rowNum = rowNum,
                     cellWidth = cellWidth,
                     cellLength = cellHeight,
+                    distance = distance,
                     vertices = meshData.Vertices,
                     indices = meshData.Triangles
                 };
@@ -394,6 +406,7 @@ namespace MeshBuilder
         {
             public int cellRowNum;
             public float cellLength;
+            public float distance;
 
             public int vertexStart;
             public int indexStart;
@@ -408,16 +421,24 @@ namespace MeshBuilder
             public void Execute()
             {
                 int vertexColNum = edgeVertices.Length;
-                float distance = 0;
+                float z = 0;
                 for (int row = 0; row <= cellRowNum; ++row)
                 {
+                    int rowStart = row * vertexColNum;
                     for (int col = 0; col < vertexColNum; ++col)
                     {
                         var v = edgeVertices[col];
-                        v.z += distance;
-                        vertices[vertexStart + row * vertexColNum + col] = v;
+                        v.z += z;
+                        vertices[vertexStart + rowStart + col] = v;
                     }
-                    distance += cellLength;
+                    z += cellLength;
+                }
+                
+                for (int col = 0; col < vertexColNum; ++col)
+                {
+                    var v = edgeVertices[col];
+                    v.z = distance;
+                    vertices[vertexStart + cellRowNum * vertexColNum + col] = v;
                 }
 
                 for (int row = 0; row < cellRowNum; ++row)
@@ -443,12 +464,13 @@ namespace MeshBuilder
                 indices[start + 5] = vertex + 1;
             }
 
-            public static JobHandle Schedule(NativeArray<float3> edgeVertices, int cellRowNum, float cellLength, int vertexStart, int indexStart, MeshData meshData, JobHandle dependOn)
+            public static JobHandle Schedule(NativeArray<float3> edgeVertices, int cellRowNum, float cellLength, int vertexStart, int indexStart, float distance, MeshData meshData, JobHandle dependOn)
             {
                 var generateGrid = new GenerateVertexEdgeGrid
                 {
                     cellRowNum = cellRowNum,
                     cellLength = cellLength,
+                    distance = distance,
                     vertexStart = vertexStart,
                     indexStart = indexStart,
                     edgeVertices = edgeVertices,
