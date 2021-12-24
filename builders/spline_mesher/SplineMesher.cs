@@ -34,8 +34,7 @@ namespace MeshBuilder
             int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength);
             generationHandler.InitSimpleGrid(meshCellWidth, meshCellLength, cellColCount, rowNum, splineCache.Distance);
 
-            float halfWidth = cellColCount * meshCellWidth * 0.5f;
-            SplineModifier.Init(this.splineCache, meshCellLength, halfWidth, lerpValues);
+            SplineModifier.Init(this.splineCache, meshCellLength, lerpValues);
 
             Inited();
         }
@@ -49,8 +48,7 @@ namespace MeshBuilder
             generationHandler.InitSubmeshEdges(meshCellLength, rowNum, splineCache.Distance);
             generationHandler.AddSubmeshEdge(0, crossSection);
 
-            float halfWidth = CalculateCrossSectionWidth(crossSection) * 0.5f;
-            SplineModifier.Init(this.splineCache, meshCellLength, halfWidth, lerpValues);
+            SplineModifier.Init(this.splineCache, meshCellLength, lerpValues);
 
             Inited();
         }
@@ -73,7 +71,7 @@ namespace MeshBuilder
             {
                 maxWidth = math.max(maxWidth, CalculateCrossSectionWidth(cross));
             }
-            SplineModifier.Init(this.splineCache, meshCellLength, maxWidth * 0.5f, lerpValues);
+            SplineModifier.Init(this.splineCache, meshCellLength, lerpValues);
 
             Inited();
         }
@@ -103,7 +101,7 @@ namespace MeshBuilder
                 }
             }
 
-            SplineModifier.Init(this.splineCache, meshCellLength, maxWidth * 0.5f, lerpValues);
+            SplineModifier.Init(this.splineCache, meshCellLength, lerpValues);
 
             Inited();
         }
@@ -127,7 +125,7 @@ namespace MeshBuilder
             int rowNum = Mathf.CeilToInt(splineCache.Distance / meshCellLength) + 1;
             generationHandler.InitSubmeshEdges(meshCellLength, rowNum, splineCache.Distance);
 
-            SplineModifier.Init(this.splineCache, meshCellLength, 1f, lerpValues);
+            SplineModifier.Init(this.splineCache, meshCellLength, lerpValues);
 
             Inited();
         }
@@ -136,7 +134,6 @@ namespace MeshBuilder
         {
             Debug.Assert(IsInitialized && generationHandler.IsInitedForSubmeshes, "not initized for submeshes");
             generationHandler.AddSubmeshEdge(submesh, crossSection);
-            SplineModifier.MaxHalfWidth = math.max(SplineModifier.MaxHalfWidth, CalculateCrossSectionWidth(crossSection));
         }
 
         public void AddSubmesh(int submesh, float3[][] crossSections)
@@ -146,7 +143,6 @@ namespace MeshBuilder
             foreach (var cross in crossSections)
             {
                 generationHandler.AddSubmeshEdge(submesh, cross);
-                SplineModifier.MaxHalfWidth = math.max(SplineModifier.MaxHalfWidth, CalculateCrossSectionWidth(cross));
             }
         }
 

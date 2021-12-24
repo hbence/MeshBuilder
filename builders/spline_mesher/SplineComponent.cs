@@ -3,6 +3,9 @@ using UnityEngine;
 
 namespace MeshBuilder
 {
+    using ScaleValue = SplineModifier.ValueAtDistance<float2>;
+    using RotationValue = SplineModifier.ValueAtDistance<float>;
+
     public class SplineComponent : MonoBehaviour
     {
         [SerializeField] private Spline spline = null;
@@ -71,6 +74,24 @@ namespace MeshBuilder
                 }
                 return linearArc;
             }
+        }
+
+        [SerializeField] private bool useCustomRotation = false;
+        public bool UseCustomRotation => useCustomRotation;
+        [SerializeField] private RotationValue[] rotationValues = null;
+        public RotationValue[] RotationValues
+        {
+            get => rotationValues;
+            set => rotationValues = value;
+        }
+
+        [SerializeField] private bool useCustomScaling = false;
+        public bool UseCustomScaling => useCustomScaling;
+        [SerializeField] private ScaleValue[] scaleValues = null;
+        public ScaleValue[] ScaleValues
+        {
+            get => scaleValues;
+            set => scaleValues = value;
         }
 
         [Header("cache")]
@@ -147,7 +168,7 @@ namespace MeshBuilder
             return count;
         }
 
-        public int CalculateSplinePoints(Vector3[] outPoints)
+        public int CalculateSplinePoints(Vector3[] outPoints, int pointsPerSegment = 10)
         {
             if (outPoints == null || outPoints.Length < 2)
             {
@@ -159,13 +180,12 @@ namespace MeshBuilder
             if (spline.ControlPoints != null && spline.ControlPointsCount > 1)
             {
                 var controlPoints = Utils.ToFloat3Array(spline.ControlPoints);
-                int perSegment = 10;
-                float step = 1f / perSegment;
+                float step = 1f / pointsPerSegment;
                 outPoints[0] = spline.ControlPoints[0];
                 ++resCount;
                 for (int i = 0; i < SegmentCount; ++i)
                 {
-                    for (int j = 1; j <= perSegment; ++j)
+                    for (int j = 1; j <= pointsPerSegment; ++j)
                     {
                         if (resCount >= outPoints.Length)
                         {
