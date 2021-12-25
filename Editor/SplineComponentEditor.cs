@@ -3,12 +3,16 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
 
+using static MeshBuilder.Utils;
+
 namespace MeshBuilder
 {
     [CustomEditor(typeof(SplineComponent))]
     public class SplineComponentEditor : Editor
     {
         private const string PrefIsEditing = "SCE_isEditingControlPoints";
+        private const string PrefIsEditingRotation = "SCE_isEditingRotation";
+        private const string PrefIsEditingScaling = "SCE_isEditingScaling";
         private const string PrefRoadVisualization = "SCE_showRoadVisualization";
 
         private static readonly Quaternion Identity = Quaternion.identity;
@@ -25,14 +29,19 @@ namespace MeshBuilder
         private int pointCount;
         
         private int selectedPointId;
-        private bool isEditingControlPoints = false;
-        private bool showRoadVisualization = false;
+
+        private BoolEditorPref isEditingControlPoints;
+        private BoolEditorPref isEditingRotation;
+        private BoolEditorPref isEditingScaling;
+        private BoolEditorPref showRoadVisualization;
 
         private void OnEnable()
         {
             spline = (SplineComponent) target;
-            isEditingControlPoints = EditorPrefs.GetBool(PrefIsEditing, false);
-            showRoadVisualization = EditorPrefs.GetBool(PrefRoadVisualization, false);
+            isEditingControlPoints = CreatePref(PrefIsEditing, false);
+            isEditingRotation = CreatePref(PrefIsEditingRotation, false);
+            isEditingScaling = CreatePref(PrefIsEditingScaling, false);
+            showRoadVisualization = CreatePref(PrefRoadVisualization, false);
         }
 
         public override void OnInspectorGUI()
@@ -61,35 +70,43 @@ namespace MeshBuilder
             {
                 DrawRoadLines();
             }
+
             if (isEditingControlPoints)
             {
                 DrawControlPoints();
+            }
+
+            if (isEditingRotation)
+            {
+                DrawRotationPoints();
+            }
+
+            if (isEditingScaling)
+            {
+
+            }
+
+            if (isEditingControlPoints || isEditingRotation || isEditingScaling)
+            {
+                Repaint();
             }
         }
 
         private void DrawGUI()
         {
-            float buttonWidth = 100;
+            float buttonWidth = 120;
             Handles.BeginGUI();
-            GUILayout.BeginArea(new Rect(5, 5, buttonWidth, 90));
+            GUILayout.BeginArea(new Rect(5, 5, buttonWidth, 200));
             GUILayout.BeginVertical();
 
-            if (GUILayout.Button(isEditingControlPoints ? "Hide Point Edit" : "Show Point Edit"))
-            {
-                isEditingControlPoints = !isEditingControlPoints;
-
-                EditorPrefs.SetBool(PrefIsEditing, isEditingControlPoints);
-            }
-
-            if (GUILayout.Button(showRoadVisualization ? "Hide Road Viz" : "Show Road Viz"))
-            {
-                showRoadVisualization = !showRoadVisualization;
-
-                EditorPrefs.SetBool(PrefRoadVisualization, showRoadVisualization);
-            }
+            showRoadVisualization.DrawSwitchButton("Hide Road Viz", "Show Road Viz");
+            isEditingControlPoints.DrawSwitchButton("Hide Point Edit", "Show Point Edit");
 
             if (isEditingControlPoints)
             {
+                GUILayout.BeginHorizontal();
+                GUILayout.Space(20);
+                GUILayout.BeginVertical();
                 if (GUILayout.Button("Insert Point"))
                 {
                     if (ControlPointCount == 0)
@@ -150,7 +167,12 @@ namespace MeshBuilder
                         }
                     }
                 }
+                GUILayout.EndVertical();
+                GUILayout.EndHorizontal();
             }
+
+            isEditingRotation.DrawSwitchButton("Hide Rotation Points", "Show Rotation Points");
+
             GUILayout.EndVertical();
             GUILayout.EndArea();
             Handles.EndGUI();
@@ -163,7 +185,7 @@ namespace MeshBuilder
             if (points == null)
             {
                 return;
-            }    
+            }
 
             Handles.CapFunction cap = Handles.SphereHandleCap;
             for (int i = 0; i < points.Length; i++)
@@ -196,27 +218,49 @@ namespace MeshBuilder
                     spline.UpdateControlPoint(i, newPos);
                 }
             }
+        }
 
+        void DrawRotationPoints()
+        {
             if (spline.UseCustomRotation && spline.RotationValues != null && spline.RotationValues.Length > 0)
             {
                 if (pointBuffer != null && pointCount > 0)
                 {
                     Handles.color = RotationPointColor;
 
-                    for (int rotIndex = 0; rotIndex < spline.RotationValues.Length; ++rotIndex)
+                    foreach (var rot in spline.RotationValues)
                     {
-                        DrawRotationControl(spline.RotationValues[rotIndex].Distance);
+                        DrawRotationControl(rot.Distance, rot.Value);
                     }
                 }
             }
-
-            Repaint();
         }
 
-        private void DrawRotationControl(float distance)
+        private void DrawRotationControl(float distance, float angle)
         {
             Handles.CapFunction cap = Handles.SphereHandleCap;
 
+            int aIndex, bIndex;
+            Vector3 position = CalcPositionAtDistance(distance, out aIndex, out bIndex);
+
+            var normal = (pointBuffer[bIndex] - pointBuffer[aIndex]).normalized;
+            var rot = Quaternion.AngleAxis(angle, normal);
+            var up = rot * Vector3.up;
+            var right = Vector3.Cross(up, normal);
+            Handles.color = new Color(1, 1, 1, 0.6f);
+            Handles.DrawWireDisc(position, normal, 1.2f);
+            Handles.color = Color.red;
+            Handles.DrawLine(position, position + right * 2f);
+            Handles.DrawLine(position, position + right * -2f);
+
+            Handles.DrawSolidDisc(position, normal, 0.2f);
+            Handles.DrawSolidArc(position, normal, Vector3.up, angle, 1.5f);
+
+            Handles.FreeMoveHandle(position + up * 1.5f, rot, 0.5f, Vector3.zero, Handles.SphereHandleCap);
+        }
+
+        private Vector3 CalcPositionAtDistance(float distance, out int aIndex, out int bIndex)
+        {
             float prevDist = 0;
             float curDist = 0;
             for (int i = 0; i < pointCount - 1; ++i)
@@ -224,15 +268,20 @@ namespace MeshBuilder
                 curDist += Vector3.Distance(pointBuffer[i], pointBuffer[i + 1]);
                 if (curDist >= distance)
                 {
+                    aIndex = i;
+                    bIndex = i + 1;
                     float t = (distance - prevDist) / (curDist - prevDist);
-                    Vector3 position = Vector3.Lerp(pointBuffer[i], pointBuffer[i + 1], t);
-                    Handles.FreeMoveHandle(position, Identity, 0.75f, Zero, cap);
-                    break;
+                    return Vector3.Lerp(pointBuffer[i], pointBuffer[i + 1], t);
                 }
                 prevDist = curDist;
             }
+
+            aIndex = pointCount - 2;
+            bIndex = pointCount - 1;
+
+            return pointBuffer[aIndex];
         }
-        
+
         private void DrawRoadLines()
         {
             if (pointBuffer != null && pointCount > 0)

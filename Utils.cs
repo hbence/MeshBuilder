@@ -39,6 +39,68 @@ namespace MeshBuilder
 
         static public void GUILabel(string text, int width)
             => GUILayout.Label(text, GUILayout.Width(width));
+
+        public abstract class ValueEditorPref<T>
+        {
+            public string Key { get; }
+
+            private T val;
+            public T Value 
+            { 
+                get => val; 
+                set
+                {
+                    val = value;
+                    Save();
+                }
+            }
+
+            public ValueEditorPref(string key, T defValue)
+            {
+                Key = key;
+                val = defValue;
+                Load();
+            }
+
+            public abstract void Load();
+            public abstract void Save();
+
+            public static implicit operator T(ValueEditorPref<T> val) => val.Value;
+        }
+
+        public class BoolEditorPref : ValueEditorPref<bool>
+        {
+            public BoolEditorPref(string key, bool defValue) : base(key, defValue) { }
+            public override void Load() => Value = EditorPrefs.GetBool(Key, Value);
+            public override void Save() => EditorPrefs.SetBool(Key, Value);
+
+            public void DrawSwitchButton(string onMsg, string offMessage)
+            {
+                if (GUILayout.Button(Value ? onMsg : offMessage))
+                {
+                    Value = !Value;
+                }
+            }
+        }
+
+        public class IntEditorPref : ValueEditorPref<int>
+        {
+            public IntEditorPref(string key, int defValue) : base(key, defValue) { }
+            public override void Load() => Value = EditorPrefs.GetInt(Key, Value);
+            public override void Save() => EditorPrefs.SetInt(Key, Value);
+        }
+
+        public class StringEditorPref : ValueEditorPref<string>
+        {
+            public StringEditorPref(string key, string defValue) : base(key, defValue) { }
+            public override void Load() => Value = EditorPrefs.GetString(Key, Value);
+            public override void Save() => EditorPrefs.SetString(Key, Value);
+        }
+
+        static public BoolEditorPref CreatePref(string key, bool defValue) => new BoolEditorPref(key, defValue);
+        static public IntEditorPref CreatePref(string key, int defValue) => new IntEditorPref(key, defValue);
+        static public StringEditorPref CreatePref(string key, string defValue) => new StringEditorPref(key, defValue);
+
 #endif
         public struct Offset
         {
