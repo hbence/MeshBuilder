@@ -97,9 +97,33 @@ namespace MeshBuilder
             public override void Save() => EditorPrefs.SetString(Key, Value);
         }
 
+        public class EnumEditorPref<T> : ValueEditorPref<T> where T : System.Enum
+        {
+            public EnumEditorPref(string key, T defValue) : base(key, defValue) { }
+            public override void Load() => Value = (T)System.Enum.Parse(typeof(T), EditorPrefs.GetString(Key, Value.ToString()));
+            public override void Save() => EditorPrefs.SetString(Key, Value.ToString());
+        }
+
+        public class Vector2EditorPref : ValueEditorPref<Vector2>
+        {
+            private string XKey => Key + "_x";
+            private string YKey => Key + "_y";
+
+            public Vector2EditorPref(string key, Vector2 defValue) : base(key, defValue) { }
+            public override void Load() => Value = new Vector2(EditorPrefs.GetFloat(XKey, 0), EditorPrefs.GetFloat(YKey, 0));
+
+            public override void Save()
+            {
+                EditorPrefs.SetFloat(XKey, Value.x);
+                EditorPrefs.SetFloat(YKey, Value.y);
+            }
+        }
+
         static public BoolEditorPref CreatePref(string key, bool defValue) => new BoolEditorPref(key, defValue);
         static public IntEditorPref CreatePref(string key, int defValue) => new IntEditorPref(key, defValue);
         static public StringEditorPref CreatePref(string key, string defValue) => new StringEditorPref(key, defValue);
+        static public EnumEditorPref<T> CreatePref<T>(string key, T defValue) where T: System.Enum => new EnumEditorPref<T>(key, defValue);
+        static public Vector2EditorPref CreatePref(string key, Vector2 defValue) => new Vector2EditorPref(key, defValue);
 
 #endif
         public struct Offset
