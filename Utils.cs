@@ -90,6 +90,13 @@ namespace MeshBuilder
             public override void Save() => EditorPrefs.SetInt(Key, Value);
         }
 
+        public class FloatEditorPref : ValueEditorPref<float>
+        {
+            public FloatEditorPref(string key, float defValue) : base(key, defValue) { }
+            public override void Load() => Value = EditorPrefs.GetFloat(Key, Value);
+            public override void Save() => EditorPrefs.SetFloat(Key, Value);
+        }
+
         public class StringEditorPref : ValueEditorPref<string>
         {
             public StringEditorPref(string key, string defValue) : base(key, defValue) { }
@@ -121,6 +128,7 @@ namespace MeshBuilder
 
         static public BoolEditorPref CreatePref(string key, bool defValue) => new BoolEditorPref(key, defValue);
         static public IntEditorPref CreatePref(string key, int defValue) => new IntEditorPref(key, defValue);
+        static public FloatEditorPref CreatePref(string key, float defValue) => new FloatEditorPref(key, defValue);
         static public StringEditorPref CreatePref(string key, string defValue) => new StringEditorPref(key, defValue);
         static public EnumEditorPref<T> CreatePref<T>(string key, T defValue) where T: System.Enum => new EnumEditorPref<T>(key, defValue);
         static public Vector2EditorPref CreatePref(string key, Vector2 defValue) => new Vector2EditorPref(key, defValue);
