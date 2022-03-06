@@ -39,29 +39,13 @@ namespace MeshBuilder.New
             var infoArray = new NativeArray<TopCellInfo>(data.RawData.Length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
             AddTemp(infoArray);
 
-            float3 normal = info.IsFlipped ? new float3(0, -1, 0) : new float3(0, 1, 0);
-
-            if (info.UseCullingData && data.HasCullingData)
-            {
-                lastHandle = CalculateInfoJob.Schedule(data, vertices, triangles, info.GenerateNormals, normal, normals, info.GenerateUvs, uvs, infoArray, lastHandle);
-            }
-            else
-            {
-                lastHandle = CalculateInfoNoCullingJob.Schedule(data, vertices, triangles, info.GenerateNormals, normal, normals, info.GenerateUvs, uvs, infoArray, lastHandle);
-            }
+            lastHandle = ScheduleCalculateInfoJob(data, info, infoArray, vertices, triangles, normals, uvs, lastHandle);
 
             JobHandle vertexHandle = ScheduleCalculateVerticesJob(data, info, useHeightData, cellSize, infoArray, vertices, lastHandle);
 
             if (info.GenerateUvs)
             {
-                float scaleU = info.UScale;
-                float scaleV = info.VScale;
-                if (info.NormalizeUV)
-                {
-                    scaleU /= (data.ColNum - 1) * cellSize;
-                    scaleV /= (data.RowNum - 1) * cellSize;
-                }
-                vertexHandle = CalculateUVsJob.Schedule(scaleU, scaleV, infoArray, vertices, uvs, vertexHandle);
+                vertexHandle = ScheduleCalculateUVJob(data, info, cellSize, infoArray, vertices, uvs, vertexHandle);
             }
 
             JobHandle triangleHandle = ScheduleCalculateTrianglesJob(data.ColNum, data.RowNum, infoArray, triangles, info.IsFlipped, lastHandle);
@@ -76,30 +60,15 @@ namespace MeshBuilder.New
             return lastHandle;
         }
 
-        private struct TopCellInfo
+        public struct TopCellInfo
         {
             public CellInfo info;
             public CellVertices verts;
             public IndexSpan tris;
         }
 
-        public struct IndexSpan
-        {
-            public int start;
-            public byte length;
-
-            public IndexSpan(int s, byte l)
-            {
-                start = s;
-                length = l;
-            }
-
-            public int End => start + length;
-            public bool Has => length > 0;
-        }
-
         [BurstCompile]
-        private struct CalculateInfoJob : IJob
+        public struct CalculateInfoJob : IJob
         {
             public int distanceColNum;
             public int distanceRowNum;
@@ -178,7 +147,7 @@ namespace MeshBuilder.New
         }
 
         [BurstCompile]
-        private struct CalculateInfoNoCullingJob : IJob
+        public struct CalculateInfoNoCullingJob : IJob
         {
             public int distanceColNum;
             public int distanceRowNum;
@@ -350,12 +319,26 @@ namespace MeshBuilder.New
             return verts;
         }
 
+        static public JobHandle ScheduleCalculateInfoJob(Data data, Info info, NativeArray<TopCellInfo> infoArray, NativeList<float3> vertices, NativeList<int> triangles, NativeList<float3> normals, NativeList<float2> uvs, JobHandle lastHandle = default)
+        {
+            float3 normal = info.IsFlipped ? new float3(0, -1, 0) : new float3(0, 1, 0);
+
+            if (info.UseCullingData && data.HasCullingData)
+            {
+                lastHandle = CalculateInfoJob.Schedule(data, vertices, triangles, info.GenerateNormals, normal, normals, info.GenerateUvs, uvs, infoArray, lastHandle);
+            }
+            else
+            {
+                lastHandle = CalculateInfoNoCullingJob.Schedule(data, vertices, triangles, info.GenerateNormals, normal, normals, info.GenerateUvs, uvs, infoArray, lastHandle);
+            }
+
+            return lastHandle;
+        }
+
         [BurstCompile]
-        private struct CalculateVerticesJob<VertexCalculator> : IJobParallelFor
+        public struct CalculateVerticesJob<VertexCalculator> : IJobParallelFor
             where VertexCalculator : struct, IVertexCalculator
         {
-            public int colNum;
-
             public VertexCalculator vertexCalculator;
             
             public float offsetY;
@@ -366,17 +349,13 @@ namespace MeshBuilder.New
             public void Execute(int index)
             {
                 TopCellInfo info = infoArray[index];
-                int x = index % colNum;
-                int y = index / colNum;
-                vertexCalculator.CalculateVertices(x, y, offsetY, info.info, info.verts, vertices);
+                vertexCalculator.CalculateVertices(index, info.info, info.verts, vertices);
             }
 
-            public static JobHandle Schedule(int colNum, VertexCalculator vertexCalculator, float offsetY, NativeArray<TopCellInfo> infoArray, NativeList<float3> vertices, JobHandle dependOn)
+            public static JobHandle Schedule(VertexCalculator vertexCalculator, float offsetY, NativeArray<TopCellInfo> infoArray, NativeList<float3> vertices, JobHandle dependOn)
             {
                 var vertexJob = new CalculateVerticesJob<VertexCalculator>
                 {
-                    colNum = colNum,
-
                     vertexCalculator = vertexCalculator,
 
                     offsetY = offsetY,
@@ -388,77 +367,39 @@ namespace MeshBuilder.New
             }
         }
 
-        [BurstCompile]
-        private struct CalculateVerticesWithHeightJob<VertexCalculator> : IJobParallelFor
-            where VertexCalculator : struct, IVertexCalculator
-        {
-            public int colNum;
-
-            public VertexCalculator vertexCalculator;
-
-            public float offsetY;
-            public float heightScale;
-
-            [ReadOnly] public NativeArray<TopCellInfo> infoArray;
-            [ReadOnly] public NativeArray<float> heights;
-            [NativeDisableParallelForRestriction] [WriteOnly] public NativeArray<float3> vertices;
-
-            public void Execute(int index)
-            {
-                TopCellInfo info = infoArray[index];
-                int x = index % colNum;
-                int y = index / colNum;
-                vertexCalculator.CalculateVertices(x, y, offsetY + heights[index] * heightScale, info.info, info.verts, vertices);
-            }
-
-            public static JobHandle Schedule(int colNum, VertexCalculator vertexCalculator, float offsetY, NativeArray<TopCellInfo> infoArray, NativeArray<float> heights, float heightScale, NativeList<float3> vertices, JobHandle dependOn)
-            {
-                var vertexJob = new CalculateVerticesWithHeightJob<VertexCalculator>
-                {
-                    colNum = colNum,
-
-                    vertexCalculator = vertexCalculator,
-
-                    offsetY = offsetY,
-                    heights = heights,
-                    heightScale = heightScale,
-
-                    infoArray = infoArray,
-                    vertices = vertices.AsDeferredJobArray()
-                };
-                return vertexJob.Schedule(infoArray.Length, CalculateVertexBatchNum, dependOn);
-            }
-        }
-
-        private static JobHandle ScheduleCalculateVerticesJob(Data data, Info info, bool useHeightData, float cellSize, NativeArray<TopCellInfo> infoArray, NativeList<float3> vertices, JobHandle lastHandle)
+        public static JobHandle ScheduleCalculateVerticesJob(Data data, Info info, bool useHeightData, float cellSize, NativeArray<TopCellInfo> infoArray, NativeList<float3> vertices, JobHandle lastHandle)
         {
             if (useHeightData)
             {
                 if (info.LerpToExactEdge == 1f)
                 {
-                    var vertexCalculator = new BasicVertexCalculator() { cellSize = cellSize };
-                    return CalculateVerticesWithHeightJob<BasicVertexCalculator>.Schedule(data.ColNum, vertexCalculator, info.OffsetY, infoArray, data.HeightsRawData, info.HeightScale, vertices, lastHandle);
+                    var vertexCalculator = new BasicHeightVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, heightOffset = info.OffsetY, heights = data.HeightsRawData, heightScale = info.HeightScale };
+                    return ScheduleCalculateVerticesJob(info, vertexCalculator, infoArray, vertices, lastHandle);
                 }
                 else
                 {
-                    var vertexCalculator = new LerpedVertexCalculator() { cellSize = cellSize, lerpToEdge = info.LerpToExactEdge };
-                    return CalculateVerticesWithHeightJob<LerpedVertexCalculator>.Schedule(data.ColNum, vertexCalculator, info.OffsetY, infoArray, data.HeightsRawData, info.HeightScale, vertices, lastHandle);
+                    var vertexCalculator = new LerpedHeightVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, lerpToEdge = info.LerpToExactEdge, heightOffset = info.OffsetY, heights = data.HeightsRawData, heightScale = info.HeightScale };
+                    return ScheduleCalculateVerticesJob(info, vertexCalculator, infoArray, vertices, lastHandle);
                 }
             }
             else
             {
                 if (info.LerpToExactEdge == 1f)
                 {
-                    var vertexCalculator = new BasicVertexCalculator() { cellSize = cellSize };
-                    return CalculateVerticesJob<BasicVertexCalculator>.Schedule(data.ColNum, vertexCalculator, info.OffsetY, infoArray, vertices, lastHandle);
+                    var vertexCalculator = new BasicVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, heightOffset = info.OffsetY };
+                    return ScheduleCalculateVerticesJob(info, vertexCalculator, infoArray, vertices, lastHandle);
                 }
                 else
                 {
-                    var vertexCalculator = new LerpedVertexCalculator() { cellSize = cellSize, lerpToEdge = info.LerpToExactEdge };
-                    return CalculateVerticesJob<LerpedVertexCalculator>.Schedule(data.ColNum, vertexCalculator, info.OffsetY, infoArray, vertices, lastHandle);
+                    var vertexCalculator = new LerpedVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, lerpToEdge = info.LerpToExactEdge, heightOffset = info.OffsetY };
+                    return ScheduleCalculateVerticesJob(info, vertexCalculator, infoArray, vertices, lastHandle);
                 }
             }
         }
+
+        public static JobHandle ScheduleCalculateVerticesJob<T>(Info info, T vertexCalculator, NativeArray<TopCellInfo> infoArray, NativeList<float3> vertices, JobHandle lastHandle)
+            where T : struct, IVertexCalculator
+                => CalculateVerticesJob<T>.Schedule(vertexCalculator, info.OffsetY, infoArray, vertices, lastHandle);
 
         [BurstCompile]
         private struct CalculateTrianglesJob<Orderer> : IJobParallelFor
@@ -496,7 +437,7 @@ namespace MeshBuilder.New
             }
         }
 
-        private static JobHandle ScheduleCalculateTrianglesJob(int colNum, int rowNum, NativeArray<TopCellInfo> infoArray, NativeList<int> triangles, bool isFlipped, JobHandle dependOn)
+        public static JobHandle ScheduleCalculateTrianglesJob(int colNum, int rowNum, NativeArray<TopCellInfo> infoArray, NativeList<int> triangles, bool isFlipped, JobHandle dependOn)
             => isFlipped ?
                  CalculateTrianglesJob<ReverseTriangleOrderer>.Schedule(colNum, rowNum, infoArray, triangles, dependOn) :
                  CalculateTrianglesJob<TriangleOrderer>.Schedule(colNum, rowNum, infoArray, triangles, dependOn);
@@ -657,7 +598,7 @@ namespace MeshBuilder.New
         }
 
         [BurstCompile]
-        private struct CalculateUVsJob : IJobParallelFor
+        public struct CalculateUVsJob : IJobParallelFor
         {
             public float scaleU;
             public float scaleV;
@@ -696,6 +637,18 @@ namespace MeshBuilder.New
                 };
                 return uvJob.Schedule(infos.Length, CalculateVertexBatchNum, dependOn);
             }
+        }
+
+        public static JobHandle ScheduleCalculateUVJob(Data data, Info info, float cellSize, NativeArray<TopCellInfo> infoArray, NativeList<float3> vertices, NativeList<float2> uvs, JobHandle lastHandle = default)
+        {
+            float scaleU = info.UScale;
+            float scaleV = info.VScale;
+            if (info.NormalizeUV)
+            {
+                scaleU /= (data.ColNum - 1) * cellSize;
+                scaleV /= (data.RowNum - 1) * cellSize;
+            }
+            return CalculateUVsJob.Schedule(scaleU, scaleV, infoArray, vertices, uvs, lastHandle);
         }
     }
 }
