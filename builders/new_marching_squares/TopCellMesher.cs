@@ -244,7 +244,7 @@ namespace MeshBuilder.New
                 TopCellInfo br = infoArray[index + 1];
                 TopCellInfo tr = infoArray[index + 1 + cornerColNum];
                 TopCellInfo tl = infoArray[index + cornerColNum];
-                CalculateIndices(orderer, bl.info.config, bl.tris, bl.verts, br.verts, tr.verts, tl.verts, triangles);
+                CalculateIndices(orderer, bl.info.config, bl.tris.start, bl.tris, bl.verts, br.verts, tr.verts, tl.verts, triangles);
             }
 
             public static JobHandle Schedule(int colNum, int rowNum, NativeArray<TopCellInfo> infoArray, NativeList<int> triangles, JobHandle dependOn)
@@ -266,15 +266,14 @@ namespace MeshBuilder.New
                  CalculateTrianglesJob<ReverseTriangleOrderer>.Schedule(colNum, rowNum, infoArray, triangles, dependOn) :
                  CalculateTrianglesJob<TriangleOrderer>.Schedule(colNum, rowNum, infoArray, triangles, dependOn);
 
-        protected static void CalculateIndices<TriangleOrderer>(TriangleOrderer orderer, byte config, IndexSpan tris, CellVertices bl, CellVertices br, CellVertices tr, CellVertices tl, NativeArray<int> triangles)
+        public static int CalculateIndices<TriangleOrderer>(TriangleOrderer orderer, byte config, int triangleIndex, IndexSpan tris, CellVertices bl, CellVertices br, CellVertices tr, CellVertices tl, NativeArray<int> triangles)
                 where TriangleOrderer : struct, ITriangleOrderer
         {
             if (tris.length == 0)
             {
-                return;
+                return triangleIndex;
             }
 
-            int triangleIndex = tris.start;
             switch (config)
             {
                 // full
@@ -377,6 +376,7 @@ namespace MeshBuilder.New
                         break;
                     }
             }
+            return triangleIndex;
         }
 
         private static int Vertex(CellVertices verts) => verts.corner;
@@ -434,7 +434,7 @@ namespace MeshBuilder.New
             public void Execute(int index)
                 => TopCalculateUvs(infos[index].verts, scaleU, scaleV, vertices, uvs);
 
-            static private void TopCalculateUvs(CellVertices verts, float scaleX, float scaleY, NativeArray<float3> vertices, NativeArray<float2> uvs)
+            static public void TopCalculateUvs(CellVertices verts, float scaleX, float scaleY, NativeArray<float3> vertices, NativeArray<float2> uvs)
             {
                 if (verts.corner >= 0) { SetUV(verts.corner, vertices, scaleX, scaleY, uvs); }
                 if (verts.leftEdge >= 0) { SetUV(verts.leftEdge, vertices, scaleX, scaleY, uvs); }
@@ -472,6 +472,34 @@ namespace MeshBuilder.New
                 scaleV /= (data.RowNum - 1) * cellSize;
             }
             return CalculateUVsJob.Schedule(scaleU, scaleV, infoArray, vertices, uvs, lastHandle);
+        }
+
+        public static byte CalcTriIndexCount(byte config)
+        {
+            switch (config)
+            {
+                // full
+                case MaskBL | MaskBR | MaskTR | MaskTL: return 2 * 3;
+                // corners
+                case MaskBL: return 1 * 3;
+                case MaskBR: return 1 * 3;
+                case MaskTR: return 1 * 3;
+                case MaskTL: return 1 * 3;
+                // halves
+                case MaskBL | MaskBR: return 2 * 3;
+                case MaskTL | MaskTR: return 2 * 3;
+                case MaskBL | MaskTL: return 2 * 3;
+                case MaskBR | MaskTR: return 2 * 3;
+                // diagonals
+                case MaskBL | MaskTR: return 4 * 3;
+                case MaskTL | MaskBR: return 4 * 3;
+                // three quarters
+                case MaskBL | MaskTR | MaskBR: return 3 * 3;
+                case MaskBL | MaskTL | MaskBR: return 3 * 3;
+                case MaskBL | MaskTL | MaskTR: return 3 * 3;
+                case MaskTL | MaskTR | MaskBR: return 3 * 3;
+            }
+            return 0;
         }
     }
 }

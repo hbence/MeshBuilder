@@ -41,7 +41,7 @@ namespace MeshBuilder.New
             lastHandle = ScheduleCalculateInfoJob(data, info, infoArray, vertices, triangles, normals, uvs, lastHandle);
 
             NativeArray<EdgeNormals> edgeNormalsArray = default;
-           // if (needsNormalsData)
+            if (needsNormalsData)
             {
                 edgeNormalsArray = new NativeArray<EdgeNormals>(data.RawData.Length, Allocator.TempJob, NativeArrayOptions.ClearMemory);
                 AddTemp(edgeNormalsArray);

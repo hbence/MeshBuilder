@@ -12,6 +12,8 @@ namespace MeshBuilder.New
 {
     public class SideCellMesher : CellMesher
     {
+        public const byte FullCellIndexCount = 2 * 3;
+
         [Serializable]
         public class SideInfo : Info
         {
@@ -108,7 +110,7 @@ namespace MeshBuilder.New
                 tris = new IndexSpan(nextTriIndex, 0)
             };
 
-            info.tris.length = SideCalcTriIndexCount(config);
+            info.tris.length = (byte)((config == 0 || config == MaskFull) ? 0 : 2 * 3);
             nextTriIndex += info.tris.length;
 
             return info;
@@ -125,34 +127,6 @@ namespace MeshBuilder.New
                 tris = new IndexSpan(nextTriIndex, 0)
             };
             return info;
-        }
-
-        public static byte SideCalcTriIndexCount(byte config)
-        {
-            switch (config)
-            {
-                // full
-                case MaskBL | MaskBR | MaskTR | MaskTL: return 0;
-                // corners
-                case MaskBL: return 2 * 3;
-                case MaskBR: return 2 * 3;
-                case MaskTR: return 2 * 3;
-                case MaskTL: return 2 * 3;
-                // halves
-                case MaskBL | MaskBR: return 2 * 3;
-                case MaskTL | MaskTR: return 2 * 3;
-                case MaskBL | MaskTL: return 2 * 3;
-                case MaskBR | MaskTR: return 2 * 3;
-                // diagonals
-                case MaskBL | MaskTR: return 4 * 3;
-                case MaskTL | MaskBR: return 4 * 3;
-                // three quarters
-                case MaskBL | MaskTR | MaskBR: return 2 * 3;
-                case MaskBL | MaskTL | MaskBR: return 2 * 3;
-                case MaskBL | MaskTL | MaskTR: return 2 * 3;
-                case MaskTL | MaskTR | MaskBR: return 2 * 3;
-            }
-            return 0;
         }
 
         static public JobHandle ScheduleCalculateInfoJob(Data data, Info info, NativeArray<SideCellInfo> infoArray, NativeList<float3> vertices, NativeList<int> triangles, NativeList<float3> normals, NativeList<float2> uvs, JobHandle lastHandle = default)
@@ -332,7 +306,7 @@ namespace MeshBuilder.New
                 SideCellInfo bl = infoArray[index];
                 SideCellInfo br = infoArray[index + 1];
                 SideCellInfo tl = infoArray[index + cornerColNum];
-                CalculateSideIndices(orderer, bl, br, tl, triangles);
+                CalculateSideIndices(orderer, bl.tris.start, bl, br, tl, triangles);
             }
 
             public static JobHandle Schedule(int colNum, int rowNum, NativeArray<SideCellInfo> infoArray, NativeList<int> triangles, JobHandle dependOn)
@@ -349,20 +323,19 @@ namespace MeshBuilder.New
             }
         }
 
-        public static JobHandle ScheduleCalculateTrianglesJob(int colNum, int rowNum, NativeArray<SideCellInfo> infoArray, NativeList<int> triangles, bool isFlipped, JobHandle dependOn)
+        private static JobHandle ScheduleCalculateTrianglesJob(int colNum, int rowNum, NativeArray<SideCellInfo> infoArray, NativeList<int> triangles, bool isFlipped, JobHandle dependOn)
             => isFlipped ?
                  CalculateTrianglesJob<ReverseTriangleOrderer>.Schedule(colNum, rowNum, infoArray, triangles, dependOn) :
                  CalculateTrianglesJob<TriangleOrderer>.Schedule(colNum, rowNum, infoArray, triangles, dependOn);
 
-        public static void CalculateSideIndices<TriangleOrderer>(TriangleOrderer orderer, SideCellInfo bl, SideCellInfo br, SideCellInfo tl, NativeArray<int> triangles)
+        public static int CalculateSideIndices<TriangleOrderer>(TriangleOrderer orderer, int triangleIndex, SideCellInfo bl, SideCellInfo br, SideCellInfo tl, NativeArray<int> triangles)
             where TriangleOrderer : struct, ITriangleOrderer
         {
             if (bl.tris.length == 0)
             {
-                return;
+                return triangleIndex;
             }
 
-            int triangleIndex = bl.tris.start;
             switch (bl.info.config)
             {
                 // full
@@ -396,6 +369,7 @@ namespace MeshBuilder.New
                 case MaskBL | MaskTL | MaskTR: AddFace(orderer, triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(br), BottomLeftEdge(br)); break;
                 case MaskTL | MaskTR | MaskBR: AddFace(orderer, triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
             }
+            return triangleIndex;
         }
 
         private static int TopLeftEdge(SideCellInfo info) => info.topVerts.leftEdge;
@@ -403,7 +377,7 @@ namespace MeshBuilder.New
         private static int TopBottomEdge(SideCellInfo info) => info.topVerts.bottomEdge;
         private static int BottomBottomEdge(SideCellInfo info) => info.bottomVerts.bottomEdge;
 
-        public static void AddFace<Orderer>(Orderer orderer, NativeArray<int> triangles, ref int nextIndex, int bl, int tl, int tr, int br)
+        private static void AddFace<Orderer>(Orderer orderer, NativeArray<int> triangles, ref int nextIndex, int bl, int tl, int tr, int br)
             where Orderer : struct, ITriangleOrderer
         {
             orderer.AddTriangle(triangles, ref nextIndex, bl, tl, tr);

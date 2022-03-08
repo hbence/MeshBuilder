@@ -42,14 +42,14 @@ namespace MeshBuilder.New
         protected override void EndGeneration(Mesh mesh)
         {
             uint flags = MeshDataBufferFlags;
-            if (uvs.IsCreated && uvs.Length > 0) { flags |= (uint)MeshBuffer.UV; }
+            if (HasUVs) { flags |= (uint)MeshBuffer.UV; }
 
             using (MeshData data = new MeshData(vertices.Length, triangles.Length, Allocator.Temp, flags))
             {
                 NativeArray<float3>.Copy(vertices, data.Vertices);
                 NativeArray<int>.Copy(triangles, data.Triangles);
-                if (normals.IsCreated && normals.Length > 0) { NativeArray<float3>.Copy(normals, data.Normals); }
-                if (uvs.IsCreated && uvs.Length > 0) { NativeArray<float2>.Copy(uvs, data.UVs); }
+                if (HasNormals) { NativeArray<float3>.Copy(normals, data.Normals); }
+                if (HasUVs) { NativeArray<float2>.Copy(uvs, data.UVs); }
 
                 data.UpdateMesh(mesh, MeshData.UpdateMode.Clear);
             }
@@ -61,15 +61,8 @@ namespace MeshBuilder.New
         {
             vertices = new NativeList<float3>(Allocator.TempJob);
             triangles = new NativeList<int>(Allocator.TempJob);
-
-            if (hasNormals)
-            {
-                normals = new NativeList<float3>(Allocator.TempJob);
-            }
-            if (hasUVs)
-            {
-                uvs = new NativeList<float2>(Allocator.TempJob);
-            }
+            normals = new NativeList<float3>(Allocator.TempJob);
+            uvs = new NativeList<float2>(Allocator.TempJob);
         }
 
         override public void Dispose()
@@ -367,44 +360,6 @@ namespace MeshBuilder.New
             config |= (tl >= DistanceLimit) ? MaskTL : MaskZero;
 
             return config;
-        }
-
-        protected static NativeArray<byte> CreateIndexCountArray(Allocator allocator)
-        {
-            NativeArray<byte> configs = new NativeArray<byte>(16, allocator);
-            for (byte config = 0; config <= MaskFull; ++config)
-            {
-                configs[config] = CalcTriIndexCount(config);
-            }
-            return configs;
-        }
-
-        protected static byte CalcTriIndexCount(byte config)
-        {
-            switch (config)
-            {
-                // full
-                case MaskBL | MaskBR | MaskTR | MaskTL: return 2 * 3;
-                // corners
-                case MaskBL: return 1 * 3;
-                case MaskBR: return 1 * 3;
-                case MaskTR: return 1 * 3;
-                case MaskTL: return 1 * 3;
-                // halves
-                case MaskBL | MaskBR: return 2 * 3;
-                case MaskTL | MaskTR: return 2 * 3;
-                case MaskBL | MaskTL: return 2 * 3;
-                case MaskBR | MaskTR: return 2 * 3;
-                // diagonals
-                case MaskBL | MaskTR: return 4 * 3;
-                case MaskTL | MaskBR: return 4 * 3;
-                // three quarters
-                case MaskBL | MaskTR | MaskBR: return 3 * 3;
-                case MaskBL | MaskTL | MaskBR: return 3 * 3;
-                case MaskBL | MaskTL | MaskTR: return 3 * 3;
-                case MaskTL | MaskTR | MaskBR: return 3 * 3;
-            }
-            return 0;
         }
 
         [Serializable]
