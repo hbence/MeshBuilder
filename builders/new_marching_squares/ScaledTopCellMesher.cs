@@ -41,7 +41,7 @@ namespace MeshBuilder.New
             lastHandle = ScheduleCalculateInfoJob(data, info, infoArray, vertices, triangles, normals, uvs, lastHandle);
 
             NativeArray<EdgeNormals> edgeNormalsArray = default;
-            if (needsNormalsData)
+           // if (needsNormalsData)
             {
                 edgeNormalsArray = new NativeArray<EdgeNormals>(data.RawData.Length, Allocator.TempJob, NativeArrayOptions.ClearMemory);
                 AddTemp(edgeNormalsArray);
@@ -123,35 +123,39 @@ namespace MeshBuilder.New
                 // full
                 case MaskBL | MaskBR | MaskTR | MaskTL: break;
                 // corners
-                case MaskBL: AddNormal(0, VcLerpT(cell, lerpToEdge), HzLerpT(cell, lerpToEdge), 0, ref cellNormal.bottomEdgeDir, ref cellNormal.leftEdgeDir); break;
-                case MaskBR: AddNormal(HzLerpT(cell, lerpToEdge), 0, 1, VcLerpT(right, lerpToEdge), ref cellNormal.bottomEdgeDir, ref rightNormal.leftEdgeDir); break;
-                case MaskTR: AddNormal(1, VcLerpT(right, lerpToEdge), HzLerpT(top, lerpToEdge), 1, ref rightNormal.leftEdgeDir, ref topNormal.bottomEdgeDir); break;
-                case MaskTL: AddNormal(HzLerpT(top, lerpToEdge), 1, 0, VcLerpT(cell, lerpToEdge), ref topNormal.bottomEdgeDir, ref cellNormal.leftEdgeDir); break;
+                case MaskBL: AddNormal(0, LerpVc(cell, lerpToEdge), LerpHz(cell, lerpToEdge), 0, ref cellNormal.bottomEdgeDir, ref cellNormal.leftEdgeDir); break;
+                case MaskBR: AddNormal(LerpHz(cell, lerpToEdge), 0, 1, LerpVc(right, lerpToEdge), ref cellNormal.bottomEdgeDir, ref rightNormal.leftEdgeDir); break;
+                case MaskTR: AddNormal(1, LerpVc(right, lerpToEdge), LerpHz(top, lerpToEdge), 1, ref rightNormal.leftEdgeDir, ref topNormal.bottomEdgeDir); break;
+                case MaskTL: AddNormal(LerpHz(top, lerpToEdge), 1, 0, LerpVc(cell, lerpToEdge), ref topNormal.bottomEdgeDir, ref cellNormal.leftEdgeDir); break;
                 // halves
-                case MaskBL | MaskBR: AddNormal(0, VcLerpT(cell, lerpToEdge), 1, VcLerpT(right, lerpToEdge), ref cellNormal.leftEdgeDir, ref rightNormal.leftEdgeDir); break;
-                case MaskTL | MaskTR: AddNormal(1, VcLerpT(right, lerpToEdge), 0, VcLerpT(cell, lerpToEdge), ref cellNormal.leftEdgeDir, ref rightNormal.leftEdgeDir); break;
-                case MaskBL | MaskTL: AddNormal(HzLerpT(top, lerpToEdge), 1, HzLerpT(cell, lerpToEdge), 0, ref cellNormal.bottomEdgeDir, ref topNormal.bottomEdgeDir); break;
-                case MaskBR | MaskTR: AddNormal(HzLerpT(cell, lerpToEdge), 0, HzLerpT(top, lerpToEdge), 1, ref cellNormal.bottomEdgeDir, ref topNormal.bottomEdgeDir); break;
+                case MaskBL | MaskBR: AddNormal(0, LerpVc(cell, lerpToEdge), 1, LerpVc(right, lerpToEdge), ref cellNormal.leftEdgeDir, ref rightNormal.leftEdgeDir); break;
+                case MaskTL | MaskTR: AddNormal(1, LerpVc(right, lerpToEdge), 0, LerpVc(cell, lerpToEdge), ref cellNormal.leftEdgeDir, ref rightNormal.leftEdgeDir); break;
+                case MaskBL | MaskTL: AddNormal(LerpHz(top, lerpToEdge), 1, LerpHz(cell, lerpToEdge), 0, ref cellNormal.bottomEdgeDir, ref topNormal.bottomEdgeDir); break;
+                case MaskBR | MaskTR: AddNormal(LerpHz(cell, lerpToEdge), 0, LerpHz(top, lerpToEdge), 1, ref cellNormal.bottomEdgeDir, ref topNormal.bottomEdgeDir); break;
                 // diagonals
                 case MaskBL | MaskTR:
                     {
-                        AddNormal(0, VcLerpT(cell, lerpToEdge), HzLerpT(top, lerpToEdge), 1, ref cellNormal.leftEdgeDir, ref topNormal.bottomEdgeDir);
-                        AddNormal(1, VcLerpT(right, lerpToEdge), HzLerpT(cell, lerpToEdge), 0, ref rightNormal.leftEdgeDir, ref cellNormal.bottomEdgeDir);
+                        AddNormal(0, LerpVc(cell, lerpToEdge), LerpHz(top, lerpToEdge), 1, ref cellNormal.leftEdgeDir, ref topNormal.bottomEdgeDir);
+                        AddNormal(1, LerpVc(right, lerpToEdge), LerpHz(cell, lerpToEdge), 0, ref rightNormal.leftEdgeDir, ref cellNormal.bottomEdgeDir);
                         break;
                     }
                 case MaskTL | MaskBR:
                     {
-                        AddNormal(HzLerpT(top, lerpToEdge), 1, 1, VcLerpT(right, lerpToEdge), ref topNormal.bottomEdgeDir, ref rightNormal.leftEdgeDir);
-                        AddNormal(HzLerpT(cell, lerpToEdge), 0, 0, VcLerpT(cell, lerpToEdge), ref cellNormal.leftEdgeDir, ref cellNormal.bottomEdgeDir);
+                        AddNormal(LerpHz(top, lerpToEdge), 1, 1, LerpVc(right, lerpToEdge), ref topNormal.bottomEdgeDir, ref rightNormal.leftEdgeDir);
+                        AddNormal(LerpHz(cell, lerpToEdge), 0, 0, LerpVc(cell, lerpToEdge), ref cellNormal.leftEdgeDir, ref cellNormal.bottomEdgeDir);
                         break;
                     }
                 // three quarters
-                case MaskBL | MaskTR | MaskBR: AddNormal(0, VcLerpT(cell, lerpToEdge), HzLerpT(top, lerpToEdge), 1, ref cellNormal.leftEdgeDir, ref topNormal.bottomEdgeDir); break;
-                case MaskBL | MaskTL | MaskBR: AddNormal(HzLerpT(top, lerpToEdge), 1, 1, VcLerpT(right, lerpToEdge), ref topNormal.bottomEdgeDir, ref rightNormal.leftEdgeDir); break;
-                case MaskBL | MaskTL | MaskTR: AddNormal(1, VcLerpT(right, lerpToEdge), HzLerpT(cell, lerpToEdge), 0, ref rightNormal.leftEdgeDir, ref cellNormal.bottomEdgeDir); break;
-                case MaskTL | MaskTR | MaskBR: AddNormal(HzLerpT(cell, lerpToEdge), 0, 0, VcLerpT(cell, lerpToEdge), ref cellNormal.leftEdgeDir, ref cellNormal.bottomEdgeDir); break;
+                case MaskBL | MaskTR | MaskBR: AddNormal(0, LerpVc(cell, lerpToEdge), LerpHz(top, lerpToEdge), 1, ref cellNormal.leftEdgeDir, ref topNormal.bottomEdgeDir); break;
+                case MaskBL | MaskTL | MaskBR: AddNormal(LerpHz(top, lerpToEdge), 1, 1, LerpVc(right, lerpToEdge), ref topNormal.bottomEdgeDir, ref rightNormal.leftEdgeDir); break;
+                case MaskBL | MaskTL | MaskTR: AddNormal(1, LerpVc(right, lerpToEdge), LerpHz(cell, lerpToEdge), 0, ref rightNormal.leftEdgeDir, ref cellNormal.bottomEdgeDir); break;
+                case MaskTL | MaskTR | MaskBR: AddNormal(LerpHz(cell, lerpToEdge), 0, 0, LerpVc(cell, lerpToEdge), ref cellNormal.leftEdgeDir, ref cellNormal.bottomEdgeDir); break;
             }
         }
+
+        private const float Epsilon = math.EPSILON;
+        private static float LerpVc(CellInfo cornerInfo, float lerpToEdge) => LerpT(cornerInfo.cornerDist + Epsilon, cornerInfo.topDist + Epsilon, lerpToEdge);
+        private static float LerpHz(CellInfo cornerInfo, float lerpToEdge) => LerpT(cornerInfo.cornerDist + Epsilon, cornerInfo.rightDist + Epsilon, lerpToEdge);
 
         private static void AddNormal(float ax, float ay, float bx, float by, ref float2 edgeDirA, ref float2 edgeDirB)
         {
@@ -297,7 +301,7 @@ namespace MeshBuilder.New
                         edgeNormalsArray = edgeNormalsArray, 
                         sideOffsetScale = info.ScaledOffset 
                     };
-                    return TopCellMesher.ScheduleCalculateVerticesJob(info, vertexCalculator, infoArray, vertices, lastHandle);
+                    return TopCellMesher.ScheduleCalculateVerticesJob(vertexCalculator, infoArray, vertices, lastHandle);
                 }
                 else
                 {
@@ -312,7 +316,7 @@ namespace MeshBuilder.New
                         edgeNormalsArray = edgeNormalsArray, 
                         sideOffsetScale = info.ScaledOffset 
                     };
-                    return TopCellMesher.ScheduleCalculateVerticesJob(info, vertexCalculator, infoArray, vertices, lastHandle);
+                    return TopCellMesher.ScheduleCalculateVerticesJob(vertexCalculator, infoArray, vertices, lastHandle);
                 }
             }
             else
@@ -320,12 +324,12 @@ namespace MeshBuilder.New
                 if (info.LerpToExactEdge == 1f)
                 {
                     var vertexCalculator = new ScaledBasicVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, heightOffset = info.OffsetY, edgeNormalsArray = edgeNormalsArray, sideOffsetScale = info.ScaledOffset };
-                    return TopCellMesher.ScheduleCalculateVerticesJob(info, vertexCalculator, infoArray, vertices, lastHandle);
+                    return TopCellMesher.ScheduleCalculateVerticesJob(vertexCalculator, infoArray, vertices, lastHandle);
                 }
                 else
                 {
                     var vertexCalculator = new ScaledLerpedVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, lerpToEdge = info.LerpToExactEdge, heightOffset = info.OffsetY, edgeNormalsArray = edgeNormalsArray, sideOffsetScale = info.ScaledOffset };
-                    return TopCellMesher.ScheduleCalculateVerticesJob(info, vertexCalculator, infoArray, vertices, lastHandle);
+                    return TopCellMesher.ScheduleCalculateVerticesJob(vertexCalculator, infoArray, vertices, lastHandle);
                 }
             }
         }

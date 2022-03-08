@@ -12,6 +12,13 @@ namespace MeshBuilder.New
 {
     public class TopCellMesher : CellMesher
     {
+        public struct TopCellInfo
+        {
+            public CellInfo info;
+            public CellVertices verts;
+            public IndexSpan tris;
+        }
+
         private float cellSize;
         private Data data;
         private Info info;
@@ -60,225 +67,29 @@ namespace MeshBuilder.New
             return lastHandle;
         }
 
-        public struct TopCellInfo
+        protected struct TopCellInfoGenerator : InfoGenerator<TopCellInfo>
         {
-            public CellInfo info;
-            public CellVertices verts;
-            public IndexSpan tris;
+            public TopCellInfo GenerateInfoWithTriangles(int index, float cornerDistance, float rightDistance, float topRightDistance, float topDistance, ref int nextVertex, ref int nextTriIndex)
+                => TopCellMesher.GenerateInfoWithTriangles(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertex, ref nextTriIndex);
+
+            public TopCellInfo GenerateInfoNoTriangles(int index, float cornerDistance, float rightDistance, float topRightDistance, float topDistance, ref int nextVertex, ref int nextTriIndex)
+                => TopCellMesher.GenerateInfoNoTriangles(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertex, ref nextTriIndex);
         }
 
-        [BurstCompile]
-        public struct CalculateInfoJob : IJob
+        protected struct CulledTopCellInfoGenerator : InfoGenerator<TopCellInfo>
         {
-            public int distanceColNum;
-            public int distanceRowNum;
+            [ReadOnly] public NativeArray<bool> cullingArray;
 
-            [ReadOnly] public NativeArray<float> distances;
-            [ReadOnly] public NativeArray<bool> cullingData;
+            public TopCellInfo GenerateInfoWithTriangles(int index, float cornerDistance, float rightDistance, float topRightDistance, float topDistance, ref int nextVertex, ref int nextTriIndex)
+                => cullingArray[index] ? 
+                        TopCellMesher.GenerateInfoNoTriangles(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertex, ref nextTriIndex) :
+                        TopCellMesher.GenerateInfoWithTriangles(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertex, ref nextTriIndex);
 
-            public NativeList<float3> vertices;
-            public NativeList<int> indices;
-
-            public bool generateNormals;
-            public float3 normal;
-            public NativeList<float3> normals;
-
-            public bool generateUVs;
-            public NativeList<float2> uvs;
-
-            [WriteOnly] public NativeArray<TopCellInfo> info;
-
-            public void Execute()
-            {
-                int nextVertex = 0;
-                int nextTriangleIndex = 0;
-
-                // inner cells
-                for (int y = 0; y < distanceRowNum - 1; ++y)
-                {
-                    for (int x = 0; x < distanceColNum - 1; ++x)
-                    {
-                        int index = y * distanceColNum + x;
-                        float corner = distances[index];
-                        float right = distances[index + 1];
-                        float topRight = distances[index + 1 + distanceColNum];
-                        float top = distances[index + distanceColNum];
-
-                        bool hasCell = !cullingData[index];
-                        info[index] = GenerateInfo(corner, right, topRight, top, ref nextVertex, ref nextTriangleIndex, hasCell);
-                    }
-                }                
-
-                GenerateBorderInfo(distanceColNum, distanceRowNum, distances, ref nextVertex, ref nextTriangleIndex, info);
-
-                InitializeMeshData(nextVertex, nextTriangleIndex, ref vertices, ref indices, generateNormals, ref normals, generateUVs, ref uvs);
-                if (generateNormals)
-                {
-                    for (int i = 0; i < normals.Length; ++i)
-                    {
-                        normals[i] = normal;
-                    }
-                }
-            }
-
-            public static JobHandle Schedule(Data data, NativeList<float3> vertices, NativeList<int> triangles, bool generateNormals, float3 normal, NativeList<float3> normals, bool generateUVs, NativeList<float2> uvs, NativeArray<TopCellInfo> info, JobHandle dependOn = default)
-            {
-                var cornerJob = new CalculateInfoJob
-                {
-                    distanceColNum = data.ColNum, 
-                    distanceRowNum = data.RowNum,
-
-                    distances = data.RawData, 
-                    cullingData = data.CullingDataRawData,
-
-                    vertices = vertices, 
-                    indices = triangles,
-
-                    generateNormals = generateNormals, 
-                    normals = normals,
-                    normal = normal,
-                    generateUVs = generateUVs, 
-                    uvs = uvs,
-
-                    info = info
-                };
-                return cornerJob.Schedule(dependOn);
-            }
+            public TopCellInfo GenerateInfoNoTriangles(int index, float cornerDistance, float rightDistance, float topRightDistance, float topDistance, ref int nextVertex, ref int nextTriIndex)
+                => TopCellMesher.GenerateInfoNoTriangles(cornerDistance, rightDistance, topRightDistance, topDistance, ref nextVertex, ref nextTriIndex);
         }
 
-        [BurstCompile]
-        public struct CalculateInfoNoCullingJob : IJob
-        {
-            public int distanceColNum;
-            public int distanceRowNum;
-
-            [ReadOnly] public NativeArray<float> distances;
-
-            public NativeList<float3> vertices;
-            public NativeList<int> indices;
-
-            public bool generateNormals;
-            public float3 normal;
-            public NativeList<float3> normals;
-
-            public bool generateUVs;
-            public NativeList<float2> uvs;
-
-            [WriteOnly] public NativeArray<TopCellInfo> info;
-
-            public void Execute()
-            {
-                int nextVertex = 0;
-                int nextTriangleIndex = 0;
-
-                for (int y = 0; y < distanceRowNum - 1; ++y)
-                {
-                    for (int x = 0; x < distanceColNum - 1; ++x)
-                    {
-                        int index = y * distanceColNum + x;
-                        float corner = distances[index];
-                        float right = distances[index + 1];
-                        float topRight = distances[index + 1 + distanceColNum];
-                        float top = distances[index + distanceColNum];
-
-                        info[index] = GenerateInfoWithTriangles(corner, right, topRight, top, ref nextVertex, ref nextTriangleIndex);
-                    }
-                }
-
-                GenerateBorderInfo(distanceColNum, distanceRowNum, distances, ref nextVertex, ref nextTriangleIndex, info);
-
-                InitializeMeshData(nextVertex, nextTriangleIndex, ref vertices, ref indices, generateNormals, ref normals, generateUVs, ref uvs);
-                if (generateNormals)
-                {
-                    for (int i = 0; i < normals.Length; ++i)
-                    {
-                        normals[i] = normal;
-                    }
-                }
-            }
-
-            public static JobHandle Schedule(Data data, NativeList<float3> vertices, NativeList<int> triangles, bool generateNormals, float3 normal, NativeList<float3> normals, bool generateUVs, NativeList<float2> uvs, NativeArray<TopCellInfo> info, JobHandle dependOn = default)
-            {
-                var cornerJob = new CalculateInfoNoCullingJob
-                {
-                    distanceColNum = data.ColNum,
-                    distanceRowNum = data.RowNum,
-
-                    distances = data.RawData,
-
-                    vertices = vertices,
-                    indices = triangles,
-
-                    generateNormals = generateNormals,
-                    normals = normals,
-                    normal = normal,
-                    generateUVs = generateUVs,
-                    uvs = uvs,
-
-                    info = info
-                };
-                return cornerJob.Schedule(dependOn);
-            }
-        }
-
-        static private void GenerateBorderInfo(int distanceColNum, int distanceRowNum, NativeArray<float> distances, ref int nextVertex, ref int nextTriangleIndex, NativeArray<TopCellInfo> info)
-        {
-            // top border
-            for (int x = 0, y = distanceRowNum - 1; x < distanceColNum - 1; ++x)
-            {
-                int index = y * distanceColNum + x;
-                float corner = distances[index];
-                float right = distances[index + 1];
-                info[index] = GenerateInfoNoTriangles(corner, right, -1, -1, ref nextVertex, ref nextTriangleIndex);
-            }
-            // right border
-            for (int x = distanceColNum - 1, y = 0; y < distanceRowNum - 1; ++y)
-            {
-                int index = y * distanceColNum + x;
-                float corner = distances[index];
-                float top = distances[index + distanceColNum];
-                info[index] = GenerateInfoNoTriangles(corner, -1, -1, top, ref nextVertex, ref nextTriangleIndex);
-            }
-            // top right corner
-            int last = distanceColNum * distanceRowNum - 1;
-            info[last] = GenerateInfoNoTriangles(distances[last], -1, -1, -1, ref nextVertex, ref nextTriangleIndex);
-        }
-
-        static private TopCellInfo GenerateInfo(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
-                                            ref int nextVertex, ref int nextTriIndex, bool hasCellTriangles)
-        {
-            byte config = CalcConfiguration(cornerDistance, rightDistance, topRightDistance, topDistance);
-            TopCellInfo info = new TopCellInfo
-            {
-                info = new CellInfo { config = config, cornerDist = cornerDistance, rightDist = rightDistance, topDist = topDistance },
-                verts = CreateCellVertices(config, ref nextVertex),
-                tris = new IndexSpan(nextTriIndex, 0)
-            };
-
-            if (hasCellTriangles)
-            {
-                info.tris.length = CalcTriIndexCount(config);
-                nextTriIndex += info.tris.length;
-            }
-
-            return info;
-        }
-
-        static private TopCellInfo GenerateInfoNoTriangles(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
-                                            ref int nextVertex, ref int nextTriIndex)
-        {
-            byte config = CalcConfiguration(cornerDistance, rightDistance, topRightDistance, topDistance);
-            TopCellInfo info = new TopCellInfo
-            {
-                info = new CellInfo { config = config, cornerDist = cornerDistance, rightDist = rightDistance, topDist = topDistance },
-                verts = CreateCellVertices(config, ref nextVertex),
-                tris = new IndexSpan(nextTriIndex, 0)
-            };
-            return info;
-        }
-
-        static private TopCellInfo GenerateInfoWithTriangles(float cornerDistance, float rightDistance, float topRightDistance, float topDistance,
-                                            ref int nextVertex, ref int nextTriIndex)
+        static public TopCellInfo GenerateInfoWithTriangles(float cornerDistance, float rightDistance, float topRightDistance, float topDistance, ref int nextVertex, ref int nextTriIndex)
         {
             byte config = CalcConfiguration(cornerDistance, rightDistance, topRightDistance, topDistance);
             TopCellInfo info = new TopCellInfo
@@ -294,8 +105,20 @@ namespace MeshBuilder.New
             return info;
         }
 
+        static public TopCellInfo GenerateInfoNoTriangles(float cornerDistance, float rightDistance, float topRightDistance, float topDistance, ref int nextVertex, ref int nextTriIndex)
+        {
+            byte config = CalcConfiguration(cornerDistance, rightDistance, topRightDistance, topDistance);
+            TopCellInfo info = new TopCellInfo
+            {
+                info = new CellInfo { config = config, cornerDist = cornerDistance, rightDist = rightDistance, topDist = topDistance },
+                verts = CreateCellVertices(config, ref nextVertex),
+                tris = new IndexSpan(nextTriIndex, 0)
+            };
+            return info;
+        }
+
         // TODO: look at this, I think it is possible to get rid of the branches
-        static private CellVertices CreateCellVertices(byte config, ref int nextVertex)
+        static public CellVertices CreateCellVertices(byte config, ref int nextVertex)
         {
             var verts = new CellVertices() { bottomEdge = -1, corner = -1, leftEdge = -1 };
             bool hasBL = HasMask(config, MaskBL);
@@ -325,11 +148,14 @@ namespace MeshBuilder.New
 
             if (info.UseCullingData && data.HasCullingData)
             {
-                lastHandle = CalculateInfoJob.Schedule(data, vertices, triangles, info.GenerateNormals, normal, normals, info.GenerateUvs, uvs, infoArray, lastHandle);
+                var generator = new CulledTopCellInfoGenerator();
+                generator.cullingArray = data.CullingDataRawData;
+                lastHandle = CalculateInfoJob<CulledTopCellInfoGenerator, TopCellInfo>.Schedule(generator, data, vertices, triangles, info.GenerateNormals, normal, normals, info.GenerateUvs, uvs, infoArray, lastHandle);
             }
             else
             {
-                lastHandle = CalculateInfoNoCullingJob.Schedule(data, vertices, triangles, info.GenerateNormals, normal, normals, info.GenerateUvs, uvs, infoArray, lastHandle);
+                var generator = new TopCellInfoGenerator();
+                lastHandle = CalculateInfoJob<TopCellInfoGenerator, TopCellInfo>.Schedule(generator, data, vertices, triangles, info.GenerateNormals, normal, normals, info.GenerateUvs, uvs, infoArray, lastHandle);
             }
 
             return lastHandle;
@@ -341,8 +167,6 @@ namespace MeshBuilder.New
         {
             public VertexCalculator vertexCalculator;
             
-            public float offsetY;
-
             [ReadOnly] public NativeArray<TopCellInfo> infoArray;
             [NativeDisableParallelForRestriction] [WriteOnly] public NativeArray<float3> vertices;
 
@@ -352,13 +176,11 @@ namespace MeshBuilder.New
                 vertexCalculator.CalculateVertices(index, info.info, info.verts, vertices);
             }
 
-            public static JobHandle Schedule(VertexCalculator vertexCalculator, float offsetY, NativeArray<TopCellInfo> infoArray, NativeList<float3> vertices, JobHandle dependOn)
+            public static JobHandle Schedule(VertexCalculator vertexCalculator, NativeArray<TopCellInfo> infoArray, NativeList<float3> vertices, JobHandle dependOn)
             {
                 var vertexJob = new CalculateVerticesJob<VertexCalculator>
                 {
                     vertexCalculator = vertexCalculator,
-
-                    offsetY = offsetY,
 
                     infoArray = infoArray,
                     vertices = vertices.AsDeferredJobArray()
@@ -374,12 +196,12 @@ namespace MeshBuilder.New
                 if (info.LerpToExactEdge == 1f)
                 {
                     var vertexCalculator = new BasicHeightVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, heightOffset = info.OffsetY, heights = data.HeightsRawData, heightScale = info.HeightScale };
-                    return ScheduleCalculateVerticesJob(info, vertexCalculator, infoArray, vertices, lastHandle);
+                    return ScheduleCalculateVerticesJob(vertexCalculator, infoArray, vertices, lastHandle);
                 }
                 else
                 {
                     var vertexCalculator = new LerpedHeightVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, lerpToEdge = info.LerpToExactEdge, heightOffset = info.OffsetY, heights = data.HeightsRawData, heightScale = info.HeightScale };
-                    return ScheduleCalculateVerticesJob(info, vertexCalculator, infoArray, vertices, lastHandle);
+                    return ScheduleCalculateVerticesJob(vertexCalculator, infoArray, vertices, lastHandle);
                 }
             }
             else
@@ -387,25 +209,26 @@ namespace MeshBuilder.New
                 if (info.LerpToExactEdge == 1f)
                 {
                     var vertexCalculator = new BasicVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, heightOffset = info.OffsetY };
-                    return ScheduleCalculateVerticesJob(info, vertexCalculator, infoArray, vertices, lastHandle);
+                    return ScheduleCalculateVerticesJob(vertexCalculator, infoArray, vertices, lastHandle);
                 }
                 else
                 {
                     var vertexCalculator = new LerpedVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, lerpToEdge = info.LerpToExactEdge, heightOffset = info.OffsetY };
-                    return ScheduleCalculateVerticesJob(info, vertexCalculator, infoArray, vertices, lastHandle);
+                    return ScheduleCalculateVerticesJob(vertexCalculator, infoArray, vertices, lastHandle);
                 }
             }
         }
 
-        public static JobHandle ScheduleCalculateVerticesJob<T>(Info info, T vertexCalculator, NativeArray<TopCellInfo> infoArray, NativeList<float3> vertices, JobHandle lastHandle)
+        public static JobHandle ScheduleCalculateVerticesJob<T>(T vertexCalculator, NativeArray<TopCellInfo> infoArray, NativeList<float3> vertices, JobHandle lastHandle)
             where T : struct, IVertexCalculator
-                => CalculateVerticesJob<T>.Schedule(vertexCalculator, info.OffsetY, infoArray, vertices, lastHandle);
+                => CalculateVerticesJob<T>.Schedule(vertexCalculator, infoArray, vertices, lastHandle);
 
         [BurstCompile]
         private struct CalculateTrianglesJob<Orderer> : IJobParallelFor
             where Orderer : struct, ITriangleOrderer
         {
             public int cornerColNum;
+            public Orderer orderer;
 
             [NativeDisableParallelForRestriction] [ReadOnly] public NativeArray<TopCellInfo> infoArray;
             [NativeDisableParallelForRestriction] [WriteOnly] public NativeArray<int> triangles;
@@ -421,7 +244,7 @@ namespace MeshBuilder.New
                 TopCellInfo br = infoArray[index + 1];
                 TopCellInfo tr = infoArray[index + 1 + cornerColNum];
                 TopCellInfo tl = infoArray[index + cornerColNum];
-                CalculateIndices<Orderer>(bl.info.config, bl.tris, bl.verts, br.verts, tr.verts, tl.verts, triangles);
+                CalculateIndices(orderer, bl.info.config, bl.tris, bl.verts, br.verts, tr.verts, tl.verts, triangles);
             }
 
             public static JobHandle Schedule(int colNum, int rowNum, NativeArray<TopCellInfo> infoArray, NativeList<int> triangles, JobHandle dependOn)
@@ -430,6 +253,7 @@ namespace MeshBuilder.New
                 var trianglesJob = new CalculateTrianglesJob<Orderer>
                 {
                     cornerColNum = colNum,
+                    orderer = new Orderer(),
                     infoArray = infoArray,
                     triangles = triangles.AsDeferredJobArray()
                 };
@@ -442,7 +266,7 @@ namespace MeshBuilder.New
                  CalculateTrianglesJob<ReverseTriangleOrderer>.Schedule(colNum, rowNum, infoArray, triangles, dependOn) :
                  CalculateTrianglesJob<TriangleOrderer>.Schedule(colNum, rowNum, infoArray, triangles, dependOn);
 
-        protected static void CalculateIndices<TriangleOrderer>(byte config, IndexSpan tris, CellVertices bl, CellVertices br, CellVertices tr, CellVertices tl, NativeArray<int> triangles)
+        protected static void CalculateIndices<TriangleOrderer>(TriangleOrderer orderer, byte config, IndexSpan tris, CellVertices bl, CellVertices br, CellVertices tr, CellVertices tl, NativeArray<int> triangles)
                 where TriangleOrderer : struct, ITriangleOrderer
         {
             if (tris.length == 0)
@@ -450,7 +274,6 @@ namespace MeshBuilder.New
                 return;
             }
 
-            TriangleOrderer orderer = new TriangleOrderer();
             int triangleIndex = tris.start;
             switch (config)
             {
