@@ -46,7 +46,7 @@ namespace MeshBuilder.New
                 edgeNormalsArray = new NativeArray<EdgeNormals>(data.RawData.Length, Allocator.TempJob, NativeArrayOptions.ClearMemory);
                 AddTemp(edgeNormalsArray);
             
-                lastHandle = CalculateEdgeNormalsJob.Schedule(data.ColNum, data.RowNum, infoArray, edgeNormalsArray, info.LerpToExactEdge, lastHandle);
+                lastHandle = ScheduleEdgeNormalsJob(new TopCellEdgeNormalCalculator(), data.ColNum, data.RowNum, infoArray, edgeNormalsArray, info.LerpToExactEdge, lastHandle);
             }
 
             JobHandle vertexHandle = ScheduleCalculateVerticesJob(data, info, useHeightData, cellSize, infoArray, vertices, edgeNormalsArray, lastHandle);
@@ -69,14 +69,18 @@ namespace MeshBuilder.New
         }
 
         [BurstCompile]
-        private struct CalculateEdgeNormalsJob : IJob
+        private struct CalculateEdgeNormalsJob<EdgeCalculator, Info> : IJob
+            where EdgeCalculator : struct, IEdgeNormalCalculator<Info>
+            where Info : struct
         {
             public int cellColNum;
             public int cellRowNum;
 
             public float lerpToEdge;
 
-            [NativeDisableParallelForRestriction, ReadOnly] public NativeArray<TopCellInfo> cellInfos;
+            public EdgeCalculator calculator;
+
+            [NativeDisableParallelForRestriction, ReadOnly] public NativeArray<Info> cellInfos;
             [NativeDisableParallelForRestriction] public NativeArray<EdgeNormals> edgeNormals;
 
             public void Execute()
@@ -91,7 +95,7 @@ namespace MeshBuilder.New
                         var right = edgeNormals[index + 1];
                         var top = edgeNormals[index + cornerColNum];
 
-                        UpdateNormals(cellInfos[index].info, cellInfos[index + cornerColNum].info, cellInfos[index + 1].info, ref corner, ref top, ref right, lerpToEdge);
+                        calculator.UpdateNormals(cellInfos[index], cellInfos[index + cornerColNum], cellInfos[index + 1], ref corner, ref top, ref right, lerpToEdge);
 
                         edgeNormals[index] = corner;
                         edgeNormals[index + 1] = right;
@@ -100,20 +104,39 @@ namespace MeshBuilder.New
                 }
             }
 
-            public static JobHandle Schedule(int colNum, int rowNum, NativeArray<TopCellInfo> infoArray, NativeArray<EdgeNormals> edgeNormals, float lerpToEdge, JobHandle dependOn)
+            public static JobHandle Schedule(EdgeCalculator calculator, int colNum, int rowNum, NativeArray<Info> infoArray, NativeArray<EdgeNormals> edgeNormals, float lerpToEdge, JobHandle dependOn)
             {
-                var infoJob = new CalculateEdgeNormalsJob
+                var infoJob = new CalculateEdgeNormalsJob<EdgeCalculator, Info>
                 {
                     cellColNum = colNum - 1,
                     cellRowNum = rowNum - 1,
 
                     lerpToEdge = lerpToEdge,
 
+                    calculator = calculator,
+
                     cellInfos = infoArray,
                     edgeNormals = edgeNormals
                 };
                 return infoJob.Schedule(dependOn);
             }
+        }
+
+        public static JobHandle ScheduleEdgeNormalsJob<EdgeCalculator, Info>(EdgeCalculator calculator, int colNum, int rowNum, NativeArray<Info> infoArray, NativeArray<EdgeNormals> edgeNormals, float lerpToEdge, JobHandle dependOn)
+            where EdgeCalculator : struct, IEdgeNormalCalculator<Info>
+            where Info : struct
+            => CalculateEdgeNormalsJob<EdgeCalculator, Info>.Schedule(calculator, colNum, rowNum, infoArray, edgeNormals, lerpToEdge, dependOn);
+
+        public interface IEdgeNormalCalculator<Info>
+            where Info : struct
+        {
+            void UpdateNormals(Info cell, Info top, Info right, ref EdgeNormals cellNormal, ref EdgeNormals topNormal, ref EdgeNormals rightNormal, float lerpToEdge);
+        }
+
+        public struct TopCellEdgeNormalCalculator : IEdgeNormalCalculator<TopCellInfo>
+        {
+            public void UpdateNormals(TopCellInfo cell, TopCellInfo top, TopCellInfo right, ref EdgeNormals cellNormal, ref EdgeNormals topNormal, ref EdgeNormals rightNormal, float lerpToEdge)
+                => ScaledTopCellMesher.UpdateNormals(cell.info, top.info, right.info, ref cellNormal, ref topNormal, ref rightNormal, lerpToEdge);
         }
 
         public static void UpdateNormals(CellInfo cell, CellInfo top, CellInfo right, ref EdgeNormals cellNormal, ref EdgeNormals topNormal, ref EdgeNormals rightNormal, float lerpToEdge)
@@ -165,7 +188,7 @@ namespace MeshBuilder.New
             edgeDirB += dir;
         }
 
-        protected struct ScaledBasicVertexCalculator : IVertexCalculator
+        public struct ScaledBasicVertexCalculator : IVertexCalculator
         {
             public int colNum;
             public float cellSize;
@@ -204,7 +227,7 @@ namespace MeshBuilder.New
             }
         }
 
-        protected struct ScaledLerpedVertexCalculator : IVertexCalculator
+        public struct ScaledLerpedVertexCalculator : IVertexCalculator
         {
             public int colNum;
             public float cellSize;
@@ -247,7 +270,7 @@ namespace MeshBuilder.New
             }
         }
 
-        protected struct ScaledBasicHeightVertexCalculator : IVertexCalculator
+        public struct ScaledBasicHeightVertexCalculator : IVertexCalculator
         {
             public int colNum;
             public float cellSize;
@@ -263,7 +286,7 @@ namespace MeshBuilder.New
                 => ScaledBasicVertexCalculator.CalculateVertices(index, info, verts, vertices, colNum, cellSize, heightOffset + heightScale * heights[index], sideOffsetScale, edgeNormalsArray);
         }
 
-        protected struct ScaledLerpedHeightVertexCalculator : IVertexCalculator
+        public struct ScaledLerpedHeightVertexCalculator : IVertexCalculator
         {
             public int colNum;
             public float cellSize;

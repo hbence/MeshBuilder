@@ -7,6 +7,8 @@ using Unity.Burst;
 
 using static MeshBuilder.New.TopCellMesher;
 using static MeshBuilder.New.SideCellMesher;
+using static MeshBuilder.New.ScaledTopCellMesher;
+
 using Data = MeshBuilder.MarchingSquaresMesher.Data;
 
 namespace MeshBuilder.New
@@ -36,13 +38,23 @@ namespace MeshBuilder.New
             CreateMeshData(info.GenerateNormals, info.GenerateUvs);
 
             bool useHeightData = info.UseHeightData && data.HasHeights;
+            bool needsNormalsData = info.ScaledOffset > 0 || info.BottomScaledOffset > 0;
 
             var infoArray = new NativeArray<SideCellInfo>(data.RawData.Length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
             AddTemp(infoArray);
 
             lastHandle = ScheduleCalculateInfoJob(data, info, infoArray, vertices, triangles, normals, uvs, lastHandle);
 
-            JobHandle vertexHandle = ScheduleCalculateVerticesJob(data, info, useHeightData, cellSize, infoArray, vertices, lastHandle);
+            NativeArray<EdgeNormals> edgeNormalsArray = default;
+            if (needsNormalsData)
+            {
+                edgeNormalsArray = new NativeArray<EdgeNormals>(data.RawData.Length, Allocator.TempJob, NativeArrayOptions.ClearMemory);
+                AddTemp(edgeNormalsArray);
+
+                lastHandle = ScheduleEdgeNormalsJob(new SideEdgeNormalCalculator(), data.ColNum, data.RowNum, infoArray, edgeNormalsArray, info.LerpToExactEdge, lastHandle);
+            }
+
+            JobHandle vertexHandle = ScheduleCalculateVerticesJob(data, info, useHeightData, cellSize, infoArray, edgeNormalsArray, vertices, lastHandle);
 
             if (info.GenerateUvs)
             {

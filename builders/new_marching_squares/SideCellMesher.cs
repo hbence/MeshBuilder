@@ -6,6 +6,7 @@ using Unity.Mathematics;
 using Unity.Burst;
 
 using static MeshBuilder.New.TopCellMesher;
+using static MeshBuilder.New.ScaledTopCellMesher;
 using Data = MeshBuilder.MarchingSquaresMesher.Data;
 
 namespace MeshBuilder.New
@@ -15,10 +16,11 @@ namespace MeshBuilder.New
         public const byte FullCellIndexCount = 2 * 3;
 
         [Serializable]
-        public class SideInfo : Info
+        public class SideInfo : ScaledInfo
         {
             public float SideHeight = 1;
             public float BottomHeightScale = 1f;
+            public float BottomScaledOffset = 0;
         }
 
         public struct SideCellInfo
@@ -52,13 +54,23 @@ namespace MeshBuilder.New
             CreateMeshData(info.GenerateNormals, info.GenerateUvs);
             
             bool useHeightData = info.UseHeightData && data.HasHeights;
+            bool needsNormalsData = info.ScaledOffset > 0 || info.BottomScaledOffset > 0;
 
             var infoArray = new NativeArray<SideCellInfo>(data.RawData.Length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
             AddTemp(infoArray);
 
             lastHandle = ScheduleCalculateInfoJob(data, info, infoArray, vertices, triangles, normals, uvs, lastHandle);
 
-            JobHandle vertexHandle = ScheduleCalculateVerticesJob(data, info, useHeightData, cellSize, infoArray, vertices, lastHandle);
+            NativeArray<EdgeNormals> edgeNormalsArray = default;
+            if (needsNormalsData)
+            {
+                edgeNormalsArray = new NativeArray<EdgeNormals>(data.RawData.Length, Allocator.TempJob, NativeArrayOptions.ClearMemory);
+                AddTemp(edgeNormalsArray);
+
+                lastHandle = ScheduleEdgeNormalsJob(new SideEdgeNormalCalculator(), data.ColNum, data.RowNum, infoArray, edgeNormalsArray, info.LerpToExactEdge, lastHandle);
+            }
+
+            JobHandle vertexHandle = ScheduleCalculateVerticesJob(data, info, useHeightData, cellSize, infoArray, edgeNormalsArray, vertices, lastHandle);
 
             if (info.GenerateUvs)
             {
@@ -146,6 +158,12 @@ namespace MeshBuilder.New
             }
 
             return lastHandle;
+        }
+
+        public struct SideEdgeNormalCalculator : IEdgeNormalCalculator<SideCellInfo>
+        {
+            public void UpdateNormals(SideCellInfo cell, SideCellInfo top, SideCellInfo right, ref EdgeNormals cellNormal, ref EdgeNormals topNormal, ref EdgeNormals rightNormal, float lerpToEdge)
+                => ScaledTopCellMesher.UpdateNormals(cell.info, top.info, right.info, ref cellNormal, ref topNormal, ref rightNormal, lerpToEdge);
         }
 
         [BurstCompile]
@@ -241,7 +259,90 @@ namespace MeshBuilder.New
             }
         }
 
-        public static JobHandle ScheduleCalculateVerticesJob(Data data, SideInfo info, bool useHeightData, float cellSize, NativeArray<SideCellInfo> infoArray, NativeList<float3> vertices, JobHandle lastHandle)
+        private static IVertexCalculator SelectVertexCalculator(Data data, bool useHeightData, float heightOffset, float heightScale, float lerpToEdge, float cellSize, NativeArray<SideCellInfo> infoArray, float sideOffset, NativeArray<EdgeNormals> edgeNormals)
+        {
+            IVertexCalculator selected;
+            if (sideOffset > 0)
+            {
+                if (useHeightData)
+                {
+                    if (lerpToEdge == 1f) { selected = new ScaledBasicHeightVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, heightOffset = heightOffset, heights = data.HeightsRawData, heightScale = heightScale, sideOffsetScale = sideOffset, edgeNormalsArray = edgeNormals }; }
+                    else { selected = new ScaledLerpedHeightVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, lerpToEdge = lerpToEdge, heightOffset = heightOffset, heights = data.HeightsRawData, heightScale = heightScale, sideOffsetScale = sideOffset, edgeNormalsArray = edgeNormals }; }
+                }
+                else
+                {
+                    if (lerpToEdge == 1f) { selected = new ScaledBasicVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, heightOffset = heightOffset, sideOffsetScale = sideOffset, edgeNormalsArray = edgeNormals }; }
+                    else { selected = new ScaledLerpedVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, lerpToEdge = lerpToEdge, heightOffset = heightOffset, sideOffsetScale = sideOffset, edgeNormalsArray = edgeNormals }; }
+                }
+            }
+            else
+            {
+                if (useHeightData)
+                {
+                    if (lerpToEdge == 1f) { selected = new BasicHeightVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, heightOffset = heightOffset, heights = data.HeightsRawData, heightScale = heightScale }; }
+                    else { selected = new LerpedHeightVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, lerpToEdge = lerpToEdge, heightOffset = heightOffset, heights = data.HeightsRawData, heightScale = heightScale }; }
+                }
+                else
+                {
+                    if (lerpToEdge == 1f) { selected = new BasicVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, heightOffset = heightOffset }; }
+                    else { selected = new LerpedVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, lerpToEdge = lerpToEdge, heightOffset = heightOffset }; }
+                }
+            }
+            return selected;
+        }
+
+        private static JobHandle CallScheduleCalculateMethod(IVertexCalculator top, IVertexCalculator bottom, bool isTopScaled, bool isBottomScaled, NativeArray<SideCellInfo> infoArray, NativeList<float3> vertices, JobHandle dependOn)
+        {
+            if (isTopScaled || isBottomScaled)
+            {
+                if (isTopScaled && isBottomScaled)
+                {
+                    if (ScheduleIfDoesMatch<ScaledBasicHeightVertexCalculator, ScaledBasicHeightVertexCalculator>(ref dependOn)) return dependOn;
+                    if (ScheduleIfDoesMatch<ScaledLerpedHeightVertexCalculator, ScaledLerpedHeightVertexCalculator>(ref dependOn)) return dependOn;
+                    if (ScheduleIfDoesMatch<ScaledBasicVertexCalculator, ScaledBasicVertexCalculator>(ref dependOn)) return dependOn;
+                    if (ScheduleIfDoesMatch<ScaledLerpedVertexCalculator, ScaledLerpedVertexCalculator>(ref dependOn)) return dependOn;
+                }
+                else if (isTopScaled)
+                {
+                    if (ScheduleIfDoesMatch<ScaledBasicHeightVertexCalculator, BasicHeightVertexCalculator>(ref dependOn)) return dependOn;
+                    if (ScheduleIfDoesMatch<ScaledLerpedHeightVertexCalculator, LerpedHeightVertexCalculator>(ref dependOn)) return dependOn;
+                    if (ScheduleIfDoesMatch<ScaledBasicVertexCalculator, BasicVertexCalculator>(ref dependOn)) return dependOn;
+                    if (ScheduleIfDoesMatch<ScaledLerpedVertexCalculator, LerpedVertexCalculator>(ref dependOn)) return dependOn;
+                }
+                else
+                {
+                    if (ScheduleIfDoesMatch<BasicHeightVertexCalculator, ScaledBasicHeightVertexCalculator>(ref dependOn)) return dependOn;
+                    if (ScheduleIfDoesMatch<LerpedHeightVertexCalculator, ScaledLerpedHeightVertexCalculator>(ref dependOn)) return dependOn;
+                    if (ScheduleIfDoesMatch<BasicVertexCalculator, ScaledBasicVertexCalculator>(ref dependOn)) return dependOn;
+                    if (ScheduleIfDoesMatch<LerpedVertexCalculator, ScaledLerpedVertexCalculator>(ref dependOn)) return dependOn;
+                }
+            }
+            else
+            {
+                if (ScheduleIfDoesMatch<BasicHeightVertexCalculator, BasicHeightVertexCalculator>(ref dependOn)) return dependOn;
+                if (ScheduleIfDoesMatch<LerpedHeightVertexCalculator, LerpedHeightVertexCalculator>(ref dependOn)) return dependOn;
+                if (ScheduleIfDoesMatch<BasicVertexCalculator, BasicVertexCalculator>(ref dependOn)) return dependOn;
+                if (ScheduleIfDoesMatch<LerpedVertexCalculator, LerpedVertexCalculator>(ref dependOn)) return dependOn;
+            }
+
+            bool ScheduleIfDoesMatch<TopCalculator, BottomCalculator>(ref JobHandle dependOnHandle)
+                where TopCalculator : struct, IVertexCalculator
+                where BottomCalculator : struct, IVertexCalculator
+            { 
+                if (top is TopCalculator && bottom is BottomCalculator)
+                {
+                    dependOnHandle = ScheduleCalculateVerticesJob((TopCalculator)top, (BottomCalculator)bottom, infoArray, vertices, dependOnHandle);
+                    return true;
+                }
+                return false;
+            }
+            
+            Debug.LogError("Case not handled!");
+
+            return dependOn;
+        }
+
+        public static JobHandle ScheduleCalculateVerticesJob(Data data, SideInfo info, bool useHeightData, float cellSize, NativeArray<SideCellInfo> infoArray, NativeArray<EdgeNormals> edgeNormals, NativeList<float3> vertices, JobHandle lastHandle)
         {
             float topHeightOffset = info.OffsetY + info.SideHeight;
             float bottomHeightOffset = info.OffsetY;
@@ -249,36 +350,9 @@ namespace MeshBuilder.New
             float topHeightScale = info.HeightScale;
             float bottomHeightScale = info.BottomHeightScale;
 
-            if (useHeightData)
-            {
-                if (info.LerpToExactEdge == 1f)
-                {
-                    var topCalculator = new BasicHeightVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, heightOffset = topHeightOffset, heights = data.HeightsRawData, heightScale = topHeightScale };
-                    var bottomCalculator = new BasicHeightVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, heightOffset = bottomHeightOffset, heights = data.HeightsRawData, heightScale = bottomHeightScale };
-                    return ScheduleCalculateVerticesJob(topCalculator, bottomCalculator, infoArray, vertices, lastHandle);
-                }
-                else
-                {
-                    var topCalculator = new LerpedHeightVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, lerpToEdge = info.LerpToExactEdge, heightOffset = topHeightOffset, heights = data.HeightsRawData, heightScale = topHeightScale};
-                    var bottomCalculator = new LerpedHeightVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, lerpToEdge = info.LerpToExactEdge, heightOffset = bottomHeightOffset, heights = data.HeightsRawData, heightScale = bottomHeightScale };
-                    return ScheduleCalculateVerticesJob(topCalculator, bottomCalculator, infoArray, vertices, lastHandle);
-                }
-            }
-            else
-            {
-                if (info.LerpToExactEdge == 1f)
-                {
-                    var topCalculator = new BasicVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, heightOffset = topHeightOffset };
-                    var bottomCalculator = new BasicVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, heightOffset = bottomHeightOffset };
-                    return ScheduleCalculateVerticesJob(topCalculator, bottomCalculator, infoArray, vertices, lastHandle);
-                }
-                else
-                {
-                    var topCalculator = new LerpedVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, lerpToEdge = info.LerpToExactEdge, heightOffset = info.OffsetY };
-                    var bottomCalculator = new LerpedVertexCalculator() { colNum = data.ColNum, cellSize = cellSize, lerpToEdge = info.LerpToExactEdge, heightOffset = info.OffsetY };
-                    return ScheduleCalculateVerticesJob(topCalculator, bottomCalculator, infoArray, vertices, lastHandle);
-                }
-            }
+            var top = SelectVertexCalculator(data, useHeightData, topHeightOffset, topHeightScale, info.LerpToExactEdge, cellSize, infoArray, info.ScaledOffset, edgeNormals);
+            var bottom = SelectVertexCalculator(data, useHeightData, bottomHeightOffset, bottomHeightScale, info.LerpToExactEdge, cellSize, infoArray, info.BottomScaledOffset, edgeNormals);
+            return CallScheduleCalculateMethod(top, bottom, info.ScaledOffset > 0, info.BottomScaledOffset > 0, infoArray, vertices, lastHandle);
         }
 
         public static JobHandle ScheduleCalculateVerticesJob<TopCalculator, BottomCalculator>(TopCalculator topCalculator, BottomCalculator bottomCalculator, NativeArray<SideCellInfo> infoArray, NativeList<float3> vertices, JobHandle lastHandle)
