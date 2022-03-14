@@ -49,7 +49,7 @@ namespace MeshBuilder.New
 
             bool useCullingData = info.UseCullingData && data.HasCullingData;
             bool useHeightData = info.UseHeightData && data.HasHeights;
-            bool needsEdgeNormalsData = info.ScaledOffset > 0;
+            bool needsEdgeNormalData = info.ScaledOffset > 0;
 
             var mergeInfoArray = new NativeArray<MergeCellInfo>(data.RawData.Length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
             AddTemp(mergeInfoArray);
@@ -61,7 +61,16 @@ namespace MeshBuilder.New
 
             lastHandle = ScheduleCalculateInfoJob(data, info, useCullingData, infoArray, mergeInfoArray, vertices, triangles, normals, uvs, lastHandle);
 
-            JobHandle vertexHandle = ScheduleCalculateVerticesJob(data, info, useHeightData, cellSize, infoArray, vertices, lastHandle);
+            NativeArray<EdgeNormals> edgeNormalsArray = default;
+            if (needsEdgeNormalData)
+            {
+                edgeNormalsArray = new NativeArray<EdgeNormals>(data.RawData.Length, Allocator.TempJob, NativeArrayOptions.ClearMemory);
+                AddTemp(edgeNormalsArray);
+
+                lastHandle = ScheduleEdgeNormalsJob(new TopCellEdgeNormalCalculator(), data.ColNum, data.RowNum, infoArray, edgeNormalsArray, info.LerpToExactEdge, lastHandle);
+            }
+
+            JobHandle vertexHandle = ScheduleCalculateVerticesJob(data, info, useHeightData, cellSize, infoArray, vertices, edgeNormalsArray, lastHandle);
 
             if (info.GenerateUvs)
             {
@@ -77,16 +86,6 @@ namespace MeshBuilder.New
                 lastHandle = CalculateNormals.ScheduleDeferred(vertices, triangles, normals, lastHandle);
             }
 
-            /*
-            NativeArray<EdgeNormals> edgeNormalsArray = default;
-            if (needsNormalsData)
-            {
-                edgeNormalsArray = new NativeArray<EdgeNormals>(data.RawData.Length, Allocator.TempJob, NativeArrayOptions.ClearMemory);
-                AddTemp(edgeNormalsArray);
-
-                lastHandle = ScheduleEdgeNormalsJob(new TopCellEdgeNormalCalculator(), data.ColNum, data.RowNum, infoArray, edgeNormalsArray, info.LerpToExactEdge, lastHandle);
-            }
-            */
             return lastHandle;
         }
 

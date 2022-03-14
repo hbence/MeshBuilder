@@ -303,7 +303,7 @@ namespace MeshBuilder.New
                 => ScaledLerpedVertexCalculator.CalculateVertices(index, info, verts, vertices, colNum, cellSize, heightOffset + heightScale * heights[index], lerpToEdge, sideOffsetScale, edgeNormalsArray);
         }
 
-        private static JobHandle ScheduleCalculateVerticesJob(Data data, ScaledInfo info, bool useHeightData, float cellSize, NativeArray<TopCellInfo> infoArray, NativeList<float3> vertices, NativeArray<EdgeNormals> edgeNormalsArray, JobHandle lastHandle)
+        public static JobHandle ScheduleCalculateVerticesJob(Data data, ScaledInfo info, bool useHeightData, float cellSize, NativeArray<TopCellInfo> infoArray, NativeList<float3> vertices, NativeArray<EdgeNormals> edgeNormalsArray, JobHandle lastHandle)
         {
             if (!edgeNormalsArray.IsCreated)
             {
