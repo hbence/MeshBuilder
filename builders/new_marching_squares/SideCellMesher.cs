@@ -114,16 +114,16 @@ namespace MeshBuilder.New
         static public SideCellInfo GenerateInfoWithTriangles(float cornerDistance, float rightDistance, float topRightDistance, float topDistance, ref int nextVertex, ref int nextTriIndex)
         {
             byte config = CalcConfiguration(cornerDistance, rightDistance, topRightDistance, topDistance);
+            byte triIndexCount = CalcTriIndexCount(config);
             SideCellInfo info = new SideCellInfo
             {
                 info = new CellInfo { config = config, cornerDist = cornerDistance, rightDist = rightDistance, topDist = topDistance },
                 topVerts = CreateCellVertices(config, ref nextVertex),
                 bottomVerts = CreateCellVertices(config, ref nextVertex),
-                tris = new IndexSpan(nextTriIndex, 0)
+                tris = new IndexSpan(nextTriIndex, triIndexCount)
             };
 
-            info.tris.length = (byte)((config == 0 || config == MaskFull) ? 0 : 2 * 3);
-            nextTriIndex += info.tris.length;
+            nextTriIndex += triIndexCount;
 
             return info;
         }
@@ -139,6 +139,34 @@ namespace MeshBuilder.New
                 tris = new IndexSpan(nextTriIndex, 0)
             };
             return info;
+        }
+
+        public static byte CalcTriIndexCount(byte config)
+        {
+            switch (config)
+            {
+                // full
+                case MaskBL | MaskBR | MaskTR | MaskTL: return 0;
+                // corners
+                case MaskBL: return 2 * 3;
+                case MaskBR: return 2 * 3;
+                case MaskTR: return 2 * 3;
+                case MaskTL: return 2 * 3;
+                // halves
+                case MaskBL | MaskBR: return 2 * 3;
+                case MaskTL | MaskTR: return 2 * 3;
+                case MaskBL | MaskTL: return 2 * 3;
+                case MaskBR | MaskTR: return 2 * 3;
+                // diagonals
+                case MaskBL | MaskTR: return 4 * 3;
+                case MaskTL | MaskBR: return 4 * 3;
+                // three quarters
+                case MaskBL | MaskTR | MaskBR: return 2 * 3;
+                case MaskBL | MaskTL | MaskBR: return 2 * 3;
+                case MaskBL | MaskTL | MaskTR: return 2 * 3;
+                case MaskTL | MaskTR | MaskBR: return 2 * 3;
+            }
+            return 0;
         }
 
         static public JobHandle ScheduleCalculateInfoJob(Data data, Info info, NativeArray<SideCellInfo> infoArray, NativeList<float3> vertices, NativeList<int> triangles, NativeList<float3> normals, NativeList<float2> uvs, JobHandle lastHandle = default)
@@ -259,7 +287,7 @@ namespace MeshBuilder.New
             }
         }
 
-        private static IVertexCalculator SelectVertexCalculator(Data data, bool useHeightData, float heightOffset, float heightScale, float lerpToEdge, float cellSize, NativeArray<SideCellInfo> infoArray, float sideOffset, NativeArray<EdgeNormals> edgeNormals)
+        private static IVertexCalculator SelectVertexCalculator(Data data, bool useHeightData, float heightOffset, float heightScale, float lerpToEdge, float cellSize, float sideOffset, NativeArray<EdgeNormals> edgeNormals)
         {
             IVertexCalculator selected;
             if (sideOffset > 0)
@@ -350,8 +378,8 @@ namespace MeshBuilder.New
             float topHeightScale = info.HeightScale;
             float bottomHeightScale = info.BottomHeightScale;
 
-            var top = SelectVertexCalculator(data, useHeightData, topHeightOffset, topHeightScale, info.LerpToExactEdge, cellSize, infoArray, info.ScaledOffset, edgeNormals);
-            var bottom = SelectVertexCalculator(data, useHeightData, bottomHeightOffset, bottomHeightScale, info.LerpToExactEdge, cellSize, infoArray, info.BottomScaledOffset, edgeNormals);
+            var top = SelectVertexCalculator(data, useHeightData, topHeightOffset, topHeightScale, info.LerpToExactEdge, cellSize, info.ScaledOffset, edgeNormals);
+            var bottom = SelectVertexCalculator(data, useHeightData, bottomHeightOffset, bottomHeightScale, info.LerpToExactEdge, cellSize, info.BottomScaledOffset, edgeNormals);
             return CallScheduleCalculateMethod(top, bottom, info.ScaledOffset > 0, info.BottomScaledOffset > 0, infoArray, vertices, lastHandle);
         }
 
@@ -415,47 +443,47 @@ namespace MeshBuilder.New
                 // full
                 case MaskBL | MaskBR | MaskTR | MaskTL: break;
                 // corners
-                case MaskBL: AddFace(orderer, triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
-                case MaskBR: AddFace(orderer, triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
-                case MaskTR: AddFace(orderer, triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(br), BottomLeftEdge(br)); break;
-                case MaskTL: AddFace(orderer, triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
+                case MaskBL: AddFace(ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
+                case MaskBR: AddFace(ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
+                case MaskTR: AddFace(ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(br), BottomLeftEdge(br)); break;
+                case MaskTL: AddFace(ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
                 // halves
-                case MaskBL | MaskBR: AddFace(orderer, triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
-                case MaskTL | MaskTR: AddFace(orderer, triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopLeftEdge(br), BottomLeftEdge(br)); break;
-                case MaskBL | MaskTL: AddFace(orderer, triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
-                case MaskBR | MaskTR: AddFace(orderer, triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
+                case MaskBL | MaskBR: AddFace(ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
+                case MaskTL | MaskTR: AddFace(ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopLeftEdge(br), BottomLeftEdge(br)); break;
+                case MaskBL | MaskTL: AddFace(ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
+                case MaskBR | MaskTR: AddFace(ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
                 // diagonals
                 case MaskBL | MaskTR:
                     {
-                        AddFace(orderer, triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(bl), BottomLeftEdge(bl));
-                        AddFace(orderer, triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(br), BottomLeftEdge(br));
+                        AddFace(ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(bl), BottomLeftEdge(bl));
+                        AddFace(ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(br), BottomLeftEdge(br));
                         break;
                     }
                 case MaskTL | MaskBR:
                     {
-                        AddFace(orderer, triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(tl), BottomBottomEdge(tl));
-                        AddFace(orderer, triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(bl), BottomBottomEdge(bl));
+                        AddFace(ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(tl), BottomBottomEdge(tl));
+                        AddFace(ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(bl), BottomBottomEdge(bl));
                         break;
                     }
                 // three quarters
-                case MaskBL | MaskTR | MaskBR: AddFace(orderer, triangles, ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
-                case MaskBL | MaskTL | MaskBR: AddFace(orderer, triangles, ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
-                case MaskBL | MaskTL | MaskTR: AddFace(orderer, triangles, ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(br), BottomLeftEdge(br)); break;
-                case MaskTL | MaskTR | MaskBR: AddFace(orderer, triangles, ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
+                case MaskBL | MaskTR | MaskBR: AddFace(ref triangleIndex, BottomBottomEdge(tl), TopBottomEdge(tl), TopLeftEdge(bl), BottomLeftEdge(bl)); break;
+                case MaskBL | MaskTL | MaskBR: AddFace(ref triangleIndex, BottomLeftEdge(br), TopLeftEdge(br), TopBottomEdge(tl), BottomBottomEdge(tl)); break;
+                case MaskBL | MaskTL | MaskTR: AddFace(ref triangleIndex, BottomBottomEdge(bl), TopBottomEdge(bl), TopLeftEdge(br), BottomLeftEdge(br)); break;
+                case MaskTL | MaskTR | MaskBR: AddFace(ref triangleIndex, BottomLeftEdge(bl), TopLeftEdge(bl), TopBottomEdge(bl), BottomBottomEdge(bl)); break;
             }
+
+            int TopLeftEdge(SideCellInfo info) => info.topVerts.leftEdge;
+            int BottomLeftEdge(SideCellInfo info) => info.bottomVerts.leftEdge;
+            int TopBottomEdge(SideCellInfo info) => info.topVerts.bottomEdge;
+            int BottomBottomEdge(SideCellInfo info) => info.bottomVerts.bottomEdge;
+
+            void AddFace(ref int nextIndex, int BL, int TL, int TR, int BR)
+            {
+                orderer.AddTriangle(triangles, ref nextIndex, BL, TL, TR);
+                orderer.AddTriangle(triangles, ref nextIndex, BL, TR, BR);
+            }
+
             return triangleIndex;
-        }
-
-        private static int TopLeftEdge(SideCellInfo info) => info.topVerts.leftEdge;
-        private static int BottomLeftEdge(SideCellInfo info) => info.bottomVerts.leftEdge;
-        private static int TopBottomEdge(SideCellInfo info) => info.topVerts.bottomEdge;
-        private static int BottomBottomEdge(SideCellInfo info) => info.bottomVerts.bottomEdge;
-
-        private static void AddFace<Orderer>(Orderer orderer, NativeArray<int> triangles, ref int nextIndex, int bl, int tl, int tr, int br)
-            where Orderer : struct, ITriangleOrderer
-        {
-            orderer.AddTriangle(triangles, ref nextIndex, bl, tl, tr);
-            orderer.AddTriangle(triangles, ref nextIndex, bl, tr, br);
         }
     }
 }

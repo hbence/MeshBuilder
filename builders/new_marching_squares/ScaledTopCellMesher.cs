@@ -188,7 +188,7 @@ namespace MeshBuilder.New
             edgeDirB += dir;
         }
 
-        public struct ScaledBasicVertexCalculator : IVertexCalculator
+        public struct ScaledBasicVertexCalculator : IVertexCalculator, IScaleAdjustableCalculator
         {
             public int colNum;
             public float cellSize;
@@ -199,6 +199,12 @@ namespace MeshBuilder.New
 
             public void CalculateVertices(int index, CellInfo info, CellVertices verts, NativeArray<float3> vertices)
                 => CalculateVertices(index, info, verts, vertices, colNum, cellSize, heightOffset, sideOffsetScale, edgeNormalsArray);
+
+            public void UpdateScaleInfo(float sideOffsetScale, float heightOffset, float _)
+            {
+                this.sideOffsetScale = sideOffsetScale;
+                this.heightOffset = heightOffset;
+            }
 
             static public void CalculateVertices(int index, CellInfo info, CellVertices verts, NativeArray<float3> vertices, int colNum, float cellSize, float heightOffset, float sideOffsetScale, NativeArray<EdgeNormals> edgeNormalsArray)
             {
@@ -227,7 +233,7 @@ namespace MeshBuilder.New
             }
         }
 
-        public struct ScaledLerpedVertexCalculator : IVertexCalculator
+        public struct ScaledLerpedVertexCalculator : IVertexCalculator, IScaleAdjustableCalculator
         {
             public int colNum;
             public float cellSize;
@@ -239,6 +245,12 @@ namespace MeshBuilder.New
 
             public void CalculateVertices(int index, CellInfo info, CellVertices verts, NativeArray<float3> vertices)
                 => CalculateVertices(index, info, verts, vertices, colNum, cellSize, heightOffset, lerpToEdge, sideOffsetScale, edgeNormalsArray);
+
+            public void UpdateScaleInfo(float sideOffsetScale, float heightOffset, float _)
+            {
+                this.sideOffsetScale = sideOffsetScale;
+                this.heightOffset = heightOffset;
+            }
 
             static public void CalculateVertices(int index, CellInfo info, CellVertices verts, NativeArray<float3> vertices, int colNum, float cellSize, float heightOffset, float lerpToEdge, float sideOffsetScale, NativeArray<EdgeNormals> edgeNormalsArray)
             {
@@ -270,7 +282,8 @@ namespace MeshBuilder.New
             }
         }
 
-        public struct ScaledBasicHeightVertexCalculator : IVertexCalculator
+
+        public struct ScaledBasicHeightVertexCalculator : IVertexCalculator, IScaleAdjustableCalculator
         {
             public int colNum;
             public float cellSize;
@@ -284,9 +297,16 @@ namespace MeshBuilder.New
 
             public void CalculateVertices(int index, CellInfo info, CellVertices verts, NativeArray<float3> vertices)
                 => ScaledBasicVertexCalculator.CalculateVertices(index, info, verts, vertices, colNum, cellSize, heightOffset + heightScale * heights[index], sideOffsetScale, edgeNormalsArray);
+
+            public void UpdateScaleInfo(float sideOffsetScale, float heightOffset, float heightScale)
+            {
+                this.sideOffsetScale = sideOffsetScale;
+                this.heightOffset = heightOffset;
+                this.heightScale = heightScale;
+            }
         }
 
-        public struct ScaledLerpedHeightVertexCalculator : IVertexCalculator
+        public struct ScaledLerpedHeightVertexCalculator : IVertexCalculator, IScaleAdjustableCalculator
         {
             public int colNum;
             public float cellSize;
@@ -301,6 +321,13 @@ namespace MeshBuilder.New
 
             public void CalculateVertices(int index, CellInfo info, CellVertices verts, NativeArray<float3> vertices)
                 => ScaledLerpedVertexCalculator.CalculateVertices(index, info, verts, vertices, colNum, cellSize, heightOffset + heightScale * heights[index], lerpToEdge, sideOffsetScale, edgeNormalsArray);
+
+            public void UpdateScaleInfo(float sideOffsetScale, float heightOffset, float heightScale)
+            {
+                this.sideOffsetScale = sideOffsetScale;
+                this.heightOffset = heightOffset;
+                this.heightScale = heightScale;
+            }
         }
 
         public static JobHandle ScheduleCalculateVerticesJob(Data data, ScaledInfo info, bool useHeightData, float cellSize, NativeArray<TopCellInfo> infoArray, NativeList<float3> vertices, NativeArray<EdgeNormals> edgeNormalsArray, JobHandle lastHandle)

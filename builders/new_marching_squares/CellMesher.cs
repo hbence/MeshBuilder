@@ -154,6 +154,11 @@ namespace MeshBuilder.New
             void CalculateVertices(int index, CellInfo info, CellVertices verts, NativeArray<float3> vertices);
         }
 
+        public interface IScaleAdjustableCalculator
+        {
+            void UpdateScaleInfo(float sideOffsetScale, float heightOffset, float heightScale);
+        }
+
         protected struct BasicVertexCalculator : IVertexCalculator
         {
             public int colNum;
