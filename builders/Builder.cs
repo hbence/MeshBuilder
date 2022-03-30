@@ -9,7 +9,7 @@ namespace MeshBuilder
         protected enum BuilderState { Uninitialized, Initialized, Generating }
         protected BuilderState State { get; private set; }
 
-        private JobHandle lastHandle;
+        protected JobHandle lastHandle;
         protected List<System.IDisposable> Temps { get; private set; } = new List<System.IDisposable>();
 
         protected void Inited()

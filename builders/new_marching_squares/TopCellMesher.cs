@@ -39,7 +39,7 @@ namespace MeshBuilder.New
             Dispose();
             CheckData(data, info);
 
-            CreateMeshData(info.GenerateNormals, info.GenerateUvs);
+            CreateMeshData();
 
             bool useHeightData = info.UseHeightData && data.HasHeights;
 

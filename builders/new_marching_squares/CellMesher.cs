@@ -57,10 +57,43 @@ namespace MeshBuilder.New
             Dispose();
         }
 
-        protected void CreateMeshData(bool hasNormals, bool hasUVs)
+        public (int addedVertex, int addedTriangle) CompleteAppendData(NativeList<float3> outVertices, NativeList<int> outTriangles, NativeList<float3> outNormals, NativeList<float2> outUVs)
+        {
+            int vertexCount = 0;
+            int triangleCount = 0;
+            if (State == BuilderState.Generating)
+            {
+                lastHandle.Complete();
+
+                vertexCount = vertices.Length;
+                triangleCount = triangles.Length;
+
+                outVertices.AddRange(vertices);
+                outTriangles.AddRange(triangles);
+
+                if (HasNormals && outNormals.IsCreated) { outNormals.AddRange(normals); }
+                if (HasUVs && outUVs.IsCreated) { outUVs.AddRange(uvs); }
+
+                Inited();
+            }
+            else
+            {
+                Debug.LogError("builder can't complete, it wasn't generating");
+            }
+
+            Dispose();
+            DisposeTemps();
+
+            return (vertexCount, triangleCount);
+        }
+
+        protected void CreateMeshData()
         {
             vertices = new NativeList<float3>(Allocator.TempJob);
             triangles = new NativeList<int>(Allocator.TempJob);
+            // normals and uvs are not always needed, but the info initialization job needs containers to be initialized when the job is scheduled
+            // so I would need for versions of the same job to handle all variations (has uv and normals, only uv, only normals, neither)
+            // so instead they are always initialized but they won't be resized if they are not needed so they don't take up too much memory
             normals = new NativeList<float3>(Allocator.TempJob);
             uvs = new NativeList<float2>(Allocator.TempJob);
         }
@@ -91,12 +124,17 @@ namespace MeshBuilder.New
         {
             if (data == null)
             {
-                Debug.LogError("No data!");
+                Debug.LogError("Data is null!");
             }
 
             if (data.ColNum < 2 || data.RowNum < 2)
             {
-                Debug.LogError("data size is ");
+                Debug.LogError($"data size is invalid col:{data.ColNum} row:{data.RowNum}, both needs to be >= 2!");
+            }
+
+            if (info == null)
+            {
+                Debug.LogError("Info is null!");
             }
         }
 
