@@ -1,6 +1,14 @@
 ﻿using System;
+using System.Collections.Generic;
 using Unity.Collections;
 using UnityEngine;
+
+using static MeshBuilder.CellMesher;
+using static MeshBuilder.OptimizedTopCellMesher;
+using static MeshBuilder.SegmentedSideCellMesher;
+using static MeshBuilder.SideCellMesher;
+using MesherType = MeshBuilder.MarchingSquaresMesher.MesherType;
+using Data = MeshBuilder.MarchingSquaresMesherData;
 
 namespace MeshBuilder
 {
@@ -60,7 +68,7 @@ namespace MeshBuilder
         public Mesh Mesh { get; private set; }
 
         private MesherDataHandler mesherData;
-        public MarchingSquaresMesher.Data Data => mesherData != null ? mesherData.Data : null;
+        public Data Data => mesherData != null ? mesherData.Data : null;
         public int ColNum => Data != null ? Data.ColNum : 0;
         public int RowNum => Data != null ? Data.RowNum : 0;
 
@@ -164,7 +172,7 @@ namespace MeshBuilder
             }
         }
 
-        public void InitWithData(MarchingSquaresMesher.Data data, InitializationInfo updatedInitInfo = null)
+        public void InitWithData(Data data, InitializationInfo updatedInitInfo = null)
         {
             CreateMesher();
 
@@ -189,7 +197,7 @@ namespace MeshBuilder
             }
         }
 
-        public void UpdateData(MarchingSquaresMesher.Data data)
+        public void UpdateData(Data data)
             => InitWithData(data);
 
         public void Regenerate()
@@ -255,7 +263,7 @@ namespace MeshBuilder
             mesherData?.Dispose();
         }
 
-        private void OnDataComponentChanged(MarchingSquaresMesher.Data data)
+        private void OnDataComponentChanged(Data data)
         {
             if (Mesher == null)
             {
@@ -275,7 +283,7 @@ namespace MeshBuilder
             public const bool DontClearData = false;
 
             private bool owned = false;
-            public MarchingSquaresMesher.Data Data { get; private set; }
+            public Data Data { get; private set; }
             public bool HasData => Data != null;
 
             public void CreateOwned(DataCreationInfo dataInfo, bool clear = ClearData)
@@ -296,7 +304,7 @@ namespace MeshBuilder
                 }
             }
 
-            public void Copy(MarchingSquaresMesher.Data source)
+            public void Copy(Data source)
             {
                 if (!owned)
                 {
@@ -321,7 +329,7 @@ namespace MeshBuilder
                 }
             }
 
-            public void SetBorrowed(MarchingSquaresMesher.Data data)
+            public void SetBorrowed(Data data)
             {
                 Dispose();
 
@@ -338,7 +346,7 @@ namespace MeshBuilder
                 Data = null;
             }
 
-            private static bool DoAttritbutesMatch(DataCreationInfo info, MarchingSquaresMesher.Data data)
+            private static bool DoAttritbutesMatch(DataCreationInfo info, Data data)
             {
                 return info.ColNum == data.ColNum && info.RowNum == data.RowNum && info.HasHeightData == data.HasHeights && info.HasCullingData == data.HasCullingData;
             }
@@ -374,9 +382,9 @@ namespace MeshBuilder
             public DataCreationInfo Clone()
                 => new DataCreationInfo(colNum, rowNum, hasHeightData, HasCullingData);
 
-            public MarchingSquaresMesher.Data Create()
+            public Data Create()
             {
-                var data = new MarchingSquaresMesher.Data(colNum, rowNum);
+                var data = new Data(colNum, rowNum);
                 if (hasHeightData)
                 {
                     data.InitHeights();
@@ -395,84 +403,165 @@ namespace MeshBuilder
         [Serializable]
         public class InitializationInfo
         {
-            private const bool HasBottom = true;
-            private const bool NoBottom = false;
-
-            public enum Type
-            {
-                TopOnly,
-                TopOptimizedGreedy,
-                TopOptimizedLargestRect,
-
-                SideOnly,
-                TaperedSideOnly,
-                SegmentedSideOnly,
-                
-                NoBottomFullCell,
-                TaperedNoBottomFullCell,
-                SegmentedNoBottomFullCell,
-                
-                FullCell,
-                SimpleFullCell
-            }
-
-            public Type type = Type.FullCell;
             public float cellSize = 1f;
-            public float height = 0f;
-            public float lerpToExactEdge = 1f;
-            public float taperedTopOffset = 0.0f;
-            public float taperedBottomOffset = 0.5f;
-            public MarchingSquaresMesher.SideOffset[] segmentedOffsets;
+            public bool generateUVs = true;
+            public bool generateNormals = true;
+
+            public SubmeshInitInfo[] submeshes = null;
 
             public InitializationInfo Clone()
             {
-                var info = new InitializationInfo();
-                info.type = type;
-                info.cellSize = cellSize;
-                info.height = height;
-                info.lerpToExactEdge = lerpToExactEdge;
-                info.taperedTopOffset = taperedTopOffset;
-                info.taperedBottomOffset = taperedBottomOffset;
-                if (segmentedOffsets != null)
+                var clone = (InitializationInfo)MemberwiseClone();
+                if (submeshes != null)
                 {
-                    info.segmentedOffsets = new MarchingSquaresMesher.SideOffset[segmentedOffsets.Length];
-                    Array.Copy(segmentedOffsets, info.segmentedOffsets, segmentedOffsets.Length);
-                }
-                return info;
-            }
-
-            public void Init(MarchingSquaresMesher mesher, MarchingSquaresMesher.Data data)
-            {
-                if (type == Type.SegmentedSideOnly || type == Type.SegmentedNoBottomFullCell)
-                {
-                    if (segmentedOffsets == null || segmentedOffsets.Length < 2)
+                    clone.submeshes = new SubmeshInitInfo[submeshes.Length];
+                    for (int i = 0; i < submeshes.Length; ++i)
                     {
-                        Debug.LogError("You need to set the segmented offsets array for segmented meshers!");
+                        clone.submeshes[i] = submeshes[i].Clone();
                     }
                 }
+                return clone;
+            }
 
-                switch(type)
+            [Serializable]
+            public class SubmeshInitInfo
+            {
+                public MesherInitInfo[] meshers = null;
+
+                public SubmeshInitInfo Clone()
                 {
-                    case Type.TopOnly:                  mesher.Init(data, cellSize, height, lerpToExactEdge); break;
-                    case Type.TopOptimizedGreedy:       mesher.InitForOptimized(data, cellSize, height, lerpToExactEdge, MarchingSquaresMesher.OptimizationMode.GreedyRect); break;
-                    case Type.TopOptimizedLargestRect:  mesher.InitForOptimized(data, cellSize, height, lerpToExactEdge, MarchingSquaresMesher.OptimizationMode.NextLargestRect); break;
-                    
-                    case Type.SideOnly:          mesher.InitForSideOnly(data, cellSize, height, lerpToExactEdge); break;
-                    case Type.TaperedSideOnly:   mesher.InitForTaperedSideOnly(data, cellSize, height, taperedTopOffset, taperedBottomOffset, lerpToExactEdge); break;
-                    case Type.SegmentedSideOnly: mesher.InitForSegmentedSideOnly(data, cellSize, segmentedOffsets, lerpToExactEdge); break;
-                    
-                    case Type.NoBottomFullCell:          mesher.InitForFullCell(data, cellSize, height, NoBottom, lerpToExactEdge); break;
-                    case Type.TaperedNoBottomFullCell:   mesher.InitForFullCellTapered(data, cellSize, height, taperedBottomOffset, NoBottom, lerpToExactEdge); break;
-                    case Type.SegmentedNoBottomFullCell: mesher.InitForFullCellSegmented(data, cellSize, segmentedOffsets, NoBottom, lerpToExactEdge); break; 
-                    
-                    case Type.FullCell:         mesher.InitForFullCell(data, cellSize, height, HasBottom, lerpToExactEdge); break;
-                    case Type.SimpleFullCell:   mesher.InitForFullCellSimpleMesh(data, cellSize, height, lerpToExactEdge); break;
-                    default:
+                    var clone = new SubmeshInitInfo();
+                    if (meshers != null)
+                    {
+                        clone.meshers = new MesherInitInfo[meshers.Length];
+                        for (int i = 0; i < meshers.Length; ++i)
                         {
-                            mesher.Init(data, cellSize, height, lerpToExactEdge);
-                            Debug.LogError("Unhandled mesher initialization type: " + type);
-                            break;
+                            clone.meshers[i] = meshers[i].Clone();
                         }
+                    }
+                    return clone;
+                }
+            }
+
+            [Serializable]
+            public class MesherInitInfo
+            {
+                public MesherType type = MesherType.TopCell;
+
+                // info
+                public float lerpToExactEdge = 1f;
+                public bool useCullingData = true;
+                public bool useHeightData = true;
+                public float offsetY = 0f;
+                public float heightScale = 1f;
+                public float uScale = 1f;
+                public float vScale = 1f;
+                public bool normalizeUV = true;
+                public bool isFlipped = false;
+
+                // scaled info
+                public float scaledOffset = 0f;
+
+                // optimized info
+                public OptimizationMode optimizationMode = OptimizationMode.GreedyRect;
+
+                // side info
+                public float sideHeight = 1;
+                public float bottomHeightScale = 1f;
+                public float bottomScaledOffset = 0;
+
+                // segmented info
+                public Segment[] segments = DefaultSegments;
+
+                public MesherInitInfo Clone()
+                {
+                    var clone = (MesherInitInfo)MemberwiseClone();
+                    if (segments != null)
+                    {
+                        clone.segments = new Segment[segments.Length];
+                        Array.Copy(segments, clone.segments, segments.Length);
+                    }
+                    return clone;
+                }
+
+                public MarchingSquaresMesher.MesherInfo GenerateInfo(bool generateNormals = true, bool generateUVs = true)
+                {
+                    Info info = null;
+                    switch (type)
+                    {
+                        case MesherType.TopCell: 
+                            {
+                                info = new Info(); 
+                                break; 
+                            }
+                        case MesherType.ScaledTopCell:
+                            {
+                                var sInfo = new ScaledInfo();
+                                sInfo.ScaledOffset = scaledOffset;
+                                info = sInfo;
+                                break;
+                            }
+                        case MesherType.OptimizedTopCell:
+                            {
+                                var oInfo = new OptimizedInfo();
+                                oInfo.OptimizationMode = optimizationMode;
+                                info = oInfo;
+                                break;
+                            }
+                        case MesherType.SideCell:
+                        case MesherType.FullCell:
+                            {
+                                var sInfo = new SideInfo();
+                                sInfo.ScaledOffset = scaledOffset;
+                                sInfo.SideHeight = sideHeight;
+                                sInfo.BottomHeightScale = bottomHeightScale;
+                                sInfo.BottomScaledOffset = bottomScaledOffset;
+                                info = sInfo;
+                                break;
+                            }
+                        case MesherType.SegmentedSideCell:
+                            {
+                                var sInfo = new SegmentedSideInfo();
+                                sInfo.Segments = segments;
+                                info = sInfo;
+                                break;
+                            }
+                        default:
+                            Debug.LogError("Not handled mesher type!");
+                            break;
+                    }
+
+                    info.LerpToExactEdge = lerpToExactEdge;
+                    info.UseCullingData = useCullingData;
+                    info.UseHeightData = useHeightData;
+                    info.OffsetY = offsetY;
+                    info.HeightScale = heightScale;
+                    info.GenerateUvs = generateUVs;
+                    info.UScale = uScale;
+                    info.VScale = vScale;
+                    info.NormalizeUV = normalizeUV;
+                    info.GenerateNormals = generateNormals;
+                    info.IsFlipped = isFlipped;
+
+                    return MarchingSquaresMesher.MesherInfo.Create(type, info);
+                }
+            }
+
+            public void Init(MarchingSquaresMesher mesher, Data data)
+            {
+                mesher.Init(data, cellSize);
+
+                var submeshMeshers = new List<MarchingSquaresMesher.MesherInfo>();
+                foreach (var submesh in submeshes)
+                {
+                    submeshMeshers.Clear();
+                    foreach(var mesherInfo in submesh.meshers)
+                    {
+                        var info = mesherInfo.GenerateInfo(generateNormals, generateUVs);
+                        submeshMeshers.Add(info);
+                    }
+
+                    mesher.AddSubmesh(submeshMeshers.ToArray());
                 }
             }
         }

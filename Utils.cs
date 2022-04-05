@@ -32,6 +32,9 @@ namespace MeshBuilder
 
             public void Draw(T name)
                 => EditorGUILayout.PropertyField(Get(name));
+
+            public void Draw(T name, Rect rect, bool includeChildren)
+                => EditorGUI.PropertyField(rect, Get(name), includeChildren);
         }
 
         static public void GUILabel(string text)

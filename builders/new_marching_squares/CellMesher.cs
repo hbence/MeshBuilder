@@ -7,9 +7,9 @@ using Unity.Burst;
 
 using static MeshBuilder.Utils;
 using MeshBuffer = MeshBuilder.MeshData.Buffer;
-using Data = MeshBuilder.MarchingSquaresMesher.Data;
+using Data = MeshBuilder.MarchingSquaresMesherData;
 
-namespace MeshBuilder.New
+namespace MeshBuilder
 {
     public abstract class CellMesher : Builder
     {

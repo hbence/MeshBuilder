@@ -5,13 +5,13 @@ using Unity.Collections;
 using Unity.Mathematics;
 using Unity.Burst;
 
-using static MeshBuilder.New.TopCellMesher;
-using static MeshBuilder.New.SideCellMesher;
-using static MeshBuilder.New.ScaledTopCellMesher;
+using static MeshBuilder.TopCellMesher;
+using static MeshBuilder.SideCellMesher;
+using static MeshBuilder.ScaledTopCellMesher;
 
-using Data = MeshBuilder.MarchingSquaresMesher.Data;
+using Data = MeshBuilder.MarchingSquaresMesherData;
 
-namespace MeshBuilder.New
+namespace MeshBuilder
 {
     public class FullCellMesher : CellMesher
     {

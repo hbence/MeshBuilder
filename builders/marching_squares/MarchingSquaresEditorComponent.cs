@@ -3,6 +3,8 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
+using Data = MeshBuilder.MarchingSquaresMesherData;
+
 namespace MeshBuilder
 {
     public class MarchingSquaresEditorComponent : MonoBehaviour
@@ -127,7 +129,7 @@ namespace MeshBuilder
             set => maxLimitDistance = value;
         }
 
-        [SerializeField] private float clearValue = MarchingSquaresMesher.Data.DefaultClearDistance;
+        [SerializeField] private float clearValue = Data.DefaultClearDistance;
         public float ClearValue
         {
             get => clearValue;
@@ -144,7 +146,7 @@ namespace MeshBuilder
             DataChanged();
         }
 
-        public static void DrawAt(float x, float y, MarchingSquaresMesher.Data data, MarchingSquaresEditorComponent editor)
+        public static void DrawAt(float x, float y, Data data, MarchingSquaresEditorComponent editor)
         {
             Shape brushShape = editor.brushShape;
             float brushRadius = editor.brushRadius;
@@ -250,7 +252,7 @@ namespace MeshBuilder
             }
         }
 
-        public static void LimitDataDistance(MarchingSquaresMesher.Data data, float min, float max)
+        public static void LimitDataDistance(Data data, float min, float max)
         {
             var dist = data.RawData;
             for (int i = 0; i < dist.Length; ++i)

@@ -2,16 +2,15 @@
 using System.Collections.Generic;
 using UnityEngine;
 using Unity.Jobs;
-using Unity.Burst;
 using Unity.Collections;
 using Unity.Mathematics;
 
 
 using static MeshBuilder.Utils;
-using static MeshBuilder.MarchingSquaresMesher;
+using Data = MeshBuilder.MarchingSquaresMesherData;
 using MeshBuffer = MeshBuilder.MeshData.Buffer;
 
-namespace MeshBuilder.New
+namespace MeshBuilder
 {
     public class MarchingSquaresMesher : Builder
     {
@@ -251,6 +250,19 @@ namespace MeshBuilder.New
                 Debug.LogError("Not handled mesher type!");
 
                 return false;
+            }
+
+            static public MesherInfo Create(MesherType type, CellMesher.Info info)
+            {
+                if (DoesTypeMatchInfo(type, info))
+                {
+                    return new MesherInfo(type, info);
+                }
+                else
+                {
+                    Debug.LogError("Mismatching type and infotype");
+                    return null;
+                }
             }
 
             static public MesherInfo CreateTopCell(CellMesher.Info info) => new MesherInfo(MesherType.TopCell, info);

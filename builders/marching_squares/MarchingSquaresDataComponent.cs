@@ -9,7 +9,7 @@ using UnityEditor;
 #endif
 
 using static MeshBuilder.MarchingSquaresComponent;
-using static MeshBuilder.MarchingSquaresMesher;
+using Data = MeshBuilder.MarchingSquaresMesherData;
 
 namespace MeshBuilder
 {

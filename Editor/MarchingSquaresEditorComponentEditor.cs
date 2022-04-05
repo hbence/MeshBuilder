@@ -6,7 +6,7 @@ using UnityEditor;
 using Unity.Collections;
 
 using static MeshBuilder.MarchingSquaresEditorComponent;
-using static MeshBuilder.MarchingSquaresMesher;
+using Data = MeshBuilder.MarchingSquaresMesherData;
 
 using static MeshBuilder.Utils;
 

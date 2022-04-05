@@ -1,7 +1,7 @@
 ﻿using UnityEngine;
 using Unity.Collections;
 
-using static MeshBuilder.MarchingSquaresMesher;
+using Data = MeshBuilder.MarchingSquaresMesherData;
 using static MeshBuilder.MarchingSquaresComponent;
 
 namespace MeshBuilder

@@ -6,9 +6,9 @@ using Unity.Mathematics;
 using Unity.Burst;
 
 using static MeshBuilder.Utils;
-using Data = MeshBuilder.MarchingSquaresMesher.Data;
+using Data = MeshBuilder.MarchingSquaresMesherData;
 
-namespace MeshBuilder.New
+namespace MeshBuilder
 {
     public class TopCellMesher : CellMesher
     {

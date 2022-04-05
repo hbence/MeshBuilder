@@ -3,10 +3,10 @@ using Unity.Collections;
 using Unity.Mathematics;
 using Unity.Burst;
 
-using static MeshBuilder.New.TopCellMesher;
-using Data = MeshBuilder.MarchingSquaresMesher.Data;
+using static MeshBuilder.TopCellMesher;
+using Data = MeshBuilder.MarchingSquaresMesherData;
 
-namespace MeshBuilder.New
+namespace MeshBuilder
 {
     public class ScaledTopCellMesher : CellMesher
     {
