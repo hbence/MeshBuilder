@@ -17,6 +17,8 @@ namespace MeshBuilder
             dataCreationPolicy,
             dataCreationInfo,
             dataComponent,
+            AutoCompleteGeneration,
+            GenerateOnInit
         }
 
         private MarchingSquaresComponent marchingSquares;
@@ -34,6 +36,7 @@ namespace MeshBuilder
 
             props.Draw(PropNames.meshFilter);
             props.Draw(PropNames.initializationPolicy);
+            props.Draw(PropNames.GenerateOnInit);
             props.Draw(PropNames.initialization);
             props.Draw(PropNames.dataCreationPolicy);
 
@@ -46,6 +49,8 @@ namespace MeshBuilder
             {
                 props.Draw(PropNames.dataComponent);
             }
+
+            props.Draw(PropNames.AutoCompleteGeneration);
 
             serializedObject.ApplyModifiedProperties();
         }

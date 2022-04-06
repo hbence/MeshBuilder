@@ -33,6 +33,7 @@ namespace MeshBuilder
         // the default is to initialize in Start() because Awake() is called after the component is added
         // so if the user wants to avoid that, they have a chance to turn it off
         [SerializeField] private InitializationPolicy initializationPolicy = InitializationPolicy.InStart;
+        public bool GenerateOnInit = true;
         [SerializeField] private InitializationInfo initialization;
         public InitializationInfo InitInfo { get => initialization; set => initialization = value.Clone(); }
         public float CellSize => initialization.cellSize;
@@ -63,7 +64,7 @@ namespace MeshBuilder
         public MarchingSquaresMesher Mesher { get; private set; }
         public bool IsGenerating => Mesher != null && Mesher.IsGenerating;
 
-        public bool AutoCompletion { get; set; } = true;
+        public bool AutoCompleteGeneration = true;
 
         public Mesh Mesh { get; private set; }
 
@@ -77,6 +78,11 @@ namespace MeshBuilder
 
         private void Awake()
         {
+            if (Mesher == null)
+            {
+                Mesher = new MarchingSquaresMesher();
+            }
+
             if (initializationPolicy == InitializationPolicy.InAwake)
             {
                 Init();
@@ -96,11 +102,6 @@ namespace MeshBuilder
             if (mesherData == null)
             {
                 mesherData = new MesherDataHandler();
-            }
-
-            if (Mesher == null)
-            {
-                Mesher = new MarchingSquaresMesher();
             }
 
             if (Mesh == null)
@@ -168,7 +169,11 @@ namespace MeshBuilder
             if (mesherData.HasData)
             {
                 initialization.Init(Mesher, mesherData.Data);
-                Regenerate();
+
+                if (GenerateOnInit)
+                {
+                    Regenerate();
+                }
             }
         }
 
@@ -213,7 +218,7 @@ namespace MeshBuilder
                 Mesher.Start();
             }
 
-            if (!isActiveAndEnabled && AutoCompletion)
+            if (!isActiveAndEnabled && AutoCompleteGeneration)
             {
                 CompleteGeneration();
             }
@@ -242,7 +247,7 @@ namespace MeshBuilder
 
         private void AutoComplete()
         {
-            if (AutoCompletion)
+            if (AutoCompleteGeneration)
             {
                 CompleteGeneration();
             }

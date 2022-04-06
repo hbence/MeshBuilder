@@ -443,6 +443,8 @@ namespace MeshBuilder
 
         private void Regenerate()
         {
+            CheckChanges();
+
             if (meshers != null && meshers.Count > 0)
             {
                 foreach(var mesher in meshers)
