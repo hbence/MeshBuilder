@@ -278,7 +278,7 @@ namespace MeshBuilder
         private static JobHandle ScheduleCalculateUVJob(Data data, SegmentedSideInfo info, NativeArray<float> vArray, float cellSize, NativeArray<SegmentedCellInfo> infoArray, NativeList<float3> vertices, NativeList<float2> uvs, JobHandle lastHandle = default)
         {
             float scaleU = info.UScale;
-            float scaleV = info.VScale * (1f / (info.Segments.Length - 1));
+            float scaleV = info.VScale;
 
             if (info.NormalizeUV)
             {

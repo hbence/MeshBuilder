@@ -212,7 +212,6 @@ namespace MeshBuilder
 
             public void CalculateUvs(SideCellInfo info, NativeArray<float3> vertices, NativeArray<float2> uvs)
             {
-                SetSideUV(info.topVerts.corner, info.bottomVerts.corner, vertices, uvs, scaleU, scaleV);
                 SetSideUV(info.topVerts.leftEdge, info.bottomVerts.leftEdge, vertices, uvs, scaleU, scaleV);
                 SetSideUV(info.topVerts.bottomEdge, info.bottomVerts.bottomEdge, vertices, uvs, scaleU, scaleV);
             }
@@ -249,8 +248,7 @@ namespace MeshBuilder
             float scaleV = info.VScale;
             if (info.NormalizeUV)
             {
-                scaleU /= (data.ColNum - 1) * cellSize;
-                scaleV /= (data.RowNum - 1) * cellSize;
+                scaleU /= (math.max(data.ColNum, data.RowNum) - 1) * cellSize;
             }
             return CalculateUVsJob.Schedule(scaleU, scaleV, infoArray, vertices, uvs, lastHandle);
         }
