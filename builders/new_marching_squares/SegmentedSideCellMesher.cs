@@ -103,7 +103,9 @@ namespace MeshBuilder
 
             if (info.GenerateUvs)
             {
-                vertexHandle = ScheduleCalculateUVJob(data, info, cellSize, infoArray, vertices, uvs, vertexHandle);
+                var vArray = new NativeArray<float>(info.Segments.Length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+                AddTemp(vArray);
+                vertexHandle = ScheduleCalculateUVJob(data, info, vArray, cellSize, infoArray, vertices, uvs, vertexHandle);
             }
 
             JobHandle triangleHandle = ScheduleCalculateTrianglesJob(data.ColNum, data.RowNum, info.Segments.Length, infoArray, triangles, info.IsFlipped, lastHandle);
@@ -226,7 +228,7 @@ namespace MeshBuilder
         private struct CalculateUVsJob : IJobParallelFor
         {
             public float scaleU;
-            public float scaleV;
+            [ReadOnly] public NativeArray<float> VArray;
 
             public int segmentCount;
 
@@ -240,28 +242,28 @@ namespace MeshBuilder
                 SegmentedCellInfo info = infos[index];
                 for (int i = 0; i < segmentCount - 1; ++i)
                 {
-                    if (info.leftVerticesStart >= 0) { SetSideUV(info.leftVerticesStart + i + 1, info.leftVerticesStart + i, vertices, uvs, scaleU, scaleV); }
-                    if (info.bottomVerticesStart >= 0) { SetSideUV(info.bottomVerticesStart + i + 1, info.bottomVerticesStart + i, vertices, uvs, scaleU, scaleV); }
+                    if (info.leftVerticesStart >= 0) { SetSideUV(info.leftVerticesStart + i + 1, info.leftVerticesStart + i, vertices, uvs, scaleU, VArray[i], VArray[i + 1]); }
+                    if (info.bottomVerticesStart >= 0) { SetSideUV(info.bottomVerticesStart + i + 1, info.bottomVerticesStart + i, vertices, uvs, scaleU, VArray[i], VArray[i + 1]); }
                 }
             }
 
-            static public void SetSideUV(int top, int bottom, NativeArray<float3> vertices, NativeArray<float2> uvs, float scaleU, float scaleV)
+            static public void SetSideUV(int top, int bottom, NativeArray<float3> vertices, NativeArray<float2> uvs, float scaleU, float vBottom, float vTop)
             {
                 if (top >= 0)
                 {
                     float3 vert = vertices[top];
                     float u = (vert.x + vert.z) * scaleU;
-                    uvs[top] = new float2(u, scaleV);
-                    uvs[bottom] = new float2(u, 0);
+                    uvs[top] = new float2(u, vTop);
+                    uvs[bottom] = new float2(u, vBottom);
                 }
             }
 
-            public static JobHandle Schedule(float scaleU, float scaleV, int segmentCount, NativeArray<SegmentedCellInfo> infos, NativeList<float3> vertices, NativeList<float2> uvs, JobHandle dependOn)
+            public static JobHandle Schedule(float scaleU, NativeArray<float> vArray, int segmentCount, NativeArray<SegmentedCellInfo> infos, NativeList<float3> vertices, NativeList<float2> uvs, JobHandle dependOn)
             {
                 var uvJob = new CalculateUVsJob
                 {
                     scaleU = scaleU,
-                    scaleV = scaleV,
+                    VArray = vArray,
 
                     segmentCount = segmentCount,
 
@@ -273,16 +275,41 @@ namespace MeshBuilder
             }
         }
 
-        private static JobHandle ScheduleCalculateUVJob(Data data, SegmentedSideInfo info, float cellSize, NativeArray<SegmentedCellInfo> infoArray, NativeList<float3> vertices, NativeList<float2> uvs, JobHandle lastHandle = default)
+        private static JobHandle ScheduleCalculateUVJob(Data data, SegmentedSideInfo info, NativeArray<float> vArray, float cellSize, NativeArray<SegmentedCellInfo> infoArray, NativeList<float3> vertices, NativeList<float2> uvs, JobHandle lastHandle = default)
         {
             float scaleU = info.UScale;
             float scaleV = info.VScale * (1f / (info.Segments.Length - 1));
+
             if (info.NormalizeUV)
             {
-                scaleU /= (data.ColNum - 1) * cellSize;
-                scaleV /= (data.RowNum - 1) * cellSize;
+                scaleU /= (math.max(data.ColNum, data.RowNum) - 1) * cellSize;
             }
-            return CalculateUVsJob.Schedule(scaleU, scaleV, info.Segments.Length, infoArray, vertices, uvs, lastHandle);
+
+            var segments = info.Segments;
+
+            float maxDistance = 0;
+            for(int i = 0; i < segments.Length - 1; ++i)
+            {
+                float2 delta = new float2(SegmentHz(i + 1) - SegmentHz(i), SegmentVc(i + 1) - SegmentVc(i));
+                maxDistance += math.length(delta);
+            }
+
+            float prev = 0;
+            for (int i = 0; i < segments.Length; ++i)
+            {
+                vArray[i] = prev / maxDistance * scaleV;
+
+                if (i < segments.Length - 1)
+                {
+                    float2 delta = new float2(SegmentHz(i + 1) - SegmentHz(i), SegmentVc(i + 1) - SegmentVc(i));
+                    prev += math.length(delta);
+                }
+            }
+
+            float SegmentHz(int index) => segments[index].SideHzOffset;
+            float SegmentVc(int index) => segments[index].SideVcOffset;
+
+            return CalculateUVsJob.Schedule(scaleU, vArray, info.Segments.Length, infoArray, vertices, uvs, lastHandle);
         }
 
         [BurstCompile]
