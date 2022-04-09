@@ -176,7 +176,7 @@ namespace MeshBuilder
             return (doesGenerateUVs, doesGenerateNormals);
         }
 
-        private static void FillList<T>(NativeList<T> list, int count, T value) where T : struct
+        private static void FillList<T>(NativeList<T> list, int count, T value) where T : unmanaged
         {
             for(int i = 0; i < count; ++i)
             {

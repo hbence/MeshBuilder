@@ -33,7 +33,7 @@ namespace MeshBuilder
         public NativeList<float3> Normals => normals;
         public bool HasNormals => HasContainer(normals);
 
-        private bool HasContainer<T>(NativeList<T> list) where T : struct => list.IsCreated && list.Length > 0;
+        private bool HasContainer<T>(NativeList<T> list) where T : unmanaged => list.IsCreated && list.Length > 0;
 
         public uint MeshDataBufferFlags { get; set; } = DefMeshDataBufferFlags;
 
