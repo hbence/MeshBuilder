@@ -25,7 +25,7 @@ namespace MeshBuilder
                 var submeshes = property.FindPropertyRelative(Props.submeshes);
                 if (submeshes.isExpanded)
                 {
-                    height += lineHeight;
+                    height += lineHeight * 2;
                     for (int i = 0; i < submeshes.arraySize; ++i)
                     {
                         var elem = submeshes.GetArrayElementAtIndex(i);
