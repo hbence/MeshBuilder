@@ -88,6 +88,7 @@ namespace MeshBuilder
 
             if (property.isExpanded)
             {
+                lineRect.x += 30;
                 lineRect.y += lineHeight;
 
                 var typeProp = property.FindPropertyRelative(Props.type);
