@@ -13,6 +13,7 @@ namespace MeshBuilder
     {
         private const int DefGenerateTransformsInnerBatchCount = 512;
         private const int DefApplyTransformsInnerBatchCount = 512;
+        private const int DefApplyScalesInnerBatchCount = 2048;
 
         public int GenerateTransformsInnerBatchCount { get; set; } = DefGenerateTransformsInnerBatchCount;
         public int ApplyTransformsInnerBatchCount { get; set; } = DefApplyTransformsInnerBatchCount;
@@ -44,15 +45,11 @@ namespace MeshBuilder
 
             if (ScaleValues != null)
             {
-                FillScales(transforms, TransformStepDistance, ScaleValues);
-            }
-            else
-            {
-                float2 one = new float2(1, 1);
-                for (int i = 0; i < transforms.Length; ++i)
-                {
-                    transforms[i] = new PointTransform { scale = one };
-                }
+                var scales = new NativeArray<float2>(transforms.Length, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
+                AddTemp(scales);
+                FillScales(scales, TransformStepDistance, ScaleValues);
+
+                dependOn = ApplyScales.Schedule(meshData.Vertices, scales, TransformStepDistance, DefApplyScalesInnerBatchCount, dependOn);
             }
 
             if (RotationValues != null)
@@ -105,13 +102,11 @@ namespace MeshBuilder
             return res;
         }
 
-        private void FillScales(NativeArray<PointTransform> transforms, float stepDistance, ScaleValue[] scales)
+        private void FillScales(NativeArray<float2> scales, float stepDistance, ScaleValue[] scalesValues)
         {
-            for (int i = 0; i < transforms.Length; ++i)
+            for (int i = 0; i < scales.Length; ++i)
             {
-                var transform = transforms[i];
-                transform.scale = GetValueAtDistance(i * stepDistance, scales);
-                transforms[i] = transform;
+                scales[i] = GetValueAtDistance(i * stepDistance, scalesValues);
             }
         }
 
@@ -120,7 +115,6 @@ namespace MeshBuilder
             public float3 pos;
             public float3 up;
             public float3 right;
-            public float2 scale;
         }
 
         public struct LerpValue
@@ -319,6 +313,34 @@ namespace MeshBuilder
         }
 
         [BurstCompile]
+        private struct ApplyScales : IJobParallelFor
+        {
+            public float transfromStepDistance;
+
+            [ReadOnly] public NativeArray<float2> scales;
+            public NativeArray<float3> vertices;
+
+            public void Execute(int i)
+            {
+                float3 v = vertices[i];
+                int index = GetTransformIndex(v.z, scales, transfromStepDistance);
+                var scale = scales[index];
+                vertices[i] = new float3(v.x * scale.x, v.y * scale.y, v.z);
+            }
+
+            public static JobHandle Schedule(NativeArray<float3> vertices, NativeArray<float2> scales, float transfromStepDistance, int innerBatchCount, JobHandle dependOn)
+            {
+                var applyScales = new ApplyScales
+                {
+                    transfromStepDistance = transfromStepDistance,
+                    scales = scales,
+                    vertices = vertices
+                };
+                return applyScales.Schedule(vertices.Length, innerBatchCount, dependOn);
+            }
+        }
+
+        [BurstCompile]
         private struct ApplyTransforms : IJobParallelFor
         {
             public float transfromStepDistance;
@@ -343,9 +365,7 @@ namespace MeshBuilder
                 // won't be placed at the same position
                 float t = remaining / transfromStepDistance;
 
-                float scaleX = cur.scale.x;
-                float scaleY = cur.scale.y;
-                vertices[i] = math.lerp(cur.pos, next.pos, t) + cur.right * (v.x * scaleX) + cur.up * (v.y * scaleY);
+                vertices[i] = math.lerp(cur.pos, next.pos, t) + cur.right * v.x + cur.up * v.y;
             }
 
             public static JobHandle Schedule(NativeArray<float3> vertices, NativeArray<PointTransform> transforms, float transfromStepDistance, int innerBatchCount, JobHandle dependOn)
@@ -405,9 +425,7 @@ namespace MeshBuilder
                 float remaining = v.z - (index * transfromStepDistance);
                 float t = remaining / transfromStepDistance;
 
-                float scaleX = cur.scale.x;
-                float scaleY = cur.scale.y;
-                vertices[i] = math.lerp(cur.pos, next.pos, t) + right * (v.x * scaleX) + up * (v.y * scaleY);
+                vertices[i] = math.lerp(cur.pos, next.pos, t) + right * v.x + up * v.y;
             }
             
             private PointTransform GetTransform(float distance)
@@ -476,9 +494,7 @@ namespace MeshBuilder
                 float remaining = v.z - (index * transfromStepDistance);
                 float t = remaining / transfromStepDistance;
 
-                float scaleX = cur.scale.x;
-                float scaleY = cur.scale.y;
-                vertices[i] = math.lerp(cur.pos, next.pos, t) + right * (v.x * scaleX) + up * (v.y * scaleY);
+                vertices[i] = math.lerp(cur.pos, next.pos, t) + right * v.x + up * v.y;
             }
 
             private void AddLerpValue(float distance, LerpValue lerpValue, ref float weight, ref float3 right, ref float3 up)

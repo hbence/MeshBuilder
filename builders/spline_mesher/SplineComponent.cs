@@ -82,7 +82,14 @@ namespace MeshBuilder
         public RotationValue[] RotationValues
         {
             get => rotationValues;
-            set => rotationValues = value;
+            set
+            {
+                rotationValues = value;
+                if (rotationValues != null)
+                {
+                    System.Array.Sort(rotationValues, (RotationValue a, RotationValue b) => a.Distance.CompareTo(b.Distance));
+                }
+            }
         }
 
         [SerializeField] private bool useCustomScaling = false;
@@ -91,7 +98,14 @@ namespace MeshBuilder
         public ScaleValue[] ScaleValues
         {
             get => scaleValues;
-            set => scaleValues = value;
+            set
+            {
+                scaleValues = value;
+                if (scaleValues != null)
+                {
+                    System.Array.Sort(scaleValues, (ScaleValue a, ScaleValue b) => a.Distance.CompareTo(b.Distance));
+                }
+            }
         }
 
         [Header("cache")]

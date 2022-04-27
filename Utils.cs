@@ -77,12 +77,19 @@ namespace MeshBuilder
             public override void Load() => Value = EditorPrefs.GetBool(Key, Value);
             public override void Save() => EditorPrefs.SetBool(Key, Value);
 
-            public void DrawSwitchButton(string onMsg, string offMessage)
+            public bool DrawSwitchButton(string onLabel, string offLabel)
             {
-                if (GUILayout.Button(Value ? onMsg : offMessage))
+                if (GUILayout.Button(Value ? onLabel : offLabel))
                 {
                     Value = !Value;
                 }
+                return Value;
+            }
+
+            public bool DrawToggle(string label)
+            {
+                Value = GUILayout.Toggle(Value, label);
+                return Value;
             }
         }
 
