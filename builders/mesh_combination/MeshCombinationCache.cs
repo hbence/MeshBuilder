@@ -36,13 +36,13 @@ namespace MeshBuilder
                         Debug.LogError("mesh is null!");
                         continue;
                     }
-
+                    /*
                     if (mesh.vertexCount == 0)
                     {
                         Debug.LogError("mesh has zero vertices in:" + mesh.name);
                         continue;
                     }
-
+                    */
                     dataOffsetList.Add(CreateMeshDataOffset(mesh, vertexCount, trianglesCount));
 
                     UpdateMeshInfo(mesh, ref vertexCount, ref trianglesCount, ref meshDataFlags);
@@ -54,7 +54,10 @@ namespace MeshBuilder
                 for (int i = 0; i < dataOffsets.Length; ++i)
                 {
                     MeshDataOffset offset = dataOffsetList[i];
-                    CopyData(MeshData, meshes[i], offset);
+                    if (offset.vertices.length > 0)
+                    {
+                        CopyData(MeshData, meshes[i], offset);
+                    }
                 }
             }
 

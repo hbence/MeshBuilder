@@ -73,6 +73,11 @@ namespace MeshBuilder
                 Save();
             }
 
+            DisposeData();
+        }
+
+        public void DisposeData()
+        {
             Data?.Dispose();
             Data = null;
         }

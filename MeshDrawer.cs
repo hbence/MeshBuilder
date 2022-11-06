@@ -33,6 +33,7 @@ namespace MeshBuilder
 
             [SerializeField]
             private SubMeshInfo[] subMeshInfo = null;
+            public SubMeshInfo[] SubMeshInfos => subMeshInfo; 
 
             // this one should also be per submesh, but it's not used
             // for anything for now, so change it when it's needed

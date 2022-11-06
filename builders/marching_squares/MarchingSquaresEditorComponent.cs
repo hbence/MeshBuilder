@@ -136,14 +136,14 @@ namespace MeshBuilder
             set => clearValue = value;
         }
 
+        public event Action OnDataChanged;
+
         public void DrawAt(float x, float y)
         {
             if (dataComponent != null && dataComponent.Data != null)
             {
                 DrawAt(x, y, dataComponent.Data, this);
             }
-
-            DataChanged();
         }
 
         public static void DrawAt(float x, float y, Data data, MarchingSquaresEditorComponent editor)
@@ -250,6 +250,8 @@ namespace MeshBuilder
             {
                 LimitDataDistance(data, editor.minLimitDistance, editor.maxLimitDistance);
             }
+
+            editor.DataChanged();
         }
 
         public static void LimitDataDistance(Data data, float min, float max)
@@ -285,6 +287,8 @@ namespace MeshBuilder
             {
                 mesher?.UpdateData(DataComponent.Data);
             }
+
+            OnDataChanged?.Invoke();
         }
     }
 }

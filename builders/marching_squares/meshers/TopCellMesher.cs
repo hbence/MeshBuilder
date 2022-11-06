@@ -161,7 +161,7 @@ namespace MeshBuilder
             return lastHandle;
         }
 
-        [BurstCompile]
+       // [BurstCompile]
         public struct CalculateVerticesJob<VertexCalculator> : IJobParallelFor
             where VertexCalculator : struct, IVertexCalculator
         {
