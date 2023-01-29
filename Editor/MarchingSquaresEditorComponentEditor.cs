@@ -326,6 +326,11 @@ namespace MeshBuilder
 
         private void BeforeSceneGUI(SceneView sceneView)
         {
+            if (editor == null)
+            {
+                return;
+            }
+
             Handles.matrix = editor.transform.localToWorldMatrix;
 
             var style = (GUIStyle)"GV Gizmo DropDown";
@@ -471,7 +476,7 @@ namespace MeshBuilder
 
                 if (editor.BrushShape == Shape.Circle)
                 {
-                    Handles.DrawWireDisc(brushPosition, editor.transform.up, editor.BrushRadius);
+                    Handles.DrawWireDisc(brushPosition, Vector3.up, editor.BrushRadius);
                 }
                 else
                 {
