@@ -78,10 +78,7 @@ namespace MeshBuilder
 
         private void Awake()
         {
-            if (Mesher == null)
-            {
-                Mesher = new MarchingSquaresMesher();
-            }
+            CreateMesher();   
 
             if (initializationPolicy == InitializationPolicy.InAwake)
             {
@@ -99,6 +96,11 @@ namespace MeshBuilder
 
         private void CreateMesher()
         {
+            if (Mesher == null)
+            {
+                Mesher = new MarchingSquaresMesher();
+            }
+
             if (mesherData == null)
             {
                 mesherData = new MesherDataHandler();
@@ -106,10 +108,17 @@ namespace MeshBuilder
 
             if (Mesh == null)
             {
-                Mesh = new Mesh();
-                if (meshFilter != null)
+                if (meshFilter != null && meshFilter.sharedMesh != null)
                 {
-                    meshFilter.sharedMesh = Mesh;
+                    Mesh = meshFilter.sharedMesh;
+                }
+                else
+                {
+                    Mesh = new Mesh();
+                    if (meshFilter != null)
+                    {
+                        meshFilter.sharedMesh = Mesh;
+                    }
                 }
             }
         }
@@ -270,16 +279,15 @@ namespace MeshBuilder
 
         private void OnDataComponentChanged(Data data)
         {
-            if (Mesher == null)
+            if (Mesher != null && Mesher.IsInitialized)
             {
-                Init();
+                CompleteGeneration();
+
+                mesherData.SetBorrowed(data);
+                UpdateData(data);
+
+                Regenerate();
             }
-
-            CompleteGeneration();
-
-            mesherData.SetBorrowed(data);
-            Regenerate();
-            CompleteGeneration();
         }
 
         private class MesherDataHandler : IDisposable
