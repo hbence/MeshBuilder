@@ -216,6 +216,40 @@ namespace MeshBuilder
             return resCount;
         }
 
+        public int CalculateSplinePoints(Vector3[] outPoints, int startControlPoint, int endControlPoint, int pointsPerSegment = 10)
+        {
+            if (outPoints == null || outPoints.Length < 2)
+            {
+                Debug.LogError("outPoints needs to be larger!");
+                return 0;
+            }
+
+            int resCount = 0;
+            if (spline.ControlPoints != null && spline.ControlPointsCount > 1)
+            {
+                var controlPoints = Utils.ToFloat3Array(spline.ControlPoints);
+                float step = 1f / pointsPerSegment;
+                outPoints[0] = spline.ControlPoints[startControlPoint];
+                ++resCount;
+                for (int i = startControlPoint; i < endControlPoint; ++i)
+                {
+                    for (int j = 1; j <= pointsPerSegment; ++j)
+                    {
+                        if (resCount >= outPoints.Length)
+                        {
+                            break;
+                        }
+
+                        float3 cur = ArcCalculator.Calculate(controlPoints, i, (i + 1) % spline.ControlPointsCount, step * j, spline.IsClosed);
+                        outPoints[resCount] = cur;
+                        ++resCount;
+                    }
+                }
+            }
+
+            return resCount;
+        }
+
         private class CacheHandler
         {
             public SplineCache Cache { get; set; }
