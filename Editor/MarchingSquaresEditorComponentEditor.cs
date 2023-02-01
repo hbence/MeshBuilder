@@ -79,6 +79,8 @@ namespace MeshBuilder
         private float ribbonHeight;
         private float brushGUIY;
 
+        private bool loadedData = false;
+
         private void OnEnable()
         {
             editor = (MarchingSquaresEditorComponent)target;
@@ -94,6 +96,7 @@ namespace MeshBuilder
             if (editor.DataComponent != null && editor.DataComponent.Data == null)
             {
                 editor.DataComponent.Load();
+                loadedData = true;
             }
 
             props = new ComponentProperties<PropName>(serializedObject);
@@ -145,7 +148,11 @@ namespace MeshBuilder
 
             meshers?.Clear();
 
-            editor.DataComponent?.OnDestroy();
+            if (loadedData)
+            {
+                loadedData = false;
+                editor.DataComponent?.OnDestroy();
+            }
         }
 
         public override void OnInspectorGUI()
