@@ -119,6 +119,7 @@ namespace MeshBuilder
         {
             if (editor.Meshers != null)
             {
+                meshers.Clear();
                 for (int i = 0; i < editor.Meshers.Length; ++i)
                 {
                     var mesher = new EditorMesher(editor.Meshers[i]);
